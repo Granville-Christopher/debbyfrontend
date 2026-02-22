@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Primary Meta Tags -->
+    <title>DEBBY - Automate Your Workflow | API Integration, Payments & Social Media Scheduling</title>
+    <meta name="title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Media Scheduling" />
+    <meta name="description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social media content, process payments, and scale effortlessly. Trusted by 10,000+ users." />
+    <meta name="keywords" content="webhook automation, API integration, payment processing, Stripe, Paystack, GitHub integration, business automation, developer tools, SaaS platform, social media scheduler, X Twitter automation, Threads scheduling, content creator tools" />
+    <meta name="author" content="DEBBY" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="English" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://debby.io/" />
+    <meta property="og:title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Scheduling" />
+    <meta property="og:description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social content, process payments, and scale effortlessly." />
+    <meta property="og:image" content="https://debby.io/og-image.png" />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://debby.io/" />
+    <meta property="twitter:title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Scheduling" />
+    <meta property="twitter:description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social content, process payments, and scale effortlessly." />
+    <meta property="twitter:image" content="https://debby.io/og-image.png" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- Caching: Disabled -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    
+    <script>
+      // Aggressively clear ALL caches and service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+            console.log('Service worker unregistered');
+          }
+        });
+      }
+      
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (let name of names) {
+            caches.delete(name);
+            console.log('Cache cleared:', name);
+          }
+        });
+      }
+      
+      // Clear session storage just in case
+      sessionStorage.clear();
+      
+      console.log('Total cache and SW purge completed');
+    </script>
+    
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Sharp Tech Fonts for Logo & Headings -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    
+    <!-- Google Analytics (replace GA_MEASUREMENT_ID with your actual ID) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'GA_MEASUREMENT_ID');
+    </script>
+    
+    <!-- Initialize Dark Mode Before React Loads -->
+    <script>
+      // Set dark mode as default if not already set
+      (function() {
+        const saved = localStorage.getItem("darkMode");
+        if (saved === null) {
+          localStorage.setItem("darkMode", "true");
+          document.documentElement.classList.add("dark");
+        } else if (saved === "true") {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      })();
+    </script>
+    
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "DEBBY",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "ratingCount": "1247"
+      },
+      "description": "The all-in-one platform for developers and businesses to automate workflows, integrate APIs, process payments, and scale operations effortlessly."
+    }
+    </script>
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "DEBBY",
+      "url": "https://debby.io",
+      "logo": "https://debby.io/logo.png",
+      "description": "Automation platform for developers and businesses",
+      "sameAs": [
+        "https://twitter.com/debby",
+        "https://github.com/debby"
+      ]
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

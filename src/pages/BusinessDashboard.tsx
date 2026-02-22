@@ -1,0 +1,10558 @@
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { BizNav } from "../components/BizNav";
+import { useAuth } from "../auth/AuthProvider";
+import { apiRequest } from "../api/client";
+import { Collapsible } from "../components/Collapsible";
+import { Sidebar } from "../components/Sidebar";
+import { Modal, ConfirmModal } from "../components/Modal";
+import { GlobalSearch, useGlobalSearch } from "../components/GlobalSearch";
+import { Onboarding, useOnboarding } from "../components/Onboarding";
+import { HelpCenter, useHelpCenter } from "../components/HelpCenter";
+import { useKeyboardShortcuts } from "../components/KeyboardShortcuts";
+import { ActivityFeed } from "../components/ActivityFeed";
+import { BillingPlans } from "../components/BillingPlans";
+import { CustomerManager } from "../components/CustomerManager";
+import { 
+  FiBarChart2, 
+  FiCreditCard, 
+  FiBell, 
+  FiLink2, 
+  FiSettings,
+  FiAlertTriangle,
+  FiUsers,
+  FiActivity,
+  FiDollarSign,
+  FiHelpCircle,
+  FiPlus,
+  FiRefreshCw,
+  FiExternalLink,
+  FiCopy,
+  FiPause,
+  FiPlay,
+  FiTrash2,
+  FiMessageSquare,
+  FiZap,
+  FiTrendingUp,
+  FiFileText,
+  FiUpload,
+  FiDownload,
+  FiCalendar,
+  FiClipboard,
+  FiLink,
+  FiPhone,
+  FiEdit3,
+  FiShoppingBag,
+  FiCheckCircle,
+  FiXCircle,
+  FiInfo,
+  FiAlertCircle
+} from "react-icons/fi";
+
+type Payment = {
+  id: string;
+  amount: number;
+  currency: string;
+  customerId: string;
+  description?: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  errorMessage?: string;
+  processedAt?: string;
+  paymentLink?: string;
+  gatewayProvider?: string;
+  gatewayPaymentId?: string;
+  createdAt: string;
+};
+
+type Notification = {
+  id: string;
+  channel: "email" | "sms" | "whatsapp";
+  recipient: string;
+  message: string;
+  status: "queued" | "sent" | "failed";
+  errorMessage?: string;
+  sentAt?: string;
+  createdAt: string;
+};
+
+type Integration = {
+  provider: "stripe" | "paystack" | "github" | "email" | "sms" | "whatsapp";
+  connectedAt: string;
+};
+
+type PaymentStats = {
+  total: number;
+  completed: number;
+  failed: number;
+  queued: number;
+  processing: number;
+  totalRevenue: number;
+  last24h: number;
+  last7d: number;
+};
+
+type NotificationStats = {
+  total: number;
+  sent: number;
+  failed: number;
+  queued: number;
+  byChannel: { email: number; sms: number; whatsapp: number };
+  last24h: number;
+  last7d: number;
+};
+
+type DashboardData = {
+  revenueAlerts: string[];
+  notifications: string[];
+  stats: {
+    payments: PaymentStats;
+    notifications: NotificationStats;
+  };
+};
+
+type ShopCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type ShopProduct = {
+  id: string;
+  shopId?: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  price: number;
+  currency: string;
+  imageUrl?: string | null;
+  inventory: number;
+  isActive: boolean;
+  categoryId?: string | null;
+  metadata?: {
+    imageUrls?: string[];
+    videoUrl?: string | null;
+    productType?: string | null;
+    sizeType?: string | null;
+    sizeOptions?: string[];
+    sizeGuideHint?: string | null;
+    colorOptions?: string[];
+    textureOptions?: string[];
+    lengthOptions?: string[];
+    fulfillment?: {
+      type?: "self_fulfilled" | "dropship";
+      supplierId?: string | null;
+      supplierName?: string | null;
+      supplierChannel?: "whatsapp" | "email" | "sms" | null;
+      supplierRecipient?: string | null;
+      supplierSku?: string | null;
+      costPrice?: number | null;
+      trackInventory?: boolean;
+    };
+  } | null;
+};
+
+type ShopSupplier = {
+  id: string;
+  name: string;
+  type: "manual" | "api" | "csv";
+  provider?: "amazon" | "cjdropshipping" | "aliexpress" | null;
+  channel: "whatsapp" | "email" | "sms" | null;
+  recipient?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ShopCapabilities = {
+  planId: "free" | "starter" | "professional" | "enterprise" | "pro";
+  canDropship: boolean;
+  canWhatsappCheckout: boolean;
+  canCardCheckout: boolean;
+  canAdvancedMarketplace: boolean;
+  businessMode: "own" | "dropship" | "hybrid";
+  checkoutMode: "whatsapp_only" | "card_only" | "hybrid";
+  allowedCheckoutMethods: Array<"whatsapp" | "card">;
+};
+
+type ShopProductTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  productType: string;
+  categorySlug?: string;
+  categoryLabel?: string;
+  sizeType?: string;
+  sizeOptions?: string[];
+  sizeGuideHint?: string;
+  colorOptions?: string[];
+  textureOptions?: string[];
+  lengthOptions?: string[];
+  showSize?: boolean;
+  showLength?: boolean;
+  showTexture?: boolean;
+  suggestedPrice?: number;
+  suggestedInventory?: number;
+};
+
+type ShopCategoryTemplate = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  sortOrder: number;
+};
+
+type ShopData = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  themeColor?: string | null;
+  metadata?: {
+    businessType?: string | null;
+  } | null;
+  isActive: boolean;
+  categories: ShopCategory[];
+  products: ShopProduct[];
+};
+
+type ShopOrderSummary = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+  currency: string;
+  createdAt: string;
+  customer?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+  items: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+    metadata?: any;
+  }>;
+  metadata?: any;
+};
+
+type ShopSectionTab = "shop" | "upload" | "products" | "orders";
+
+type SegmentRuleOperator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "greater_than"
+  | "less_than"
+  | "in"
+  | "not_in";
+
+type SegmentRuleFormRow = {
+  id: string;
+  field: string;
+  operator: SegmentRuleOperator;
+  value: string;
+};
+
+type ABVariantFormRow = {
+  id: string;
+  name: string;
+  channel: "email" | "sms" | "whatsapp";
+  subject: string;
+  message: string;
+  split: number;
+};
+
+type SegmentFormState = {
+  name: string;
+  description: string;
+  rules: SegmentRuleFormRow[];
+};
+
+type ABTestFormState = {
+  name: string;
+  description: string;
+  autoStart: boolean;
+  variants: ABVariantFormRow[];
+};
+
+type ReportBuilderFormState = {
+  name: string;
+  description: string;
+  type: "revenue" | "customers" | "payments" | "custom";
+  startDate: string;
+  endDate: string;
+  metricsInput: string;
+  groupByInput: string;
+  filtersInput: string;
+  scheduleEnabled: boolean;
+  scheduleFrequency: "daily" | "weekly" | "monthly";
+  scheduleDay: string;
+  scheduleTime: string;
+  recipientsInput: string;
+};
+
+type ShopCustomerSummary = {
+  id: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  totalOrders: number;
+  totalSpend: number;
+  customer: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    createdAt?: string;
+  } | null;
+};
+
+type ShopSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  themeColor?: string | null;
+  isActive: boolean;
+  metadata?: {
+    businessType?: string | null;
+  } | null;
+  createdAt: string;
+};
+
+type ShopifyOverview = {
+  shopDomain: string;
+  totals: {
+    orders: number;
+    customers: number;
+    products: number;
+    sales30d: number;
+    sales30dCurrency: string;
+  };
+  health: {
+    paidOrders30d: number;
+    pendingOrders30d: number;
+    failedOrders30d: number;
+  };
+  recentOrders: Array<{
+    id: string;
+    name: string;
+    createdAt: string;
+    totalPrice: number;
+    currency: string;
+    financialStatus: string;
+    fulfillmentStatus: string;
+    customerName: string;
+    itemsCount: number;
+  }>;
+};
+
+type ShopifyOrder = {
+  id: string;
+  name: string;
+  createdAt: string;
+  totalPrice: number;
+  currency: string;
+  financialStatus: string;
+  fulfillmentStatus: string;
+  customerName: string;
+  itemsCount: number;
+};
+
+type ShopProductForm = {
+  name: string;
+  slug: string;
+  description: string;
+  price: number;
+  currency: string;
+  inventory: number;
+  categoryId: string;
+  productType: string;
+  sizeType: string;
+  sizeOptionsInput: string;
+  sizeGuideHint: string;
+  colorOptionsInput: string;
+  textureOptionsInput: string;
+  lengthOptionsInput: string;
+  imageUrls: string[];
+  videoUrl: string;
+  fulfillmentType: "self_fulfilled" | "dropship";
+  supplierId: string;
+  supplierSku: string;
+  costPrice: number | "";
+  trackInventory: boolean;
+};
+
+const createEmptyProductForm = (): ShopProductForm => ({
+  name: "",
+  slug: "",
+  description: "",
+  price: 0,
+  currency: "USD",
+  inventory: 0,
+  categoryId: "",
+  productType: "",
+  sizeType: "size",
+  sizeOptionsInput: "",
+  sizeGuideHint: "",
+  colorOptionsInput: "",
+  textureOptionsInput: "",
+  lengthOptionsInput: "",
+  imageUrls: ["", "", "", ""],
+  videoUrl: "",
+  fulfillmentType: "self_fulfilled",
+  supplierId: "",
+  supplierSku: "",
+  costPrice: "",
+  trackInventory: true
+});
+
+type ShopType = "clothes" | "wigs" | "shoes" | "cosmetics" | "electronics" | "jewelry" | "beauty" | "other";
+
+const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
+  { value: "clothes", label: "Clothes" },
+  { value: "wigs", label: "Wigs" },
+  { value: "shoes", label: "Shoes" },
+  { value: "cosmetics", label: "Cosmetics" },
+  { value: "electronics", label: "Electronics" },
+  { value: "jewelry", label: "Jewelry" },
+  { value: "beauty", label: "Beauty" },
+  { value: "other", label: "Other" }
+];
+
+const getShopTypeRules = (shopType?: string | null) => {
+  const normalized = String(shopType || "other").toLowerCase();
+  if (normalized === "wigs") {
+    return {
+      showSize: false,
+      showLength: true,
+      showTexture: true,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "10in, 12in, 14in, 16in, 18in, 20in",
+      defaultTextureOptions: "Straight, Body Wave, Curly, Deep Wave, Kinky",
+      defaultColorOptions: "Natural Black, 1B, Blonde, Brown",
+      productTypePlaceholder: "e.g. Frontal Wig, Closure Wig"
+    };
+  }
+  if (normalized === "shoes") {
+    return {
+      showSize: true,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "shoe-size",
+      defaultSizeOptions: "37, 38, 39, 40, 41, 42, 43, 44",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "Black, White, Brown",
+      productTypePlaceholder: "e.g. Sneakers, Heels, Loafers"
+    };
+  }
+  if (normalized === "clothes") {
+    return {
+      showSize: true,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "size",
+      defaultSizeOptions: "XS, S, M, L, XL, XXL",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "Black, White, Blue, Red",
+      productTypePlaceholder: "e.g. T-Shirt, Gown, Trouser"
+    };
+  }
+  return {
+    showSize: false,
+    showLength: false,
+    showTexture: false,
+    defaultSizeType: "",
+    defaultSizeOptions: "",
+    defaultLengthOptions: "",
+    defaultTextureOptions: "",
+    defaultColorOptions: "",
+    productTypePlaceholder: "e.g. Product type"
+  };
+};
+
+const createProductFormForShopType = (shopType?: string | null): ShopProductForm => {
+  const rules = getShopTypeRules(shopType);
+  return {
+    ...createEmptyProductForm(),
+    productType: String(shopType || "").trim(),
+    sizeType: rules.showSize ? (rules.defaultSizeType || "size") : "",
+    sizeOptionsInput: rules.showSize ? rules.defaultSizeOptions : "",
+    textureOptionsInput: rules.showTexture ? rules.defaultTextureOptions : "",
+    lengthOptionsInput: rules.showLength ? rules.defaultLengthOptions : "",
+    colorOptionsInput: rules.defaultColorOptions
+  };
+};
+
+const createEmptyShopForm = (shopType: ShopType = "other") => ({
+  name: "",
+  slug: "",
+  description: "",
+  logoUrl: "",
+  bannerUrl: "",
+  themeColor: "#4f46e5",
+  businessType: shopType
+});
+
+const formatDateForInput = (date: Date) => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseInputDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const addUtcMonths = (date: Date, monthsToAdd: number) => {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const targetFirstDay = new Date(Date.UTC(year, month + monthsToAdd, 1));
+  const targetYear = targetFirstDay.getUTCFullYear();
+  const targetMonth = targetFirstDay.getUTCMonth();
+  const lastDayInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDayInTargetMonth)));
+};
+
+const getForecastDateRange = (
+  period: "monthly" | "quarterly" | "yearly",
+  startDateInput?: string
+) => {
+  const startDate = parseInputDate(startDateInput || "") || new Date();
+  const start = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
+  const monthsToAdd = period === "monthly" ? 1 : period === "quarterly" ? 3 : 12;
+  const endExclusive = addUtcMonths(start, monthsToAdd);
+  const end = new Date(endExclusive.getTime() - 24 * 60 * 60 * 1000);
+  return {
+    startDate: formatDateForInput(start),
+    endDate: formatDateForInput(end)
+  };
+};
+
+const createSegmentRuleRow = (
+  overrides?: Partial<Omit<SegmentRuleFormRow, "id">>
+): SegmentRuleFormRow => ({
+  id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  field: overrides?.field || "email",
+  operator: overrides?.operator || "contains",
+  value: overrides?.value || ""
+});
+
+const createSegmentForm = (): SegmentFormState => ({
+  name: "",
+  description: "",
+  rules: [createSegmentRuleRow()]
+});
+
+const createABVariantRow = (index: number): ABVariantFormRow => ({
+  id: `variant_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+  name: `Variant ${String.fromCharCode(65 + index)}`,
+  channel: "email",
+  subject: "",
+  message: "",
+  split: 50
+});
+
+const createABTestForm = (): ABTestFormState => ({
+  name: "",
+  description: "",
+  autoStart: false,
+  variants: [createABVariantRow(0), createABVariantRow(1)]
+});
+
+const createReportBuilderForm = (): ReportBuilderFormState => {
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
+  return {
+    name: "",
+    description: "",
+    type: "revenue",
+    startDate: formatDateForInput(thirtyDaysAgo),
+    endDate: formatDateForInput(today),
+    metricsInput: "",
+    groupByInput: "",
+    filtersInput: "",
+    scheduleEnabled: false,
+    scheduleFrequency: "weekly",
+    scheduleDay: "1",
+    scheduleTime: "09:00",
+    recipientsInput: ""
+  };
+};
+
+const segmentFieldOptions: Array<{ value: string; label: string }> = [
+  { value: "totalSpend", label: "Total Spend (completed payments)" },
+  { value: "paymentsCount", label: "Payments Count (all)" },
+  { value: "completedPaymentsCount", label: "Completed Payments Count" },
+  { value: "averageCompletedPayment", label: "Average Completed Payment" },
+  { value: "lastPaymentAmount", label: "Last Completed Payment Amount" },
+  { value: "lastPaymentDate", label: "Last Completed Payment Date" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "firstName", label: "First Name" },
+  { value: "lastName", label: "Last Name" },
+  { value: "company", label: "Company" },
+  { value: "tags", label: "Tags" },
+  { value: "metadata.tier", label: "Metadata: Tier" },
+  { value: "metadata.totalSpend", label: "Metadata: Total Spend (legacy alias)" }
+];
+
+const segmentOperatorOptions: Array<{ value: SegmentRuleOperator; label: string }> = [
+  { value: "contains", label: "contains" },
+  { value: "equals", label: "equals" },
+  { value: "not_equals", label: "not equals" },
+  { value: "greater_than", label: "greater than" },
+  { value: "less_than", label: "less than" },
+  { value: "in", label: "in list" },
+  { value: "not_in", label: "not in list" }
+];
+
+export const BusinessDashboard = () => {
+  const { accessToken, csrfToken, refresh, logout, user } = useAuth();
+  const navigate = useNavigate();
+  const backendBaseUrl = (
+    ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) ||
+    "https://debby-backend-production.up.railway.app"
+  ).replace(/\/$/, "");
+  const twilioVoiceWebhookUrl = `${backendBaseUrl}/webhooks/twilio/voice/incoming`;
+  
+  const [amount, setAmount] = useState(0);
+  const [currency, setCurrency] = useState("USD");
+  const [customerId, setCustomerId] = useState("");
+  const [selectedPaymentCustomerId, setSelectedPaymentCustomerId] = useState("");
+  const [description, setDescription] = useState("");
+  
+  // Payment plan/installment state
+  const [isPaymentPlan, setIsPaymentPlan] = useState(false);
+  const [numberOfInstallments, setNumberOfInstallments] = useState(2);
+  const [intervalDays, setIntervalDays] = useState(30);
+  
+  // Recurring payments state
+  const [recurringPayments, setRecurringPayments] = useState<Array<{
+    id: string;
+    name: string;
+    amount: number;
+    currency: string;
+    customerId: string;
+    interval: "daily" | "weekly" | "monthly" | "yearly";
+    status: "active" | "paused" | "cancelled";
+    nextRunAt: string;
+    startDate: string;
+    endDate?: string;
+  }>>([]);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [recurringForm, setRecurringForm] = useState({
+    name: "",
+    amount: 0,
+    currency: "USD",
+    customerId: "",
+    interval: "monthly" as "daily" | "weekly" | "monthly" | "yearly",
+    startDate: "",
+    endDate: "",
+  });
+  const [channel, setChannel] = useState<"email" | "sms" | "whatsapp">("email");
+  const [recipient, setRecipient] = useState("");
+  const [message, setMessage] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customers, setCustomers] = useState<Array<{ id: string; email: string; phone?: string; firstName?: string; lastName?: string }>>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [activeTab, setActiveTab] = useState<"overview" | "payments" | "notifications" | "activity" | "integrations" | "billing" | "customers" | "settings" | "analytics" | "surveys" | "automation" | "intelligence" | "ops" | "shop">("overview");
+  const [integrationSectionTab, setIntegrationSectionTab] = useState<"calls" | "payments" | "marketplace" | "connected">("calls");
+  const [settingsSectionTab, setSettingsSectionTab] = useState<"account" | "payments" | "calls" | "growth" | "branding">("account");
+  const [integrationProvider, setIntegrationProvider] = useState<"stripe" | "paystack">("stripe");
+  const [integrationToken, setIntegrationToken] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [webhookUrls, setWebhookUrls] = useState<{ orgId: string; webhooks: { stripe: string; paystack: string }; instructions: { local: string; production: string } } | null>(null);
+  
+  // New feature states
+  const [callAnalytics, setCallAnalytics] = useState<any>(null);
+  const [highRiskCustomers, setHighRiskCustomers] = useState<any[]>([]);
+  const [surveys, setSurveys] = useState<any[]>([]);
+  const [scheduledPayments, setScheduledPayments] = useState<any[]>([]);
+  const [paymentPlanTemplates, setPaymentPlanTemplates] = useState<any[]>([]);
+  const [businessWebhooks, setBusinessWebhooks] = useState<any[]>([]);
+  const [paymentLinkCustomization, setPaymentLinkCustomization] = useState<any>(null);
+  const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<string | null>(null);
+  const [communicationHistory, setCommunicationHistory] = useState<any[]>([]);
+  const [customerNotes, setCustomerNotes] = useState<Record<string, any[]>>({});
+  const [newNote, setNewNote] = useState<{ customerId: string; content: string; isPrivate: boolean }>({ customerId: "", content: "", isPrivate: false });
+  const [bulkOperationMode, setBulkOperationMode] = useState<"messages" | "payments" | "import" | null>(null);
+  
+  // New 15 features state
+  const [invoiceTemplates, setInvoiceTemplates] = useState<any[]>([]);
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [paymentLinkAnalytics, setPaymentLinkAnalytics] = useState<any>(null);
+  const [customerSegments, setCustomerSegments] = useState<any[]>([]);
+  const [revenueForecasts, setRevenueForecasts] = useState<any[]>([]);
+  const [abTests, setAbTests] = useState<any[]>([]);
+  const [customFields, setCustomFields] = useState<any[]>([]);
+  const [whiteLabelSettings, setWhiteLabelSettings] = useState<any>(null);
+  const [whiteLabelCustomDomainDraft, setWhiteLabelCustomDomainDraft] = useState("");
+  const [savingWhiteLabelDomain, setSavingWhiteLabelDomain] = useState(false);
+  const [customerAssignments, setCustomerAssignments] = useState<Record<string, any>>({});
+  const [customerLTVs, setCustomerLTVs] = useState<Record<string, any>>({});
+  const [paymentReminders, setPaymentReminders] = useState<any[]>([]);
+  const [integrationTemplates, setIntegrationTemplates] = useState<any[]>([]);
+  const [settingUpMarketplaceProvider, setSettingUpMarketplaceProvider] = useState<string | null>(null);
+  const [clearingMarketplaceProvider, setClearingMarketplaceProvider] = useState<string | null>(null);
+  const [syncingMarketplaceProvider, setSyncingMarketplaceProvider] = useState<string | null>(null);
+  const [marketplaceConfigByProvider, setMarketplaceConfigByProvider] = useState<
+    Record<string, Record<string, string>>
+  >({
+    shopify: { shopDomain: "", accessToken: "" },
+    woocommerce: { storeUrl: "", consumerKey: "", consumerSecret: "" },
+    zapier: { webhookUrl: "" },
+    amazon: {
+      sellerId: "",
+      marketplaceId: "",
+      lwaClientId: "",
+      lwaClientSecret: "",
+      refreshToken: "",
+      awsAccessKeyId: "",
+      awsSecretAccessKey: "",
+      endpointRegion: "na",
+      signingRegion: "",
+      inventoryEndpoint: "",
+      inventoryFieldPath: "data.stock",
+      inventoryMethod: "GET"
+    },
+    cjdropshipping: {
+      apiBaseUrl: "https://developers.cjdropshipping.com/api2.0/v1",
+      accessToken: "",
+      testEndpoint: "/",
+      inventoryEndpoint: "",
+      inventoryFieldPath: "data.stock",
+      inventoryMethod: "GET"
+    },
+    aliexpress: {
+      apiBaseUrl: "https://api-sg.aliexpress.com",
+      accessToken: "",
+      appKey: "",
+      appSecret: "",
+      testEndpoint: "/",
+      inventoryEndpoint: "",
+      inventoryFieldPath: "data.stock",
+      inventoryMethod: "GET"
+    }
+  });
+  const [shopifyOverview, setShopifyOverview] = useState<ShopifyOverview | null>(null);
+  const [shopifyOrders, setShopifyOrders] = useState<ShopifyOrder[]>([]);
+  const [loadingShopifyInsights, setLoadingShopifyInsights] = useState(false);
+  const [savedReports, setSavedReports] = useState<any[]>([]);
+  const [paymentMethodAnalytics, setPaymentMethodAnalytics] = useState<any>(null);
+  const [expiringCards, setExpiringCards] = useState<any[]>([]);
+  
+  // Modal states - replacing all alerts/prompts
+  const [showScheduledPaymentModal, setShowScheduledPaymentModal] = useState(false);
+  const [scheduledPaymentForm, setScheduledPaymentForm] = useState({ customerId: "", amount: "", currency: "USD", scheduledFor: "" });
+  const [showPaymentPlanTemplateModal, setShowPaymentPlanTemplateModal] = useState(false);
+  const [paymentPlanTemplateForm, setPaymentPlanTemplateForm] = useState({ name: "", numberOfInstallments: "2", intervalDays: "30" });
+  const [showInvoiceTemplateModal, setShowInvoiceTemplateModal] = useState(false);
+  const [invoiceTemplateForm, setInvoiceTemplateForm] = useState({ name: "", htmlTemplate: "" });
+  const [showSegmentModal, setShowSegmentModal] = useState(false);
+  const [segmentForm, setSegmentForm] = useState<SegmentFormState>(createSegmentForm);
+  const [showABTestModal, setShowABTestModal] = useState(false);
+  const [abTestForm, setAbTestForm] = useState<ABTestFormState>(createABTestForm);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportForm, setReportForm] = useState<ReportBuilderFormState>(createReportBuilderForm);
+  const [showForecastModal, setShowForecastModal] = useState(false);
+  const [forecastForm, setForecastForm] = useState({ period: "monthly", startDate: "", endDate: "", scenario: "base" });
+  const [showCustomFieldModal, setShowCustomFieldModal] = useState(false);
+  const [customFieldForm, setCustomFieldForm] = useState({ name: "", label: "", type: "text", options: "" });
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: string }>({ title: "", message: "" });
+  const [showSegmentCustomersModal, setShowSegmentCustomersModal] = useState(false);
+  const [segmentCustomersData, setSegmentCustomersData] = useState<any>(null);
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
+  const [surveyForm, setSurveyForm] = useState({
+    name: "",
+    type: "nps" as "nps" | "csat" | "custom",
+    triggerEvent: "payment_completed",
+    enabled: true,
+    questions: [] as Array<{ type: string; question: string; required: boolean }>
+  });
+  
+  // Confirm modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant?: "danger" | "warning" | "info";
+  }>({ title: "", message: "", onConfirm: () => {}, variant: "info" });
+  
+  // Settings & Deletion state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 640 : false
+  );
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  
+  const [emailRevenueAlerts, setEmailRevenueAlerts] = useState(true);
+  const [emailFailedPayments, setEmailFailedPayments] = useState(false);
+  const [weeklyReports, setWeeklyReports] = useState(true);
+  const [preferencesLoading, setPreferencesLoading] = useState(false);
+
+  // Voice / Phone Numbers (for automated call handling)
+  const [phoneNumbers, setPhoneNumbers] = useState<Array<{ id: string; phoneNumber: string; label?: string | null; type: "voice" | "sms" | "whatsapp" }>>([]);
+  const [newPhoneNumber, setNewPhoneNumber] = useState("");
+  const [newPhoneLabel, setNewPhoneLabel] = useState("");
+  const [newPhoneType, setNewPhoneType] = useState<"voice" | "sms" | "whatsapp">("voice");
+  
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deletionLoading, setDeletionLoading] = useState(false);
+  const [hasPendingDeletion, setHasPendingDeletion] = useState(false);
+  const [deletionScheduledAt, setDeletionScheduledAt] = useState<string | null>(null);
+  
+  const [showIntegrationDeleteModal, setShowIntegrationDeleteModal] = useState(false);
+  const [integrationToDelete, setIntegrationToDelete] = useState<string | null>(null);
+
+  // Notification service config
+  const [notificationProvider, setNotificationProvider] = useState<"email" | "sms" | "whatsapp">("email");
+  const [emailApiKey, setEmailApiKey] = useState("");
+  const [emailFrom, setEmailFrom] = useState("");
+  const [smsAccountSid, setSmsAccountSid] = useState("");
+  const [smsAuthToken, setSmsAuthToken] = useState("");
+  const [smsPhoneNumber, setSmsPhoneNumber] = useState("");
+  const [whatsappAccountSid, setWhatsappAccountSid] = useState("");
+  const [whatsappAuthToken, setWhatsappAuthToken] = useState("");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+
+  const [automationSettings, setAutomationSettings] = useState({
+    remindersEnabled: true,
+    recoveryEnabled: true,
+    aiBotEnabled: true,
+    preferredPaymentGateway: "paystack" as "stripe" | "paystack"
+  });
+  const [availableGateways, setAvailableGateways] = useState<{ stripe: boolean; paystack: boolean }>({ stripe: false, paystack: false });
+  const [automationTemplates, setAutomationTemplates] = useState<any[]>([]);
+  const [isSavingAutomation, setIsSavingAutomation] = useState(false);
+  const [paymentPlans, setPaymentPlans] = useState<any[]>([]);
+  const [showPaymentPlanModal, setShowPaymentPlanModal] = useState(false);
+  const [paymentPlanDetails, setPaymentPlanDetails] = useState<any>(null);
+  const [intelligenceOverview, setIntelligenceOverview] = useState<any>(null);
+  const [intelligenceJobs, setIntelligenceJobs] = useState<any[]>([]);
+  const [intelligenceSection, setIntelligenceSection] = useState<"cashflow" | "customers">("cashflow");
+  const [shops, setShops] = useState<ShopSummary[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
+  const [isCreatingAnotherShop, setIsCreatingAnotherShop] = useState(false);
+  const [deletingShopId, setDeletingShopId] = useState<string | null>(null);
+  const [shopData, setShopData] = useState<ShopData | null>(null);
+  const [shopCapabilities, setShopCapabilities] = useState<ShopCapabilities | null>(null);
+  const [shopSuppliers, setShopSuppliers] = useState<ShopSupplier[]>([]);
+  const [productTemplates, setProductTemplates] = useState<ShopProductTemplate[]>([]);
+  const [shopOrders, setShopOrders] = useState<ShopOrderSummary[]>([]);
+  const [shopCustomers, setShopCustomers] = useState<ShopCustomerSummary[]>([]);
+  const [loadingShopCustomers, setLoadingShopCustomers] = useState(false);
+  const [shopSectionTab, setShopSectionTab] = useState<ShopSectionTab>("shop");
+  const [selectedShopOrder, setSelectedShopOrder] = useState<ShopOrderSummary | null>(null);
+  const [updatingShopOrderStatus, setUpdatingShopOrderStatus] = useState<string | null>(null);
+  const [selectedProductTemplateId, setSelectedProductTemplateId] = useState<string | null>(null);
+  const [categoryTemplates, setCategoryTemplates] = useState<ShopCategoryTemplate[]>([]);
+  const [shopForm, setShopForm] = useState(createEmptyShopForm("other"));
+  const [categoryForm, setCategoryForm] = useState({ name: "", slug: "", description: "", sortOrder: 0 });
+  const [productForm, setProductForm] = useState<ShopProductForm>(createProductFormForShopType("other"));
+  const [uploadingProductImageSlot, setUploadingProductImageSlot] = useState<number | null>(null);
+  const [uploadingProductVideo, setUploadingProductVideo] = useState(false);
+  const [uploadingShopImageField, setUploadingShopImageField] = useState<"logoUrl" | "bannerUrl" | null>(null);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editingProductShopId, setEditingProductShopId] = useState<string | null>(null);
+  const [editingProductSlug, setEditingProductSlug] = useState<string | null>(null);
+  const [supplierForm, setSupplierForm] = useState({
+    name: "",
+    type: "manual" as "manual" | "api" | "csv",
+    provider: "" as "" | "amazon" | "cjdropshipping" | "aliexpress",
+    channel: "whatsapp" as "whatsapp" | "email" | "sms",
+    recipient: "",
+    notes: ""
+  });
+  const [addingCategoryTemplateId, setAddingCategoryTemplateId] = useState<string | null>(null);
+  const [isSeedingCategoryTemplates, setIsSeedingCategoryTemplates] = useState(false);
+  const [loadingOps, setLoadingOps] = useState(false);
+  const [opsControlPlane, setOpsControlPlane] = useState<any>(null);
+  const [opsPaymentHealth, setOpsPaymentHealth] = useState<any>(null);
+  const [opsTraces, setOpsTraces] = useState<any[]>([]);
+  const [opsSlo, setOpsSlo] = useState<any>(null);
+  const [opsDeadLetters, setOpsDeadLetters] = useState<any[]>([]);
+  const [opsAdminState, setOpsAdminState] = useState<any>(null);
+  const [opsWorkflows, setOpsWorkflows] = useState<any[]>([]);
+  const [opsSecrets, setOpsSecrets] = useState<any[]>([]);
+  const [opsBackfills, setOpsBackfills] = useState<any[]>([]);
+  const [opsContracts, setOpsContracts] = useState<any[]>([]);
+  const [opsCertifications, setOpsCertifications] = useState<any[]>([]);
+  const [processingBackfillId, setProcessingBackfillId] = useState<string | null>(null);
+
+  const loadData = async () => {
+    if (!accessToken) return;
+    try {
+      setLoading(true);
+      const [dashboardData, paymentsData, notificationsData, integrationsData, recurringData, webhookUrlsData, automationData, templatesData, paymentPlansData, callAnalyticsData, highRiskData, surveysData, scheduledPaymentsData, templatesData2, webhooksData, customizationData, invoiceTemplatesData, receiptsData, linkAnalyticsData, segmentsData, forecastsData, abTestsData, customFieldsData, whiteLabelData, remindersData, integrationMarketplaceData, reportsData, paymentMethodsData, expiringCardsData] = await Promise.all([
+        apiRequest<DashboardData>("/business/dashboard", { accessToken }),
+        apiRequest<{ payments: Payment[] }>("/business/payments", { accessToken }),
+        apiRequest<{ notifications: Notification[] }>("/business/notifications", { accessToken }),
+        apiRequest<{ integrations: Integration[] }>("/business/integrations", { accessToken }),
+        apiRequest<{ recurringPayments: typeof recurringPayments }>("/business/recurring-payments", { accessToken }).catch(() => ({ recurringPayments: [] })),
+        apiRequest<{ orgId: string; webhooks: { stripe: string; paystack: string }; instructions: { local: string; production: string } }>("/business/webhook-urls", { accessToken }).catch(() => null),
+        apiRequest<{ settings: any; availableGateways?: any }>("/business/automation/settings", { accessToken }).catch(() => ({ settings: { remindersEnabled: true, recoveryEnabled: true, aiBotEnabled: true, preferredPaymentGateway: "paystack" }, availableGateways: { stripe: false, paystack: false } })),
+        apiRequest<{ templates: any[] }>("/business/automation/templates", { accessToken }).catch(() => ({ templates: [] })),
+        apiRequest<{ plans: any[] }>("/business/payment-plans", { accessToken }).catch(() => ({ plans: [] })),
+        apiRequest<{ analytics: any }>("/business/analytics/calls", { accessToken }).catch(() => ({ analytics: null })),
+        apiRequest<{ customers: any[] }>("/business/churn/high-risk", { accessToken }).catch(() => ({ customers: [] })),
+        apiRequest<{ surveys: any[] }>("/business/surveys", { accessToken }).catch(() => ({ surveys: [] })),
+        apiRequest<{ scheduledPayments: any[] }>("/business/scheduled-payments", { accessToken }).catch(() => ({ scheduledPayments: [] })),
+        apiRequest<{ templates: any[] }>("/business/payment-plan-templates", { accessToken }).catch(() => ({ templates: [] })),
+        apiRequest<{ webhooks: any[] }>("/business/webhooks", { accessToken }).catch(() => ({ webhooks: [] })),
+        apiRequest<{ customization: any }>("/business/payment-link/customization", { accessToken }).catch(() => ({ customization: null })),
+        // New 15 features
+        apiRequest<{ templates: any[] }>("/business/invoice-templates", { accessToken }).catch(() => ({ templates: [] })),
+        apiRequest<{ receipts: any[] }>("/business/receipts", { accessToken }).catch(() => ({ receipts: [] })),
+        apiRequest<{ summary: any }>("/business/analytics/payment-links", { accessToken }).catch(() => ({ summary: null })),
+        apiRequest<{ segments: any[] }>("/business/segments", { accessToken }).catch(() => ({ segments: [] })),
+        apiRequest<{ forecasts: any[] }>("/business/forecasts", { accessToken }).catch(() => ({ forecasts: [] })),
+        apiRequest<{ tests: any[] }>("/business/ab-tests", { accessToken }).catch(() => ({ tests: [] })),
+        apiRequest<{ fields: any[] }>("/business/custom-fields", { accessToken }).catch(() => ({ fields: [] })),
+        apiRequest<{ settings: any }>("/business/white-label", { accessToken }).catch(() => ({ settings: null })),
+        apiRequest<{ reminders: any[] }>("/business/reminders", { accessToken }).catch(() => ({ reminders: [] })),
+        apiRequest<{ templates: any[] }>("/business/integrations/marketplace", { accessToken }).catch(() => ({ templates: [] })),
+        apiRequest<{ reports: any[] }>("/business/reports", { accessToken }).catch(() => ({ reports: [] })),
+        apiRequest<{ analytics: any }>("/business/analytics/payment-methods", { accessToken }).catch(() => ({ analytics: null })),
+        apiRequest<{ customers: any[] }>("/business/alerts/expiring-cards", { accessToken }).catch(() => ({ customers: [] }))
+      ]);
+      setDashboard(dashboardData);
+      setPayments(paymentsData.payments);
+      setNotifications(notificationsData.notifications);
+      setIntegrations(integrationsData.integrations);
+      setCallAnalytics(callAnalyticsData.analytics);
+      setHighRiskCustomers(highRiskData.customers);
+      setSurveys(surveysData.surveys);
+      setScheduledPayments(scheduledPaymentsData.scheduledPayments);
+      setPaymentPlanTemplates(templatesData2.templates);
+      setBusinessWebhooks(webhooksData.webhooks);
+      setPaymentLinkCustomization(customizationData.customization);
+      setRecurringPayments(recurringData.recurringPayments || []);
+      if (webhookUrlsData) setWebhookUrls(webhookUrlsData);
+      setAutomationSettings({
+        remindersEnabled: automationData.settings?.remindersEnabled ?? true,
+        recoveryEnabled: automationData.settings?.recoveryEnabled ?? true,
+        aiBotEnabled: automationData.settings?.aiBotEnabled ?? true,
+        preferredPaymentGateway: automationData.settings?.preferredPaymentGateway || "paystack"
+      });
+      if (automationData.availableGateways) {
+        setAvailableGateways(automationData.availableGateways);
+      }
+      setAutomationTemplates(templatesData.templates);
+      setPaymentPlans(paymentPlansData.plans || []);
+      
+      // Set new 15 features data
+      setInvoiceTemplates(invoiceTemplatesData.templates || []);
+      setReceipts(receiptsData.receipts || []);
+      setPaymentLinkAnalytics(linkAnalyticsData.summary || null);
+      setCustomerSegments(segmentsData.segments || []);
+      setRevenueForecasts(forecastsData.forecasts || []);
+      setAbTests(abTestsData.tests || []);
+      setCustomFields(customFieldsData.fields || []);
+      setWhiteLabelSettings(whiteLabelData.settings || null);
+      setWhiteLabelCustomDomainDraft(whiteLabelData.settings?.customDomain || "");
+      setPaymentReminders(remindersData.reminders || []);
+      setIntegrationTemplates(integrationMarketplaceData.templates || []);
+      setSavedReports(reportsData.reports || []);
+      setPaymentMethodAnalytics(paymentMethodsData.analytics || null);
+      setExpiringCards(expiringCardsData.customers || []);
+
+      try {
+        const intelligenceData = await apiRequest<{ overview: any }>("/business/intelligence/overview", { accessToken });
+        setIntelligenceOverview(intelligenceData.overview || null);
+      } catch {
+        setIntelligenceOverview(null);
+      }
+
+      try {
+        const jobsData = await apiRequest<{ jobs: any[] }>("/business/intelligence/jobs", { accessToken });
+        setIntelligenceJobs(jobsData.jobs || []);
+      } catch {
+        setIntelligenceJobs([]);
+      }
+
+      // Load phone numbers separately but in the same pass
+      try {
+        const phoneData = await apiRequest<{ phoneNumbers: Array<{ id: string; phoneNumber: string; label?: string | null; type: "voice" | "sms" | "whatsapp" }> }>(
+          "/business/phone-numbers",
+          { accessToken }
+        );
+        setPhoneNumbers(phoneData.phoneNumbers || []);
+      } catch {
+        // Non-fatal
+      }
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          await loadData();
+        } catch {
+          setStatus(" Session expired. Please refresh the page.");
+        }
+      } else {
+        setStatus("Failed to load dashboard data");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadOpsData = async () => {
+    if (!accessToken) return;
+    try {
+      setLoadingOps(true);
+      const [
+        controlPlaneData,
+        paymentHealthData,
+        tracesData,
+        sloData,
+        deadLettersData,
+        adminStateData,
+        workflowsData,
+        secretsData,
+        backfillsData,
+        contractsData,
+        certificationsData
+      ] = await Promise.all([
+        apiRequest<{ controlPlane: any }>("/business/ops/control-plane", { accessToken }).catch(() => ({ controlPlane: null })),
+        apiRequest<{ health: any }>("/business/ops/payment-lifecycle/health", { accessToken }).catch(() => ({ health: null })),
+        apiRequest<{ traces: any[] }>("/business/ops/observability/traces?limit=20", { accessToken }).catch(() => ({ traces: [] })),
+        apiRequest<{ slo: any }>("/business/ops/observability/slo?windowHours=24", { accessToken }).catch(() => ({ slo: null })),
+        apiRequest<{ deadLetters: any[] }>("/business/ops/reliability/dead-letters", { accessToken }).catch(() => ({ deadLetters: [] })),
+        apiRequest<{ state: any }>("/business/ops/admin/state", { accessToken }).catch(() => ({ state: null })),
+        apiRequest<{ workflows: any[] }>("/business/ops/workflows", { accessToken }).catch(() => ({ workflows: [] })),
+        apiRequest<{ secrets: any[] }>("/business/ops/secrets", { accessToken }).catch(() => ({ secrets: [] })),
+        apiRequest<{ backfills: any[] }>("/business/ops/admin/backfills", { accessToken }).catch(() => ({ backfills: [] })),
+        apiRequest<{ contracts: any[] }>("/business/integrations/contracts", { accessToken }).catch(() => ({ contracts: [] })),
+        apiRequest<{ certifications: any[] }>("/business/integrations/certifications", { accessToken }).catch(() => ({ certifications: [] }))
+      ]);
+      setOpsControlPlane(controlPlaneData.controlPlane || null);
+      setOpsPaymentHealth(paymentHealthData.health || null);
+      setOpsTraces(tracesData.traces || []);
+      setOpsSlo(sloData.slo || null);
+      setOpsDeadLetters(deadLettersData.deadLetters || []);
+      setOpsAdminState(adminStateData.state || null);
+      setOpsWorkflows(workflowsData.workflows || []);
+      setOpsSecrets(secretsData.secrets || []);
+      setOpsBackfills(backfillsData.backfills || []);
+      setOpsContracts(contractsData.contracts || []);
+      setOpsCertifications(certificationsData.certifications || []);
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to load ops data"}`);
+    } finally {
+      setLoadingOps(false);
+    }
+  };
+
+  const loadShopifyInsights = async () => {
+    if (!accessToken) return;
+    try {
+      setLoadingShopifyInsights(true);
+      const [overviewResponse, ordersResponse] = await Promise.all([
+        apiRequest<{ overview: ShopifyOverview }>("/business/integrations/shopify/overview", { accessToken }),
+        apiRequest<{ orders: ShopifyOrder[] }>("/business/integrations/shopify/orders?limit=10", { accessToken })
+      ]);
+      setShopifyOverview(overviewResponse.overview || null);
+      setShopifyOrders(Array.isArray(ordersResponse.orders) ? ordersResponse.orders : []);
+    } catch {
+      setShopifyOverview(null);
+      setShopifyOrders([]);
+    } finally {
+      setLoadingShopifyInsights(false);
+    }
+  };
+
+  const runOpsPaymentReconcile = async () => {
+    if (!accessToken) return;
+    try {
+      const response = await apiRequest<{ result: any }>("/business/ops/payment-lifecycle/reconcile", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { limit: 200, olderThanMinutes: 15 }
+      });
+      setStatus(
+        `? Reconcile complete: scanned ${response.result?.scanned ?? 0}, reconciled ${response.result?.reconciled ?? 0}, failed ${response.result?.failed ?? 0}`
+      );
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to reconcile payment lifecycle"}`);
+    }
+  };
+
+  const toggleIncidentMode = async (enabled: boolean) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest<{ state: any }>("/business/ops/admin/incident-mode", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { enabled }
+      });
+      setStatus(enabled ? "? Incident mode enabled" : "? Incident mode disabled");
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to toggle incident mode"}`);
+    }
+  };
+
+  const updateDeadLetter = async (deadLetterId: string, action: "replayed" | "discarded") => {
+    if (!accessToken) return;
+    try {
+      await apiRequest(`/business/ops/reliability/dead-letters/${deadLetterId}`, {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: { status: action }
+      });
+      setStatus(action === "replayed" ? "? Dead letter marked as replayed" : "? Dead letter discarded");
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to update dead letter"}`);
+    }
+  };
+
+  const enqueueOpsBackfill = async (type: "payment_reconcile" | "webhook_replay") => {
+    if (!accessToken) return;
+    try {
+      await apiRequest("/business/ops/admin/backfills", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { type, payload: { limit: type === "payment_reconcile" ? 200 : 100, olderThanMinutes: 15 } }
+      });
+      setStatus(`? ${type === "payment_reconcile" ? "Payment reconcile" : "Webhook replay"} backfill queued`);
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to enqueue backfill"}`);
+    }
+  };
+
+  const processOpsBackfill = async (backfillId: string) => {
+    if (!accessToken) return;
+    try {
+      setProcessingBackfillId(backfillId);
+      await apiRequest(`/business/ops/admin/backfills/${backfillId}/process`, {
+        method: "POST",
+        accessToken,
+        csrfToken
+      });
+      setStatus("? Backfill processed");
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to process backfill"}`);
+    } finally {
+      setProcessingBackfillId(null);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (activeTab !== "ops" || !accessToken) return;
+    loadOpsData();
+    const interval = setInterval(loadOpsData, 10000);
+    return () => clearInterval(interval);
+  }, [activeTab, accessToken]);
+
+  // Load customers when customer-dependent tabs are active
+  useEffect(() => {
+    const loadCustomers = async () => {
+      if (
+        (activeTab === "notifications" || activeTab === "payments" || activeTab === "customers") &&
+        accessToken
+      ) {
+        setLoadingCustomers(true);
+        try {
+          const response = await apiRequest<{ customers: Array<{ id: string; email: string; phone?: string; firstName?: string; lastName?: string }> }>("/business/customers?limit=1000", { accessToken });
+          setCustomers(response.customers || []);
+        } catch (err) {
+          // Ignore errors, customers list will be empty
+          setCustomers([]);
+        } finally {
+          setLoadingCustomers(false);
+        }
+      }
+    };
+    loadCustomers();
+  }, [activeTab, accessToken]);
+
+  // Update customerId when payment customer is selected
+  useEffect(() => {
+    if (selectedPaymentCustomerId) {
+      setCustomerId(selectedPaymentCustomerId);
+    } else {
+      setCustomerId("");
+    }
+  }, [selectedPaymentCustomerId]);
+
+  // Update recipient when customer or channel changes (only if customer is selected)
+  useEffect(() => {
+    if (selectedCustomerId) {
+      const customer = customers.find(c => c.id === selectedCustomerId);
+      if (customer) {
+        if (channel === "email") {
+          setRecipient(customer.email || "");
+        } else if (channel === "sms" || channel === "whatsapp") {
+          setRecipient(customer.phone || "");
+        }
+      }
+    }
+    // Don't clear recipient if no customer selected (user might have manually entered it)
+  }, [selectedCustomerId, channel, customers]);
+  
+  // Load preferences and deletion status when on settings tab
+  useEffect(() => {
+    if (activeTab === "settings" && accessToken) {
+      loadPreferences();
+      loadDeletionStatus();
+    }
+  }, [activeTab, accessToken]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileViewport(window.innerWidth < 640);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setIsMobileSidebarOpen(false);
+    }
+  }, [isMobileViewport]);
+
+  useEffect(() => {
+    const search = window.location.search || "";
+    if (!search) return;
+    const params = new URLSearchParams(search);
+    const oauthOutcome = String(params.get("shopify_oauth") || "").trim().toLowerCase();
+    if (!oauthOutcome) return;
+    const provider = String(params.get("provider") || "").trim().toLowerCase();
+    if (provider !== "shopify") return;
+
+    const messageFromUrl = String(params.get("message") || "").trim();
+    const fallbackMessage =
+      oauthOutcome === "success"
+        ? "Shopify connected successfully"
+        : "Shopify OAuth connection failed";
+    setStatus(messageFromUrl || fallbackMessage);
+
+    const cleanPath = window.location.pathname || "/business";
+    navigate(cleanPath, { replace: true });
+  }, [navigate]);
+
+  useEffect(() => {
+    if (activeTab !== "integrations" || !accessToken) return;
+    loadShopifyInsights();
+    const interval = setInterval(loadShopifyInsights, 60000);
+    return () => clearInterval(interval);
+  }, [activeTab, accessToken]);
+
+  useEffect(() => {
+    setWhiteLabelCustomDomainDraft(whiteLabelSettings?.customDomain || "");
+  }, [whiteLabelSettings]);
+
+  const submitPayment = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    try {
+      let response: any;
+      
+      // If payment plan, create payment plan instead
+      if (isPaymentPlan && numberOfInstallments > 1) {
+        response = await apiRequest<{
+          planId: string;
+          installments: any[];
+          message?: string;
+          error?: string;
+        }>("/business/payment-plans", {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: {
+            customerId,
+            totalAmount: amount,
+            currency,
+            numberOfInstallments,
+            intervalDays,
+            description: description || undefined
+          }
+        });
+        
+        if (response.planId) {
+          setStatus(` Payment plan created! ${numberOfInstallments} installments of ${currency} ${(amount / numberOfInstallments).toFixed(2)} each. Customer will be notified automatically.`);
+          setAmount(0);
+          setCustomerId("");
+          setSelectedPaymentCustomerId("");
+          setDescription("");
+          setIsPaymentPlan(false);
+          setNumberOfInstallments(2);
+          setIntervalDays(30);
+          await loadData();
+          return;
+        }
+      } else {
+        // Normal payment
+        response = await apiRequest<{
+          status: string;
+          paymentId: string;
+          paymentLink?: string;
+          gatewayProvider?: string;
+          message?: string;
+          error?: string;
+        }>("/business/payments", {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: { amount, currency, customerId, description: description || undefined }
+        });
+      }
+      
+      if (response.paymentLink) {
+        setStatus(` Payment link created! Share this link with your customer: ${response.paymentLink}`);
+        // Copy payment link to clipboard
+        try {
+          await navigator.clipboard.writeText(response.paymentLink);
+          setTimeout(() => {
+            setStatus(` Payment link created and copied to clipboard! Share: ${response.paymentLink}`);
+          }, 100);
+        } catch {
+          // Clipboard copy failed, but payment was created
+        }
+      } else if (response.error) {
+        setStatus(` Payment created but payment link failed: ${response.error}. Please connect Stripe or Paystack in Integrations tab.`);
+      } else {
+        setStatus(" Payment queued successfully");
+      }
+      
+      setAmount(0);
+      setCustomerId("");
+      setSelectedPaymentCustomerId("");
+      setDescription("");
+      await loadData();
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          setStatus(" Token refreshed. Please try again.");
+        } catch {
+          setStatus(" Authentication expired. Please refresh the page.");
+        }
+      } else {
+        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to create payment request"}`);
+      }
+    }
+  };
+
+  const sendNotification = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    try {
+      await apiRequest("/business/notifications", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { channel, recipient, message }
+      });
+      setStatus(" Notification queued successfully");
+      setRecipient("");
+      setMessage("");
+      setSelectedCustomerId("");
+      await loadData();
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          setStatus(" Token refreshed. Please try again.");
+        } catch {
+          setStatus(" Authentication expired. Please refresh the page.");
+        }
+      } else {
+        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to send notification"}`);
+      }
+    }
+  };
+
+  const connectIntegration = async () => {
+    if (!accessToken || !integrationToken) {
+      setStatus(" Integration token is required");
+      return;
+    }
+    try {
+      await apiRequest("/business/integrations", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { provider: integrationProvider, token: integrationToken }
+      });
+      setStatus(` ${integrationProvider.charAt(0).toUpperCase() + integrationProvider.slice(1)} connected successfully`);
+      setIntegrationToken("");
+      await loadData();
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          setStatus(" Token refreshed. Please try again.");
+        } catch {
+          setStatus(" Authentication expired. Please refresh the page.");
+        }
+      } else {
+        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to connect integration"}`);
+      }
+    }
+  };
+
+  const updateMarketplaceConfig = (provider: string, key: string, value: string) => {
+    const providerKey = String(provider || "").trim().toLowerCase();
+    setMarketplaceConfigByProvider((prev) => ({
+      ...prev,
+      [providerKey]: {
+        ...(prev[providerKey] || {}),
+        [key]: value
+      }
+    }));
+  };
+
+  const getMarketplacePayload = (provider: string) => {
+    const providerKey = String(provider || "").trim().toLowerCase();
+    const config = marketplaceConfigByProvider[providerKey] || {};
+    if (providerKey === "shopify") {
+      return {
+        shopDomain: String(config.shopDomain || "").trim(),
+        accessToken: String(config.accessToken || "").trim()
+      };
+    }
+    if (providerKey === "woocommerce") {
+      return {
+        storeUrl: String(config.storeUrl || "").trim(),
+        consumerKey: String(config.consumerKey || "").trim(),
+        consumerSecret: String(config.consumerSecret || "").trim()
+      };
+    }
+    if (providerKey === "zapier") {
+      return {
+        webhookUrl: String(config.webhookUrl || "").trim()
+      };
+    }
+    if (providerKey === "amazon") {
+      return {
+        sellerId: String(config.sellerId || "").trim(),
+        marketplaceId: String(config.marketplaceId || "").trim(),
+        lwaClientId: String(config.lwaClientId || "").trim(),
+        lwaClientSecret: String(config.lwaClientSecret || "").trim(),
+        refreshToken: String(config.refreshToken || "").trim(),
+        awsAccessKeyId: String(config.awsAccessKeyId || "").trim(),
+        awsSecretAccessKey: String(config.awsSecretAccessKey || "").trim(),
+        endpointRegion: String(config.endpointRegion || "na").trim(),
+        signingRegion: String(config.signingRegion || "").trim(),
+        inventoryEndpoint: String(config.inventoryEndpoint || "").trim(),
+        inventoryFieldPath: String(config.inventoryFieldPath || "data.stock").trim(),
+        inventoryMethod: String(config.inventoryMethod || "GET").trim()
+      };
+    }
+    if (providerKey === "cjdropshipping" || providerKey === "aliexpress") {
+      return {
+        apiBaseUrl: String(config.apiBaseUrl || "").trim(),
+        accessToken: String(config.accessToken || "").trim(),
+        appKey: String(config.appKey || "").trim(),
+        appSecret: String(config.appSecret || "").trim(),
+        testEndpoint: String(config.testEndpoint || "/").trim(),
+        inventoryEndpoint: String(config.inventoryEndpoint || "").trim(),
+        inventoryFieldPath: String(config.inventoryFieldPath || "data.stock").trim(),
+        inventoryMethod: String(config.inventoryMethod || "GET").trim()
+      };
+    }
+    return {};
+  };
+
+  const getMarketplacePayloadError = (
+    provider: string,
+    payload: Record<string, string | undefined>
+  ) => {
+    const providerKey = String(provider || "").trim().toLowerCase();
+    if (providerKey === "shopify") {
+      if (!payload.shopDomain) return "Shopify domain is required";
+      return null;
+    }
+    if (providerKey === "woocommerce") {
+      if (!payload.storeUrl) return "WooCommerce store URL is required";
+      if (!payload.consumerKey) return "WooCommerce consumer key is required";
+      if (!payload.consumerSecret) return "WooCommerce consumer secret is required";
+      return null;
+    }
+    if (providerKey === "zapier") {
+      if (!payload.webhookUrl) return "Zapier webhook URL is required";
+      return null;
+    }
+    if (providerKey === "amazon") {
+      if (!payload.sellerId) return "Amazon seller ID is required";
+      if (!payload.marketplaceId) return "Amazon marketplace ID is required";
+      if (!payload.lwaClientId) return "Amazon LWA client ID is required";
+      if (!payload.lwaClientSecret) return "Amazon LWA client secret is required";
+      if (!payload.refreshToken) return "Amazon refresh token is required";
+      if (!payload.awsAccessKeyId) return "AWS access key ID is required";
+      if (!payload.awsSecretAccessKey) return "AWS secret access key is required";
+      return null;
+    }
+    if (providerKey === "cjdropshipping") {
+      if (!payload.apiBaseUrl) return "CJ API base URL is required";
+      if (!payload.accessToken) return "CJ access token is required";
+      return null;
+    }
+    if (providerKey === "aliexpress") {
+      if (!payload.apiBaseUrl) return "AliExpress API base URL is required";
+      if (!payload.accessToken) return "AliExpress access token is required";
+      return null;
+    }
+    return "Unsupported integration provider";
+  };
+
+  const setupMarketplaceIntegration = async (template: any) => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    const provider = String(template?.provider || "").trim().toLowerCase();
+    const name = String(template?.name || provider || "integration");
+    if (!provider) {
+      setStatus("Invalid integration provider");
+      return;
+    }
+
+    const payload = getMarketplacePayload(provider);
+    const payloadError = getMarketplacePayloadError(provider, payload);
+    if (payloadError) {
+      setStatus(payloadError);
+      return;
+    }
+
+    try {
+      setSettingUpMarketplaceProvider(provider);
+      if (provider === "shopify" && !payload.accessToken) {
+        const startResponse = await apiRequest<{ authUrl?: string }>("/business/integrations/shopify/oauth/start", {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: { shopDomain: payload.shopDomain }
+        });
+        const authUrl = String(startResponse?.authUrl || "").trim();
+        if (!authUrl) {
+          throw new Error("Failed to start Shopify OAuth");
+        }
+        window.location.assign(authUrl);
+        return;
+      }
+
+      const response = await apiRequest<{ integration?: any }>(`/business/integrations/${provider}/setup`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: payload
+      });
+      const result = response?.integration || null;
+      const normalizedStatus = String(result?.status || "").toLowerCase();
+      if (normalizedStatus === "connected") {
+        setStatus(`${name} connected successfully`);
+      } else if (normalizedStatus === "requested") {
+        setStatus(`${name} setup request submitted`);
+      } else if (normalizedStatus === "failed") {
+        setStatus(`${name} setup failed`);
+      } else {
+        setStatus(`${name} setup completed`);
+      }
+      if (
+        provider === "shopify" ||
+        provider === "woocommerce" ||
+        provider === "amazon" ||
+        provider === "cjdropshipping" ||
+        provider === "aliexpress"
+      ) {
+        setMarketplaceConfigByProvider((prev) => {
+          const current = prev[provider] || {};
+          const next = { ...prev };
+          if (provider === "shopify") {
+            next[provider] = { ...current, accessToken: "" };
+          } else if (provider === "woocommerce") {
+            next[provider] = { ...current, consumerSecret: "" };
+          } else if (provider === "amazon") {
+            next[provider] = {
+              ...current,
+              lwaClientSecret: "",
+              refreshToken: "",
+              awsSecretAccessKey: ""
+            };
+          } else {
+            next[provider] = {
+              ...current,
+              accessToken: "",
+              appSecret: ""
+            };
+          }
+          return next;
+        });
+      }
+      await loadData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to setup integration");
+    } finally {
+      setSettingUpMarketplaceProvider(null);
+    }
+  };
+
+  const syncMarketplaceInventory = async (template: any, dryRun = false) => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    const provider = String(template?.provider || "").trim().toLowerCase();
+    if (!["amazon", "cjdropshipping", "aliexpress"].includes(provider)) {
+      setStatus("This provider does not support supplier inventory sync");
+      return;
+    }
+    try {
+      setSyncingMarketplaceProvider(provider);
+      const result = await apiRequest<{ summary?: any }>(`/business/integrations/${provider}/inventory-sync`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          dryRun,
+          shopId: selectedShopId || undefined
+        }
+      });
+      const summary = result?.summary || {};
+      setStatus(
+        `${template?.name || provider}: synced ${summary.updated || 0} updated, ${summary.unchanged || 0} unchanged, ${summary.failed || 0} failed`
+      );
+      await loadData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to sync supplier inventory");
+    } finally {
+      setSyncingMarketplaceProvider(null);
+    }
+  };
+
+  const clearMarketplaceSetupRequest = async (template: any) => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    const provider = String(template?.provider || "").trim().toLowerCase();
+    const name = String(template?.name || provider || "integration");
+    if (!provider) {
+      setStatus("Invalid integration provider");
+      return;
+    }
+    try {
+      setClearingMarketplaceProvider(provider);
+      await apiRequest(`/business/integrations/${provider}/setup-request`, {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setStatus(`${name} setup request cleared`);
+      await loadData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to clear setup request");
+    } finally {
+      setClearingMarketplaceProvider(null);
+    }
+  };
+
+  const deleteIntegration = async (provider: string) => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    
+    // Use modal instead of confirm
+    setIntegrationToDelete(provider);
+    setShowIntegrationDeleteModal(true);
+  };
+  
+  const confirmDeleteIntegration = async () => {
+    if (!accessToken || !integrationToDelete) return;
+    
+    try {
+      await apiRequest(`/business/integrations/${integrationToDelete}`, {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setStatus(` ${integrationToDelete.charAt(0).toUpperCase() + integrationToDelete.slice(1)} integration deleted`);
+      setShowIntegrationDeleteModal(false);
+      setIntegrationToDelete(null);
+      await loadData();
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          setStatus(" Token refreshed. Please try again.");
+        } catch {
+          setStatus(" Authentication expired. Please refresh the page.");
+        }
+      } else {
+        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to delete integration"}`);
+      }
+      setShowIntegrationDeleteModal(false);
+    }
+  };
+  
+  // Update Password
+  const handleUpdatePassword = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      setStatus(" New passwords do not match");
+      return;
+    }
+    
+    if (newPassword.length < 12) {
+      setStatus(" New password must be at least 12 characters");
+      return;
+    }
+    
+    setPasswordLoading(true);
+    try {
+      await apiRequest("/auth/change-password", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { currentPassword, newPassword, confirmPassword }
+      });
+      setStatus(" Password updated successfully. Please log in again.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      // Log out after password change
+      setTimeout(() => {
+        logout();
+        navigate("/login");
+      }, 2000);
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to update password"}`);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+  
+  // Load and Save Preferences
+  const loadPreferences = async () => {
+    if (!accessToken) return;
+    try {
+      const prefs = await apiRequest<{
+        emailRevenueAlerts: boolean;
+        emailFailedPayments: boolean;
+        weeklyReports: boolean;
+      }>("/auth/preferences", { accessToken });
+      setEmailRevenueAlerts(prefs.emailRevenueAlerts);
+      setEmailFailedPayments(prefs.emailFailedPayments);
+      setWeeklyReports(prefs.weeklyReports);
+    } catch (err) {
+      // Use defaults if can't load
+    }
+  };
+  
+  const handleSavePreferences = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    
+    setPreferencesLoading(true);
+    try {
+      await apiRequest("/auth/preferences", {
+        method: "PUT",
+        accessToken,
+        csrfToken,
+        body: { emailRevenueAlerts, emailFailedPayments, weeklyReports }
+      });
+      setStatus(" Preferences saved successfully");
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save preferences"}`);
+    } finally {
+      setPreferencesLoading(false);
+    }
+  };
+  
+  // Account Deletion
+  const loadDeletionStatus = async () => {
+    if (!accessToken) return;
+    try {
+      const status = await apiRequest<{
+        hasPendingRequest: boolean;
+        scheduledAt?: string;
+      }>("/auth/deletion-status", { accessToken });
+      setHasPendingDeletion(status.hasPendingRequest);
+      setDeletionScheduledAt(status.scheduledAt || null);
+    } catch (err) {
+      // Ignore
+    }
+  };
+  
+  const handleRequestDeletion = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    
+    setDeletionLoading(true);
+    try {
+      const result = await apiRequest<{ scheduledAt: string }>("/auth/request-deletion", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { reason: deleteReason }
+      });
+      setStatus(" Account deletion request submitted");
+      setShowDeleteConfirmModal(false);
+      setShowDeleteModal(false);
+      setHasPendingDeletion(true);
+      setDeletionScheduledAt(result.scheduledAt);
+      setDeleteReason("");
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to submit deletion request"}`);
+    } finally {
+      setDeletionLoading(false);
+    }
+  };
+  
+  const handleCancelDeletion = async () => {
+    if (!accessToken) return;
+    
+    try {
+      await apiRequest("/auth/request-deletion", {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setStatus(" Account deletion request cancelled");
+      setHasPendingDeletion(false);
+      setDeletionScheduledAt(null);
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to cancel deletion"}`);
+    }
+  };
+
+  const saveNotificationSettings = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    try {
+      let token = "";
+      let config: Record<string, any> = {};
+
+      if (notificationProvider === "email") {
+        if (!emailApiKey) {
+          setStatus(" SendGrid API key is required");
+          return;
+        }
+        token = emailApiKey;
+        if (emailFrom) config.email = emailFrom;
+      } else if (notificationProvider === "sms") {
+        if (!smsAccountSid || !smsAuthToken || !smsPhoneNumber) {
+          setStatus(" Twilio Account SID, Auth Token, and Phone Number are required");
+          return;
+        }
+        token = smsAccountSid;
+        config.authToken = smsAuthToken;
+        config.phoneNumber = smsPhoneNumber;
+      } else if (notificationProvider === "whatsapp") {
+        if (!whatsappAccountSid || !whatsappAuthToken || !whatsappNumber) {
+          setStatus(" Twilio Account SID, Auth Token, and WhatsApp Number are required");
+          return;
+        }
+        token = whatsappAccountSid;
+        config.authToken = whatsappAuthToken;
+        config.whatsappNumber = whatsappNumber;
+      }
+
+      await apiRequest("/business/integrations", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { provider: notificationProvider, token, config }
+      });
+      setStatus(` ${notificationProvider.charAt(0).toUpperCase() + notificationProvider.slice(1)} settings saved successfully`);
+      
+      // Clear form
+      setEmailApiKey("");
+      setEmailFrom("");
+      setSmsAccountSid("");
+      setSmsAuthToken("");
+      setSmsPhoneNumber("");
+      setWhatsappAccountSid("");
+      setWhatsappAuthToken("");
+      setWhatsappNumber("");
+      
+      await loadData();
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        try {
+          await refresh();
+          setStatus(" Token refreshed. Please try again.");
+        } catch {
+          setStatus(" Authentication expired. Please refresh the page.");
+        }
+      } else {
+        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to save settings"}`);
+      }
+    }
+  };
+
+    const handleDeletePayment = async (id: string) => {
+        setConfirmModalData({
+          title: "Delete Payment",
+          message: "Are you sure you want to delete this payment record? This will not cancel the payment on the gateway.",
+          variant: "danger",
+          onConfirm: async () => {
+            setShowConfirmModal(false);
+            try {
+              await apiRequest(`/business/payments/${id}`, {
+                method: "DELETE",
+                accessToken,
+                csrfToken
+              });
+              setPayments(prev => prev.filter(p => p.id !== id));
+              setStatus(" Payment deleted");
+              await loadData();
+            } catch (err: any) {
+              setStatus(` ${err?.response?.data?.error || err?.message || "Failed to delete payment"}`);
+            }
+          }
+        });
+        setShowConfirmModal(true);
+    };
+
+
+
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      completed: "badge-success",
+      sent: "badge-success",
+      delivered: "badge-success",
+      read: "badge-success",
+      processing: "badge-warning",
+      queued: "badge",
+      failed: "badge-danger"
+    };
+    return badges[status] || "badge";
+  };
+
+  type StatusModalTone = "success" | "error" | "warning" | "info";
+
+  const getSanitizedStatusText = (messageText: string | null) => {
+    if (!messageText) return "";
+    return messageText.replace(/^[^a-zA-Z0-9]+/, "").trim();
+  };
+
+  const getStatusModalTone = (messageText: string | null): StatusModalTone => {
+    const normalized = getSanitizedStatusText(messageText).toLowerCase();
+    if (!normalized) return "info";
+    if (
+      normalized.includes("error") ||
+      normalized.includes("failed") ||
+      normalized.includes("invalid") ||
+      normalized.includes("not authenticated") ||
+      normalized.includes("expired")
+    ) {
+      return "error";
+    }
+    if (
+      normalized.includes("warning") ||
+      normalized.includes("retry") ||
+      normalized.includes("queued")
+    ) {
+      return "warning";
+    }
+    if (
+      normalized.includes("success") ||
+      normalized.includes("created") ||
+      normalized.includes("updated") ||
+      normalized.includes("saved") ||
+      normalized.includes("deleted") ||
+      normalized.includes("connected") ||
+      normalized.includes("copied") ||
+      normalized.includes("added") ||
+      normalized.includes("processed")
+    ) {
+      return "success";
+    }
+    return "info";
+  };
+
+  const getStatusModalTitle = (messageText: string | null) => {
+    const tone = getStatusModalTone(messageText);
+    if (tone === "error") return "Error";
+    if (tone === "warning") return "Warning";
+    if (tone === "success") return "Success";
+    return "Notification";
+  };
+
+  const getStatusModalTextClass = (messageText: string | null) => {
+    const tone = getStatusModalTone(messageText);
+    if (tone === "error") return "text-red-700";
+    if (tone === "warning") return "text-amber-700";
+    if (tone === "success") return "text-green-700";
+    return "text-gray-700";
+  };
+
+  const getStatusModalIcon = (messageText: string | null) => {
+    const tone = getStatusModalTone(messageText);
+    if (tone === "error") return <FiXCircle className="w-5 h-5 text-red-600" />;
+    if (tone === "warning") return <FiAlertCircle className="w-5 h-5 text-amber-600" />;
+    if (tone === "success") return <FiCheckCircle className="w-5 h-5 text-green-600" />;
+    return <FiInfo className="w-5 h-5 text-blue-600" />;
+  };
+
+  const parseCommaSeparated = (input: string) =>
+    input
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const normalizeSegmentRuleValue = (rule: SegmentRuleFormRow) => {
+    if (rule.operator === "in" || rule.operator === "not_in") {
+      return parseCommaSeparated(rule.value);
+    }
+    if (rule.operator === "greater_than" || rule.operator === "less_than") {
+      const numeric = Number(rule.value);
+      return Number.isFinite(numeric) ? numeric : rule.value;
+    }
+    return rule.value;
+  };
+
+  const handleCreateSegment = async () => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    if (!segmentForm.name.trim()) {
+      setStatus("Segment name is required");
+      return;
+    }
+    const cleanRules = segmentForm.rules
+      .map((rule) => ({
+        field: rule.field.trim(),
+        operator: rule.operator,
+        value: normalizeSegmentRuleValue(rule)
+      }))
+      .filter((rule) => rule.field && (Array.isArray(rule.value) ? rule.value.length > 0 : String(rule.value).trim().length > 0));
+
+    if (cleanRules.length === 0) {
+      setStatus("Add at least one valid segment rule");
+      return;
+    }
+
+    try {
+      const response = await apiRequest<{ segment: any }>("/business/segments", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          name: segmentForm.name.trim(),
+          description: segmentForm.description.trim() || undefined,
+          rules: cleanRules
+        }
+      });
+      setCustomerSegments((prev) => [response.segment, ...prev.filter((item) => item.id !== response.segment.id)]);
+      setShowSegmentModal(false);
+      setSegmentForm(createSegmentForm());
+      setStatus("Segment created");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to create segment");
+    }
+  };
+
+  const createAdditionalABVariant = () => {
+    setAbTestForm((prev) => ({
+      ...prev,
+      variants: [...prev.variants, createABVariantRow(prev.variants.length)]
+    }));
+  };
+
+  const removeABVariant = (variantId: string) => {
+    setAbTestForm((prev) => {
+      const nextVariants = prev.variants.filter((variant) => variant.id !== variantId);
+      if (nextVariants.length >= 2) {
+        return { ...prev, variants: nextVariants };
+      }
+      return prev;
+    });
+  };
+
+  const updateABVariant = (variantId: string, updates: Partial<ABVariantFormRow>) => {
+    setAbTestForm((prev) => ({
+      ...prev,
+      variants: prev.variants.map((variant) =>
+        variant.id === variantId ? { ...variant, ...updates } : variant
+      )
+    }));
+  };
+
+  const normalizeABSplitRatio = (variants: ABVariantFormRow[]) => {
+    const total = variants.reduce((sum, variant) => sum + Math.max(0, Number(variant.split) || 0), 0);
+    if (total <= 0) {
+      const equal = Number((100 / variants.length).toFixed(2));
+      return variants.reduce<Record<string, number>>((acc, variant) => {
+        acc[variant.name.trim()] = equal;
+        return acc;
+      }, {});
+    }
+    return variants.reduce<Record<string, number>>((acc, variant) => {
+      const ratio = ((Math.max(0, Number(variant.split) || 0) / total) * 100);
+      acc[variant.name.trim()] = Number(ratio.toFixed(2));
+      return acc;
+    }, {});
+  };
+
+  const handleCreateABTest = async () => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    if (!abTestForm.name.trim()) {
+      setStatus("Test name is required");
+      return;
+    }
+    if (abTestForm.variants.length < 2) {
+      setStatus("At least two variants are required");
+      return;
+    }
+
+    const preparedVariants = abTestForm.variants.map((variant) => ({
+      name: variant.name.trim(),
+      channel: variant.channel,
+      subject: variant.subject.trim() || undefined,
+      message: variant.message.trim()
+    }));
+
+    if (preparedVariants.some((variant) => !variant.name || !variant.message)) {
+      setStatus("Each variant needs a name and message");
+      return;
+    }
+
+    const duplicateName = new Set(preparedVariants.map((variant) => variant.name)).size !== preparedVariants.length;
+    if (duplicateName) {
+      setStatus("Variant names must be unique");
+      return;
+    }
+
+    try {
+      const splitRatio = normalizeABSplitRatio(abTestForm.variants);
+      const created = await apiRequest<{ test: any }>("/business/ab-tests", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          name: abTestForm.name.trim(),
+          description: abTestForm.description.trim() || undefined,
+          variants: preparedVariants,
+          splitRatio
+        }
+      });
+
+      if (abTestForm.autoStart && created.test?.id) {
+        await apiRequest(`/business/ab-tests/${created.test.id}/start`, {
+          method: "POST",
+          accessToken,
+          csrfToken
+        });
+      }
+
+      await loadData();
+      setShowABTestModal(false);
+      setAbTestForm(createABTestForm());
+      setStatus(abTestForm.autoStart ? "A/B test created and started" : "A/B test created");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to create A/B test");
+    }
+  };
+
+  const handleStartABTest = async (testId: string) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest(`/business/ab-tests/${testId}/start`, {
+        method: "POST",
+        accessToken,
+        csrfToken
+      });
+      await loadData();
+      setStatus("A/B test started");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to start A/B test");
+    }
+  };
+
+  const handleEndABTest = async (testId: string) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest(`/business/ab-tests/${testId}/end`, {
+        method: "POST",
+        accessToken,
+        csrfToken
+      });
+      await loadData();
+      setStatus("A/B test completed");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to end A/B test");
+    }
+  };
+
+  const createBlobDownload = (contents: string, filename: string, contentType: string) => {
+    const blob = new Blob([contents], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const openGeneratedReport = (result: string, reportName: string, format: "pdf" | "csv") => {
+    if (!result) {
+      setStatus("Report generated with no output");
+      return;
+    }
+    if (result.startsWith("http://") || result.startsWith("https://") || result.startsWith("data:")) {
+      window.open(result, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (result.trim().startsWith("<!DOCTYPE html") || result.trim().startsWith("<html")) {
+      const popup = window.open("", "_blank");
+      if (popup) {
+        popup.document.open();
+        popup.document.write(result);
+        popup.document.close();
+      } else {
+        createBlobDownload(result, `${reportName}.html`, "text/html;charset=utf-8");
+      }
+      return;
+    }
+    if (format === "csv") {
+      createBlobDownload(result, `${reportName}.csv`, "text/csv;charset=utf-8");
+      return;
+    }
+    createBlobDownload(result, `${reportName}.txt`, "text/plain;charset=utf-8");
+  };
+
+  const handleCreateReport = async () => {
+    if (!accessToken) {
+      setStatus("Not authenticated");
+      return;
+    }
+    if (!reportForm.name.trim()) {
+      setStatus("Report name is required");
+      return;
+    }
+    if (!reportForm.startDate || !reportForm.endDate) {
+      setStatus("Start and end dates are required");
+      return;
+    }
+
+    let parsedFilters: Record<string, any> = {};
+    if (reportForm.filtersInput.trim()) {
+      try {
+        parsedFilters = JSON.parse(reportForm.filtersInput);
+      } catch {
+        setStatus("Filters must be valid JSON");
+        return;
+      }
+    }
+
+    const metrics = parseCommaSeparated(reportForm.metricsInput);
+    const groupBy = parseCommaSeparated(reportForm.groupByInput);
+    const recipients = parseCommaSeparated(reportForm.recipientsInput);
+
+    if (reportForm.scheduleEnabled && recipients.length === 0) {
+      setStatus("Add at least one recipient for scheduled reports");
+      return;
+    }
+
+    try {
+      const response = await apiRequest<{ report: any }>("/business/reports", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          name: reportForm.name.trim(),
+          description: reportForm.description.trim() || undefined,
+          config: {
+            type: reportForm.type,
+            dateRange: {
+              start: new Date(reportForm.startDate).toISOString(),
+              end: new Date(reportForm.endDate).toISOString()
+            },
+            ...(Object.keys(parsedFilters).length > 0 ? { filters: parsedFilters } : {}),
+            ...(metrics.length > 0 ? { metrics } : {}),
+            ...(groupBy.length > 0 ? { groupBy } : {})
+          },
+          ...(reportForm.scheduleEnabled
+            ? {
+                schedule: {
+                  frequency: reportForm.scheduleFrequency,
+                  day: Number(reportForm.scheduleDay || 0),
+                  time: reportForm.scheduleTime || "09:00",
+                  recipients
+                }
+              }
+            : {})
+        }
+      });
+
+      setSavedReports((prev) => [response.report, ...prev.filter((item) => item.id !== response.report.id)]);
+      setShowReportModal(false);
+      setReportForm(createReportBuilderForm());
+      setStatus("Report saved");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to create report");
+    }
+  };
+
+  const handleGenerateReport = async (reportId: string, reportName: string, format: "pdf" | "csv" = "pdf") => {
+    if (!accessToken) return;
+    try {
+      const result = await apiRequest<{ result: string }>(`/business/reports/${reportId}/generate?format=${format}`, {
+        method: "POST",
+        accessToken,
+        csrfToken
+      });
+      openGeneratedReport(result.result, reportName.replace(/\s+/g, "_"), format);
+      setStatus(`Report generated (${format.toUpperCase()})`);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to generate report");
+    }
+  };
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency
+    }).format(amount);
+  };
+
+  const getShopOrderBadgeClass = (status: string) => {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "delivered" || normalized === "paid" || normalized === "completed") {
+      return "badge-success";
+    }
+    if (normalized === "failed" || normalized === "cancelled") {
+      return "badge-danger";
+    }
+    if (normalized === "in_transit" || normalized === "supplier_sent") {
+      return "badge-info";
+    }
+    return "badge-warning";
+  };
+
+  const parseOptionInput = (value: string) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const currentShopTypeRules = getShopTypeRules(shopForm.businessType);
+  const selectedProductTemplate =
+    productTemplates.find((template) => template?.id === selectedProductTemplateId) || null;
+  const getTemplateRules = (template?: ShopProductTemplate | null) => ({
+    ...currentShopTypeRules,
+    showSize: template?.showSize ?? currentShopTypeRules.showSize,
+    showLength: template?.showLength ?? currentShopTypeRules.showLength,
+    showTexture: template?.showTexture ?? currentShopTypeRules.showTexture
+  });
+  const activeProductRules = getTemplateRules(selectedProductTemplate);
+  const canUseDropshipForShop = Boolean(shopCapabilities?.canDropship);
+  const useDropshipForProduct = canUseDropshipForShop && productForm.fulfillmentType === "dropship";
+  const selectedSupplier =
+    shopSuppliers.find((supplier) => supplier.id === productForm.supplierId) || null;
+  const isProductFormReady =
+    productForm.name.trim().length > 0 &&
+    productForm.currency.trim().length === 3 &&
+    Number.isFinite(productForm.price) &&
+    productForm.price >= 0 &&
+    Number.isFinite(productForm.inventory) &&
+    productForm.inventory >= 0;
+  const categoryTemplateSlugSet = new Set(
+    categoryTemplates
+      .map((template) => String(template?.slug || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const visibleShopCategories = (shopData?.categories || []).filter((category) => {
+    if (!category?.slug) return false;
+    if (categoryTemplateSlugSet.size === 0) return false;
+    return categoryTemplateSlugSet.has(category.slug.trim().toLowerCase());
+  });
+  const connectedIntegrationProviders = useMemo(
+    () => new Set((integrations || []).map((entry) => String(entry?.provider || "").trim().toLowerCase()).filter(Boolean)),
+    [integrations]
+  );
+  const marketplaceTemplatesForDisplay = useMemo(() => {
+    const byProvider = new Map<string, any>();
+    for (const template of integrationTemplates || []) {
+      const provider = String(template?.provider || "").trim().toLowerCase();
+      if (!provider) continue;
+      const normalized = { ...template, provider };
+      const existing = byProvider.get(provider);
+      if (!existing) {
+        byProvider.set(provider, normalized);
+        continue;
+      }
+      byProvider.set(provider, {
+        ...existing,
+        ...normalized,
+        name: existing?.name || normalized?.name || provider,
+        description: existing?.description || normalized?.description || "",
+        requested: Boolean(existing?.requested || normalized?.requested)
+      });
+    }
+    return Array.from(byProvider.values()).sort((a, b) =>
+      String(a?.name || "").localeCompare(String(b?.name || ""))
+    );
+  }, [integrationTemplates]);
+  const isShopifyMarketplaceConnected = useMemo(
+    () =>
+      marketplaceTemplatesForDisplay.some((template) => {
+        const provider = String(template?.provider || "").trim().toLowerCase();
+        if (provider !== "shopify") return false;
+        const status = String(template?.status || "").trim().toLowerCase();
+        return status === "connected" || Boolean(template?.connected);
+      }),
+    [marketplaceTemplatesForDisplay]
+  );
+  const hasCategoryFromTemplate = (template: ShopCategoryTemplate) => {
+    if (!shopData) return false;
+    const targetSlug = template.slug.trim().toLowerCase();
+    const targetName = template.name.trim().toLowerCase();
+    return shopData.categories.some(
+      (category) =>
+        category.slug.trim().toLowerCase() === targetSlug ||
+        category.name.trim().toLowerCase() === targetName
+    );
+  };
+
+  const readImageFileAsDataUrl = async (file: File): Promise<string> => {
+    const fileDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(String(event.target?.result || ""));
+      reader.onerror = () => reject(new Error("Failed to read image file"));
+      reader.readAsDataURL(file);
+    });
+
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Failed to decode image"));
+      img.src = fileDataUrl;
+    });
+
+    const maxDimension = 1200;
+    const ratio = Math.min(1, maxDimension / Math.max(image.width, image.height));
+    const targetWidth = Math.max(1, Math.round(image.width * ratio));
+    const targetHeight = Math.max(1, Math.round(image.height * ratio));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fileDataUrl;
+
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  };
+
+  const setProductImageAt = (slot: number, imageUrl: string) => {
+    setProductForm((prev) => {
+      const next = [...prev.imageUrls];
+      next[slot] = imageUrl;
+      return { ...prev, imageUrls: next };
+    });
+  };
+
+  const readFileAsDataUrl = async (file: File): Promise<string> =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(String(event.target?.result || ""));
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+
+  const handleProductImageUpload = async (slot: number, file?: File) => {
+    if (!file) return;
+    try {
+      setUploadingProductImageSlot(slot);
+      const dataUrl = await readImageFileAsDataUrl(file);
+      setProductImageAt(slot, dataUrl);
+      setStatus("? Product image uploaded");
+    } catch (err: any) {
+      setStatus(`? ${err?.message || "Failed to upload image"}`);
+    } finally {
+      setUploadingProductImageSlot(null);
+    }
+  };
+
+  const handleProductVideoUpload = async (file?: File) => {
+    if (!file) return;
+    if (!String(file.type || "").startsWith("video/")) {
+      setStatus("? Please select a valid video file");
+      return;
+    }
+    const maxBytes = 20 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setStatus("? Video file is too large. Maximum allowed size is 20MB.");
+      return;
+    }
+    try {
+      setUploadingProductVideo(true);
+      const dataUrl = await readFileAsDataUrl(file);
+      setProductForm((prev) => ({ ...prev, videoUrl: dataUrl }));
+      setStatus("? Product video uploaded");
+    } catch (err: any) {
+      setStatus(`? ${err?.message || "Failed to upload video"}`);
+    } finally {
+      setUploadingProductVideo(false);
+    }
+  };
+
+  const handleShopImageUpload = async (field: "logoUrl" | "bannerUrl", file?: File) => {
+    if (!file) return;
+    try {
+      setUploadingShopImageField(field);
+      const dataUrl = await readImageFileAsDataUrl(file);
+      setShopForm((prev) => ({ ...prev, [field]: dataUrl }));
+      setStatus(field === "logoUrl" ? "? Shop profile image uploaded" : "? Shop hero image uploaded");
+    } catch (err: any) {
+      setStatus(`? ${err?.message || "Failed to upload shop image"}`);
+    } finally {
+      setUploadingShopImageField(null);
+    }
+  };
+
+  const saveVoicePhoneNumber = async () => {
+    if (!accessToken) {
+      setStatus("? Not authenticated");
+      return;
+    }
+    if (!newPhoneNumber.trim()) {
+      setStatus("? Enter a phone number");
+      return;
+    }
+    try {
+      const created = await apiRequest<{
+        id: string;
+        phoneNumber: string;
+        label?: string | null;
+        type: "voice" | "sms" | "whatsapp";
+      }>("/business/phone-numbers", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          phoneNumber: newPhoneNumber.trim(),
+          label: newPhoneLabel.trim() || undefined,
+          type: newPhoneType
+        }
+      });
+      setPhoneNumbers((prev) => [
+        {
+          id: created.id,
+          phoneNumber: created.phoneNumber,
+          label: created.label,
+          type: created.type
+        },
+        ...prev
+      ]);
+      setNewPhoneNumber("");
+      setNewPhoneLabel("");
+      setNewPhoneType("voice");
+      setStatus("? Phone number added for voice automation");
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to add phone number"}`);
+    }
+  };
+
+  const removeVoicePhoneNumber = async (phoneNumberId: string) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest(`/business/phone-numbers/${phoneNumberId}`, {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setPhoneNumbers((prev) => prev.filter((x) => x.id !== phoneNumberId));
+      setStatus("? Phone number removed");
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to delete phone number"}`);
+    }
+  };
+
+  const buildProductPayload = () => {
+    const imageUrls = productForm.imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 4);
+    const rules = activeProductRules;
+    const sizeOptions = parseOptionInput(productForm.sizeOptionsInput);
+    const textureOptions = parseOptionInput(productForm.textureOptionsInput);
+    const lengthOptions = parseOptionInput(productForm.lengthOptionsInput);
+    const supplierId = useDropshipForProduct ? productForm.supplierId.trim() : "";
+    const supplier = supplierId
+      ? shopSuppliers.find((entry) => entry.id === supplierId) || null
+      : null;
+    const supplierSku = useDropshipForProduct ? productForm.supplierSku.trim() : "";
+    const costPriceValue =
+      useDropshipForProduct && Number.isFinite(Number(productForm.costPrice))
+        ? Number(productForm.costPrice)
+        : undefined;
+    return {
+      name: productForm.name,
+      slug: productForm.slug || undefined,
+      categoryId: productForm.categoryId || null,
+      description: productForm.description || undefined,
+      price: productForm.price,
+      currency: productForm.currency || "USD",
+      inventory: productForm.inventory,
+      imageUrl: imageUrls[0] || undefined,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+      videoUrl: productForm.videoUrl.trim(),
+      productType: productForm.productType || undefined,
+      sizeType: rules.showSize ? (productForm.sizeType || "size") : undefined,
+      sizeOptions: rules.showSize ? sizeOptions : undefined,
+      sizeGuideHint: productForm.sizeGuideHint || undefined,
+      colorOptions: parseOptionInput(productForm.colorOptionsInput),
+      textureOptions: rules.showTexture ? textureOptions : undefined,
+      lengthOptions: rules.showLength ? lengthOptions : undefined,
+      fulfillmentType: useDropshipForProduct ? "dropship" : "self_fulfilled",
+      supplierId: supplierId || undefined,
+      supplierName: supplier?.name || undefined,
+      supplierChannel: supplier?.channel || undefined,
+      supplierRecipient: supplier?.recipient || undefined,
+      supplierSku: supplierSku || undefined,
+      costPrice: costPriceValue,
+      trackInventory: useDropshipForProduct ? Boolean(productForm.trackInventory) : true
+    };
+  };
+
+  const startEditingProduct = (product?: ShopProduct | null) => {
+    if (!product?.id) {
+      setStatus("? Product data is invalid. Please refresh and try again.");
+      return;
+    }
+    const metadata = product.metadata || {};
+    const fulfillment = metadata.fulfillment || {};
+    const imageUrls = Array.isArray(metadata.imageUrls)
+      ? metadata.imageUrls.map((url) => String(url)).filter(Boolean).slice(0, 4)
+      : product.imageUrl
+      ? [product.imageUrl]
+      : [];
+
+    while (imageUrls.length < 4) imageUrls.push("");
+
+    setEditingProductId(product.id);
+    setEditingProductShopId(product.shopId || shopData?.id || selectedShopId || null);
+    setEditingProductSlug(product.slug || null);
+    setSelectedProductTemplateId(null);
+    setShopSectionTab("upload");
+    setProductForm({
+      name: product.name,
+      slug: product.slug || "",
+      description: product.description || "",
+      price: product.price,
+      currency: product.currency || "USD",
+      inventory: product.inventory,
+      categoryId: product.categoryId || "",
+      productType: metadata.productType || "",
+      sizeType: metadata.sizeType || "size",
+      sizeOptionsInput: Array.isArray(metadata.sizeOptions) ? metadata.sizeOptions.join(", ") : "",
+      sizeGuideHint: metadata.sizeGuideHint || "",
+      colorOptionsInput: Array.isArray(metadata.colorOptions) ? metadata.colorOptions.join(", ") : "",
+      textureOptionsInput: Array.isArray(metadata.textureOptions) ? metadata.textureOptions.join(", ") : "",
+      lengthOptionsInput: Array.isArray(metadata.lengthOptions) ? metadata.lengthOptions.join(", ") : "",
+      imageUrls,
+      videoUrl: String(metadata.videoUrl || ""),
+      fulfillmentType: fulfillment.type === "dropship" ? "dropship" : "self_fulfilled",
+      supplierId: String(fulfillment.supplierId || ""),
+      supplierSku: String(fulfillment.supplierSku || ""),
+      costPrice:
+        typeof fulfillment.costPrice === "number" && Number.isFinite(fulfillment.costPrice)
+          ? fulfillment.costPrice
+          : "",
+      trackInventory: fulfillment.trackInventory !== false
+    });
+  };
+
+  const applyProductTemplate = (template: ShopProductTemplate) => {
+    const templateRules = getTemplateRules(template);
+    const matchedCategoryId = template.categorySlug
+      ? visibleShopCategories.find(
+          (category) => category.slug.trim().toLowerCase() === template.categorySlug!.trim().toLowerCase()
+        )?.id || ""
+      : "";
+    setSelectedProductTemplateId(template.id);
+    setProductForm((prev) => ({
+      ...prev,
+      categoryId: matchedCategoryId || prev.categoryId,
+      productType: template.productType || prev.productType,
+      sizeType: templateRules.showSize
+        ? template.sizeType || prev.sizeType || templateRules.defaultSizeType || "size"
+        : "",
+      sizeOptionsInput: templateRules.showSize
+        ? (template.sizeOptions || []).join(", ") || prev.sizeOptionsInput
+        : "",
+      sizeGuideHint: templateRules.showSize
+        ? template.sizeGuideHint || prev.sizeGuideHint
+        : "",
+      colorOptionsInput: (template.colorOptions || []).join(", ") || prev.colorOptionsInput,
+      textureOptionsInput: templateRules.showTexture
+        ? (template.textureOptions || []).join(", ") || prev.textureOptionsInput
+        : "",
+      lengthOptionsInput: templateRules.showLength
+        ? (template.lengthOptions || []).join(", ") || prev.lengthOptionsInput
+        : "",
+      price: prev.price > 0 ? prev.price : template.suggestedPrice || prev.price,
+      inventory: prev.inventory > 0 ? prev.inventory : template.suggestedInventory || prev.inventory
+    }));
+    setStatus(`? Template applied: ${template.name}`);
+  };
+
+  const withShopIdQuery = (path: string, shopIdOverride?: string | null) => {
+    const shopId = shopIdOverride ?? selectedShopId ?? shopData?.id ?? null;
+    if (!shopId) return path;
+    const joiner = path.includes("?") ? "&" : "?";
+    return `${path}${joiner}shopId=${encodeURIComponent(shopId)}`;
+  };
+
+  const createShopSupplier = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    if (!supplierForm.name.trim()) {
+      setStatus("Supplier name is required.");
+      return;
+    }
+    if (!supplierForm.recipient.trim()) {
+      setStatus("Supplier recipient is required for dispatch.");
+      return;
+    }
+    try {
+      const response = await apiRequest<{ supplier: ShopSupplier }>(
+        withShopIdQuery("/business/shop/suppliers", targetShopId),
+        {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: {
+            name: supplierForm.name.trim(),
+            type: supplierForm.type,
+            provider: supplierForm.provider || undefined,
+            channel: supplierForm.channel,
+            recipient: supplierForm.recipient.trim(),
+            notes: supplierForm.notes.trim() || undefined,
+            isActive: true
+          }
+        }
+      );
+      setShopSuppliers((prev) => [response.supplier, ...prev.filter((entry) => entry.id !== response.supplier.id)]);
+      setSupplierForm({
+        name: "",
+        type: "manual",
+        provider: "",
+        channel: "whatsapp",
+        recipient: "",
+        notes: ""
+      });
+      setStatus("Supplier added");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to create supplier");
+    }
+  };
+
+  const deleteShopSupplier = async (supplierId: string) => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) return;
+    try {
+      await apiRequest(withShopIdQuery(`/business/shop/suppliers/${supplierId}`, targetShopId), {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setShopSuppliers((prev) => prev.filter((entry) => entry.id !== supplierId));
+      setProductForm((prev) =>
+        prev.supplierId === supplierId
+          ? { ...prev, supplierId: "", supplierSku: "", fulfillmentType: "self_fulfilled" }
+          : prev
+      );
+      setStatus("Supplier removed");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to delete supplier");
+    }
+  };
+
+  const resetShopEditorForCreate = () => {
+    setShopData(null);
+    setShopCapabilities(null);
+    setShopSuppliers([]);
+    setSelectedShopId(null);
+    setShopForm(createEmptyShopForm("other"));
+    setCategoryForm({ name: "", slug: "", description: "", sortOrder: 0 });
+    setProductForm(createProductFormForShopType("other"));
+    setEditingProductId(null);
+    setEditingProductShopId(null);
+    setEditingProductSlug(null);
+    setSelectedProductTemplateId(null);
+    setProductTemplates([]);
+    setCategoryTemplates([]);
+    setShopOrders([]);
+    setShopCustomers([]);
+  };
+
+  const requestDeleteShop = (shopId: string) => {
+    setConfirmModalData({
+      title: "Delete Shop",
+      message:
+        "Are you sure you want to delete this shop? This will permanently remove its categories and products.",
+      variant: "danger",
+      onConfirm: async () => {
+        setShowConfirmModal(false);
+        try {
+          setDeletingShopId(shopId);
+          await apiRequest(withShopIdQuery("/business/shop", shopId), {
+            method: "DELETE",
+            accessToken,
+            csrfToken
+          });
+          setStatus("? Shop deleted");
+          if (selectedShopId === shopId) {
+            setSelectedShopId(null);
+          }
+          setIsCreatingAnotherShop(false);
+          await loadShopData();
+        } catch (err: any) {
+          setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to delete shop"}`);
+        } finally {
+          setDeletingShopId(null);
+        }
+      }
+    });
+    setShowConfirmModal(true);
+  };
+
+  const createCategoryFromTemplate = async (template: ShopCategoryTemplate) => {
+    if (!accessToken || !shopData?.id) return;
+    try {
+      setAddingCategoryTemplateId(template.id);
+      await apiRequest("/business/shop/categories", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          shopId: shopData.id,
+          name: template.name,
+          slug: template.slug,
+          description: template.description || undefined,
+          sortOrder: template.sortOrder
+        }
+      });
+      setStatus(`? Category added: ${template.name}`);
+      await loadShopData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to create category"}`);
+    } finally {
+      setAddingCategoryTemplateId(null);
+    }
+  };
+
+  const seedCategoryTemplates = async () => {
+    if (!accessToken || !shopData?.id) return;
+    try {
+      setIsSeedingCategoryTemplates(true);
+      const response = await apiRequest<{ createdCount?: number }>(
+        withShopIdQuery(`/business/shop/categories/seed-defaults?businessType=${encodeURIComponent(shopForm.businessType)}`, shopData.id),
+        {
+        method: "POST",
+        accessToken,
+        csrfToken
+        }
+      );
+      const createdCount = Number(response?.createdCount || 0);
+      setStatus(
+        createdCount > 0
+          ? `? Added ${createdCount} recommended categories`
+          : "? Recommended categories already added"
+      );
+      await loadShopData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to add recommended categories"}`);
+    } finally {
+      setIsSeedingCategoryTemplates(false);
+    }
+  };
+
+  const updateShopOrderStatus = async (
+    order: ShopOrderSummary,
+    status: "in_transit" | "delivered"
+  ) => {
+    if (!accessToken) return;
+    const activeShopId = selectedShopId || shopData?.id || null;
+    if (!activeShopId) {
+      setStatus("? No shop selected");
+      return;
+    }
+    try {
+      setUpdatingShopOrderStatus(status);
+      const response = await apiRequest<{ order: ShopOrderSummary }>(
+        withShopIdQuery(`/business/shop/orders/${order.id}/status`, activeShopId),
+        {
+          method: "PATCH",
+          accessToken,
+          csrfToken,
+          body: { status }
+        }
+      );
+      const updatedOrder = response.order;
+      setShopOrders((prev) => prev.map((item) => (item.id === updatedOrder.id ? updatedOrder : item)));
+      setSelectedShopOrder(updatedOrder);
+      setStatus(
+        status === "in_transit" ? "? Order marked as in transit" : "? Order marked as delivered"
+      );
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to update order status"}`);
+    } finally {
+      setUpdatingShopOrderStatus(null);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
+  const queueIntelligenceRefreshJob = async () => {
+    if (!accessToken) return;
+    try {
+      await apiRequest("/business/intelligence/jobs", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          jobType: "refresh_overview",
+          payload: { source: "dashboard" }
+        }
+      });
+      setStatus(" Intelligence refresh job queued");
+      await loadData();
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to queue intelligence job"}`);
+    }
+  };
+
+  const loadShopData = async () => {
+    if (!accessToken) return;
+    try {
+      let fetchedShops: ShopSummary[] = [];
+      try {
+        const shopListData = await apiRequest<{ shops: ShopSummary[] }>("/business/shops", { accessToken });
+        fetchedShops = Array.isArray(shopListData.shops)
+          ? (shopListData.shops.filter(
+              (shop): shop is ShopSummary => !!shop && typeof shop.id === "string"
+            ) as ShopSummary[])
+          : [];
+      } catch {
+        fetchedShops = [];
+      }
+      setShops(fetchedShops);
+
+      if (isCreatingAnotherShop) {
+        setShopOrders([]);
+        setShopCapabilities(null);
+        setShopSuppliers([]);
+        return;
+      }
+
+      const hasSelectedShop = !!selectedShopId && fetchedShops.some((shop) => shop.id === selectedShopId);
+      const resolvedShopId = hasSelectedShop ? selectedShopId : fetchedShops[0]?.id || null;
+      if (!resolvedShopId) {
+        setShopData(null);
+        setShopCapabilities(null);
+        setShopSuppliers([]);
+        setProductTemplates([]);
+        setCategoryTemplates([]);
+        return;
+      }
+      if (resolvedShopId !== selectedShopId) {
+        setSelectedShopId(resolvedShopId);
+      }
+
+      const data = await apiRequest<{ shop: ShopData | null; capabilities?: ShopCapabilities }>(
+        withShopIdQuery("/business/shop", resolvedShopId),
+        { accessToken }
+      );
+      const normalizedShop =
+        data.shop && typeof data.shop.id === "string"
+          ? {
+              ...data.shop,
+              categories: Array.isArray(data.shop.categories)
+                ? data.shop.categories.filter(
+                    (category): category is ShopCategory => !!category && typeof category.id === "string"
+                  )
+                : [],
+              products: Array.isArray(data.shop.products)
+                ? data.shop.products.filter(
+                    (product): product is ShopProduct => !!product && typeof product.id === "string"
+                  )
+                : []
+            }
+          : null;
+      setShopData(normalizedShop);
+      setShopCapabilities(data.capabilities || null);
+      if (normalizedShop) {
+        setIsCreatingAnotherShop(false);
+        setShopForm({
+          name: normalizedShop.name || "",
+          slug: normalizedShop.slug || "",
+          description: normalizedShop.description || "",
+          logoUrl: normalizedShop.logoUrl || "",
+          bannerUrl: normalizedShop.bannerUrl || "",
+          themeColor: normalizedShop.themeColor || "#4f46e5",
+          businessType: (normalizedShop.metadata?.businessType as ShopType) || "other"
+        });
+        setSelectedProductTemplateId(null);
+        try {
+          const [productTemplateData, categoryTemplateData, shopOrdersData, supplierData] = await Promise.all([
+            apiRequest<{
+              shopType: ShopType;
+              rules: { showSize: boolean; showLength: boolean; showTexture: boolean; defaultSizeType?: string };
+              templates: ShopProductTemplate[];
+            }>(withShopIdQuery("/business/shop/product-templates", normalizedShop.id), { accessToken }),
+            apiRequest<{
+              shopType: ShopType;
+              templates: ShopCategoryTemplate[];
+            }>(withShopIdQuery("/business/shop/category-templates", normalizedShop.id), { accessToken }),
+            apiRequest<{ orders: ShopOrderSummary[] }>(
+              withShopIdQuery("/business/shop/orders", normalizedShop.id),
+              { accessToken }
+            ).catch(() => ({ orders: [] })),
+            apiRequest<{ suppliers: ShopSupplier[] }>(
+              withShopIdQuery("/business/shop/suppliers", normalizedShop.id),
+              { accessToken }
+            ).catch(() => ({ suppliers: [] }))
+          ]);
+          setProductTemplates(
+            Array.isArray(productTemplateData.templates)
+              ? productTemplateData.templates.filter(
+                  (template): template is ShopProductTemplate => !!template && typeof template.id === "string"
+                )
+              : []
+          );
+          setCategoryTemplates(
+            Array.isArray(categoryTemplateData.templates)
+              ? categoryTemplateData.templates.filter(
+                  (template): template is ShopCategoryTemplate => !!template && typeof template.id === "string"
+                )
+              : []
+          );
+          setShopOrders(
+            Array.isArray(shopOrdersData.orders)
+              ? shopOrdersData.orders.filter(
+                  (order): order is ShopOrderSummary =>
+                    !!order && typeof order.id === "string" && Array.isArray(order.items)
+                )
+              : []
+          );
+          setShopSuppliers(
+            Array.isArray(supplierData.suppliers)
+              ? supplierData.suppliers.filter(
+                  (supplier): supplier is ShopSupplier =>
+                    !!supplier && typeof supplier.id === "string" && typeof supplier.name === "string"
+                )
+              : []
+          );
+        } catch {
+          setProductTemplates([]);
+          setCategoryTemplates([]);
+          setShopOrders([]);
+          setShopSuppliers([]);
+        }
+      } else {
+        setShopData(null);
+        setShopCapabilities(null);
+        setSelectedProductTemplateId(null);
+        setProductTemplates([]);
+        setCategoryTemplates([]);
+        setShopOrders([]);
+        setShopSuppliers([]);
+      }
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to load shop"}`);
+      setShopData(null);
+      setShopCapabilities(null);
+      setSelectedProductTemplateId(null);
+      setProductTemplates([]);
+      setCategoryTemplates([]);
+      setShopOrders([]);
+      setShopSuppliers([]);
+    }
+  };
+
+  const loadShopCustomers = async () => {
+    if (!accessToken) return;
+    setLoadingShopCustomers(true);
+    try {
+      let availableShops = shops;
+      if (availableShops.length === 0) {
+        const shopListData = await apiRequest<{ shops: ShopSummary[] }>("/business/shops", {
+          accessToken
+        }).catch(() => ({ shops: [] }));
+        availableShops = Array.isArray(shopListData.shops)
+          ? shopListData.shops.filter((shop): shop is ShopSummary => !!shop && typeof shop.id === "string")
+          : [];
+        setShops(availableShops);
+      }
+
+      const resolvedShopId =
+        (selectedShopId && availableShops.some((shop) => shop.id === selectedShopId)
+          ? selectedShopId
+          : availableShops[0]?.id) || null;
+
+      if (!resolvedShopId) {
+        setShopCustomers([]);
+        return;
+      }
+
+      if (resolvedShopId !== selectedShopId) {
+        setSelectedShopId(resolvedShopId);
+      }
+
+      const data = await apiRequest<{ customers: ShopCustomerSummary[] }>(
+        withShopIdQuery("/business/shop/customers", resolvedShopId),
+        { accessToken }
+      );
+      setShopCustomers(
+        Array.isArray(data.customers)
+          ? data.customers.filter((entry): entry is ShopCustomerSummary => !!entry && typeof entry.id === "string")
+          : []
+      );
+    } catch (err: any) {
+      setShopCustomers([]);
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to load shop customers"}`);
+    } finally {
+      setLoadingShopCustomers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "shop" && accessToken) {
+      loadShopData();
+    }
+  }, [activeTab, accessToken, selectedShopId, isCreatingAnotherShop]);
+
+  useEffect(() => {
+    if (activeTab === "shop") {
+      setShopSectionTab("shop");
+      setSelectedShopOrder(null);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "customers" && accessToken) {
+      loadShopCustomers();
+    }
+  }, [activeTab, accessToken, selectedShopId]);
+
+  useEffect(() => {
+    const loadTemplatesByType = async () => {
+      if (activeTab !== "shop" || !accessToken || !shopData) return;
+      setProductTemplates([]);
+      setCategoryTemplates([]);
+      try {
+        const [productTemplateData, categoryTemplateData] = await Promise.all([
+          apiRequest<{
+            shopType: ShopType;
+            rules: { showSize: boolean; showLength: boolean; showTexture: boolean; defaultSizeType?: string };
+            templates: ShopProductTemplate[];
+          }>(
+            withShopIdQuery(`/business/shop/product-templates?businessType=${encodeURIComponent(shopForm.businessType)}`, shopData.id),
+            { accessToken }
+          ),
+          apiRequest<{
+            shopType: ShopType;
+            templates: ShopCategoryTemplate[];
+          }>(
+            withShopIdQuery(`/business/shop/category-templates?businessType=${encodeURIComponent(shopForm.businessType)}`, shopData.id),
+            { accessToken }
+          )
+        ]);
+        setProductTemplates(
+          Array.isArray(productTemplateData.templates)
+            ? productTemplateData.templates.filter(
+                (template): template is ShopProductTemplate => !!template && typeof template.id === "string"
+              )
+            : []
+        );
+        setCategoryTemplates(
+          Array.isArray(categoryTemplateData.templates)
+            ? categoryTemplateData.templates.filter(
+                (template): template is ShopCategoryTemplate => !!template && typeof template.id === "string"
+              )
+            : []
+        );
+      } catch {
+        setProductTemplates([]);
+        setCategoryTemplates([]);
+      }
+    };
+    loadTemplatesByType();
+  }, [shopForm.businessType, activeTab, accessToken, shopData?.id]);
+
+  useEffect(() => {
+    const rules = getShopTypeRules(shopForm.businessType);
+    setSelectedProductTemplateId(null);
+    setProductForm((prev) => ({
+      ...prev,
+      productType: prev.productType || shopForm.businessType || "",
+      sizeType: rules.showSize ? (prev.sizeType || rules.defaultSizeType || "size") : "",
+      sizeOptionsInput: rules.showSize ? (prev.sizeOptionsInput || rules.defaultSizeOptions) : "",
+      textureOptionsInput: rules.showTexture ? (prev.textureOptionsInput || rules.defaultTextureOptions) : "",
+      lengthOptionsInput: rules.showLength ? (prev.lengthOptionsInput || rules.defaultLengthOptions) : "",
+      colorOptionsInput: prev.colorOptionsInput || rules.defaultColorOptions
+    }));
+  }, [shopForm.businessType]);
+
+  useEffect(() => {
+    if (!productForm.categoryId) return;
+    const existsInVisibleCategories = visibleShopCategories.some((category) => category.id === productForm.categoryId);
+    if (!existsInVisibleCategories) {
+      setProductForm((prev) => ({ ...prev, categoryId: "" }));
+    }
+  }, [shopForm.businessType, visibleShopCategories, productForm.categoryId]);
+
+  // Global Search
+  const { isOpen: isSearchOpen, setIsOpen: setSearchOpen } = useGlobalSearch();
+  
+  // Help Center
+  const { isOpen: isHelpOpen, setIsOpen: setHelpOpen } = useHelpCenter();
+  
+  // Onboarding
+  const { showOnboarding, setShowOnboarding } = useOnboarding("business");
+  
+  // Keyboard Shortcuts
+  const { ShortcutsModal } = useKeyboardShortcuts({
+    onSearch: () => setSearchOpen(true),
+    onHelp: () => setHelpOpen(true),
+    onNavigate: (tab) => setActiveTab(tab as typeof activeTab),
+  });
+
+  const tabs = [
+    { id: "overview", label: "Overview", icon: <FiBarChart2 /> },
+    { id: "payments", label: "Payments", icon: <FiCreditCard /> },
+    { id: "notifications", label: "Notifications", icon: <FiBell /> },
+    { id: "intelligence", label: "Intelligence", icon: <FiActivity /> },
+    { id: "ops", label: "Ops", icon: <FiSettings /> },
+    { id: "automation", label: "Automation", icon: <FiZap /> },
+    { id: "customers", label: "Customers", icon: <FiUsers /> },
+    { id: "analytics", label: "Analytics", icon: <FiTrendingUp /> },
+    { id: "surveys", label: "Surveys", icon: <FiClipboard /> },
+    { id: "shop", label: "Shop", icon: <FiShoppingBag /> },
+    { id: "activity", label: "Activity", icon: <FiActivity /> },
+    { id: "integrations", label: "Integrations", icon: <FiLink2 /> },
+    { id: "billing", label: "Billing", icon: <FiDollarSign /> },
+    { id: "settings", label: "Settings", icon: <FiSettings /> },
+  ];
+
+  const getShopSectionTabClass = (tab: ShopSectionTab) =>
+    `btn ${shopSectionTab === tab ? "btn-primary" : "btn-secondary"}`;
+
+  return (
+    <div className="business-dashboard min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
+      {/* Background decorations */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-gradient-to-br from-blue-400/20 to-indigo-400/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-gradient-to-tr from-purple-400/15 to-pink-400/15 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 right-1/4 w-96 h-96 bg-gradient-to-r from-cyan-400/15 to-blue-400/15 rounded-full blur-3xl"></div>
+      </div>
+
+      <Sidebar 
+        tabs={tabs} 
+        activeTab={activeTab} 
+        onTabChange={(tab) => setActiveTab(tab as typeof activeTab)}
+        onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        hideOnSmallScreens
+        mobileMenuOpen={isMobileSidebarOpen}
+        onMobileMenuOpenChange={setIsMobileSidebarOpen}
+        showMobileToggleButton={false}
+      />
+      
+      <BizNav
+        userEmail={user?.email}
+        orgName={user?.orgName}
+        orgId={user?.orgId}
+        isMobileMenuOpen={isMobileSidebarOpen}
+        onMobileMenuToggle={() => setIsMobileSidebarOpen((prev) => !prev)}
+      />
+      <div
+        className="flex-1 transition-all duration-300 relative z-10 overflow-x-hidden"
+        style={{
+          marginLeft: isMobileViewport ? "0px" : "var(--sidebar-width, 280px)",
+          marginTop: "64px"
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-8">
+        {loading && !dashboard ? (
+          <div className="card">
+            <p className="text-black font-semibold">Loading...</p>
+          </div>
+        ) : (
+          <>
+            {/* Overview Tab */}
+            {activeTab === "overview" && dashboard && (
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Business Overview</h2>
+                
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-4 sm:mb-8">
+                  <div className="card min-w-0">
+                    <h3 className="text-sm text-gray-500 mb-2">Total Revenue</h3>
+                    <p className="text-2xl font-bold m-0 text-gray-900">
+                      {formatCurrency(dashboard.stats.payments.totalRevenue, "USD")}
+                    </p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {dashboard.stats.payments.completed} completed payments
+                    </p>
+                  </div>
+                  <div className="card min-w-0">
+                    <h3 className="text-sm text-gray-500 mb-2">Payments (24h)</h3>
+                    <p className="text-2xl font-bold m-0 text-gray-900">{dashboard.stats.payments.last24h}</p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {dashboard.stats.payments.queued} queued, {dashboard.stats.payments.processing} processing
+                    </p>
+                  </div>
+                  <div className="card">
+                    <h3 className="text-sm text-gray-500 mb-2">Notifications (24h)</h3>
+                    <p className="text-2xl font-bold m-0 text-gray-900">{dashboard.stats.notifications.last24h}</p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {dashboard.stats.notifications.sent} sent, {dashboard.stats.notifications.queued} queued
+                    </p>
+                  </div>
+                  <div className="card">
+                    <h3 className="text-sm text-gray-500 mb-2">Integrations</h3>
+                    <p className="text-2xl font-bold m-0 text-gray-900">{integrations.length}</p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {integrations.map(i => i.provider).join(", ") || "None connected"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Revenue Alerts */}
+                <div className="card mb-4 sm:mb-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold m-0 text-gray-900">Revenue Alerts</h3>
+                    {dashboard.revenueAlerts.length > 0 && (
+                      <span className="badge badge-success text-xs">
+                        {dashboard.revenueAlerts.length} {dashboard.revenueAlerts.length === 1 ? 'alert' : 'alerts'}
+                      </span>
+                    )}
+                  </div>
+                  {dashboard.revenueAlerts.length === 0 ? (
+                    <p className="text-gray-500">
+                      Connect Stripe or Paystack to enable automatic revenue tracking and alerts.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashboard.revenueAlerts.map((alert, index) => (
+                        <div key={index} className="p-3 bg-blue-50 rounded-lg text-gray-800">
+                          {alert}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Activity */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
+                  <div className="card">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-900">Recent Payments</h3>
+                    {(payments || []).slice(0, 5).length === 0 ? (
+                      <p className="text-gray-500">No payments yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(payments || []).slice(0, 5).map((payment) => (
+                          <div key={payment.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                            <div>
+                              <p className="m-0 font-semibold text-gray-900">{formatCurrency(payment.amount, payment.currency)}</p>
+                              <p className="mt-1 text-sm text-gray-500">
+                                {payment.customerId}  {new Date(payment.createdAt).toLocaleString()}
+                              </p>
+                            </div>
+                            <span className={getStatusBadge(payment.status)}>{payment.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="card">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold m-0 text-gray-900">Recent Notifications</h3>
+                      {(notifications || []).length > 0 && (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={async () => {
+                            setConfirmModalData({
+                              title: "Clear All Notifications",
+                              message: "Are you sure you want to delete all notifications? This action cannot be undone.",
+                              variant: "danger",
+                              onConfirm: async () => {
+                                setShowConfirmModal(false);
+                                try {
+                                  await apiRequest("/business/notifications", {
+                                    method: "DELETE",
+                                    accessToken,
+                                    csrfToken
+                                  });
+                                  setNotifications([]);
+                                  setStatus(" All notifications deleted from database");
+                                  await loadData();
+                                } catch (err: any) {
+                                  setStatus(` ${err?.response?.data?.error || "Failed to delete notifications"}`);
+                                }
+                              }
+                            });
+                            setShowConfirmModal(true);
+                          }}
+                          title="Clear all notifications"
+                        >
+                          <FiTrash2 className="mr-1" /> Clear All ({(notifications || []).length})
+                        </button>
+                      )}
+                    </div>
+                    {(notifications || []).slice(0, 5).length === 0 ? (
+                      <p className="text-gray-500">No notifications yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(notifications || []).slice(0, 5).map((notif) => (
+                          <div key={notif.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                            <div>
+                              <p className="m-0 font-semibold text-gray-900">{notif.channel.toUpperCase()}</p>
+                              <p className="mt-1 text-sm text-gray-500">
+                                {notif.recipient}  {new Date(notif.createdAt).toLocaleString()}
+                              </p>
+                            </div>
+                            <span className={getStatusBadge(notif.status)}>{notif.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Payments Tab */}
+            {activeTab === "payments" && (
+              <div className="space-y-4 min-w-0 max-w-full overflow-x-hidden">
+                {/* Row 1: Create Payment Request + Create Recurring Payment */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                  <Collapsible key="create-payment-form" title="Create Payment Request" defaultOpen={false}>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label">Amount</label>
+                        <input
+                          type="number"
+                          className="input"
+                          value={amount || ""}
+                          onChange={(e) => setAmount(Number(e.target.value))}
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Currency</label>
+                        <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                          <option value="USD">USD</option>
+                          <option value="EUR">EUR</option>
+                          <option value="GBP">GBP</option>
+                          <option value="NGN">NGN</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Select Customer {selectedPaymentCustomerId ? "(Auto-filled)" : ""}</label>
+                      {loadingCustomers ? (
+                        <div className="text-sm text-gray-500 py-2">Loading customers...</div>
+                      ) : customers.length === 0 ? (
+                        <div className="text-sm text-gray-500 py-2">
+                          No customers found. <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab("customers"); }} className="text-blue-600 hover:underline">Add customers first</a>
+                        </div>
+                      ) : (
+                        <select
+                          className="input"
+                          value={selectedPaymentCustomerId}
+                          onChange={(e) => setSelectedPaymentCustomerId(e.target.value)}
+                        >
+                          <option value="">-- Select a customer --</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.firstName || customer.lastName 
+                                ? `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+                                : customer.email}
+                              {customer.email ? ` (${customer.email})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        className="input mt-2"
+                        value={customerId}
+                        placeholder="Customer ID (auto-filled from selection)"
+                        disabled={!!selectedPaymentCustomerId}
+                        readOnly
+                      />
+                      {selectedPaymentCustomerId && (
+                        <p className="text-xs text-gray-500 mt-1">
+                           Customer ID auto-filled from selected customer. Clear selection to edit manually.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">Description (Optional)</label>
+                      <input
+                        className="input"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Payment description"
+                      />
+                    </div>
+                    
+                    {/* Payment Plan/Installment Options */}
+                    <div className="border-t pt-4 mt-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isPaymentPlan}
+                          onChange={(e) => setIsPaymentPlan(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <span className="label mb-0">Split into installments (Payment Plan)</span>
+                      </label>
+                      
+                      {isPaymentPlan && (
+                        <div className="mt-3 space-y-3 pl-6 border-l-2 border-blue-200">
+                          <div>
+                            <label className="label text-sm">Number of Installments</label>
+                            <input
+                              type="number"
+                              className="input"
+                              value={numberOfInstallments}
+                              onChange={(e) => setNumberOfInstallments(Math.max(2, Math.min(12, parseInt(e.target.value) || 2)))}
+                              min="2"
+                              max="12"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Amount per installment: {currency} {(amount / numberOfInstallments).toFixed(2)}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="label text-sm">Days Between Installments</label>
+                            <input
+                              type="number"
+                              className="input"
+                              value={intervalDays}
+                              onChange={(e) => setIntervalDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 30)))}
+                              min="1"
+                              max="365"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Customer will be charged every {intervalDays} day(s)
+                            </p>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <p className="text-xs text-blue-800">
+                               <strong>Payment Plan:</strong> Customer will receive automatic notifications when each installment is due. If payment fails, they'll get a payment link via WhatsApp/Email.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {integrations.filter(i => i.provider === "stripe" || i.provider === "paystack").length === 0 && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                        <p className="text-sm text-yellow-800">
+                           <strong>No payment gateway connected.</strong> Please connect Stripe or Paystack in the Integrations tab to generate payment links.
+                        </p>
+                      </div>
+                    )}
+                    <button 
+                      className="btn btn-primary w-full" 
+                      onClick={submitPayment} 
+                      disabled={!amount || !customerId}
+                    >
+                      {isPaymentPlan 
+                        ? `Create Payment Plan (${numberOfInstallments} installments)`
+                        : integrations.filter(i => i.provider === "stripe" || i.provider === "paystack").length > 0 
+                        ? "Create Payment Link" 
+                        : "Create Payment Request (No Gateway)"}
+                    </button>
+                  </div>
+                </Collapsible>
+
+                  <Collapsible key="create-recurring-form" title="Create Recurring Payment" defaultOpen={false}>
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600">
+                        Set up automatic recurring payments for customers (subscriptions, monthly fees, etc.)
+                      </p>
+                      <button 
+                        onClick={() => {
+                          setRecurringForm({
+                            name: "",
+                            amount: 0,
+                            currency: "USD",
+                            customerId: "",
+                            interval: "monthly",
+                            startDate: "",
+                            endDate: "",
+                          });
+                          setShowRecurringModal(true);
+                        }}
+                        className="btn btn-primary w-full flex items-center justify-center gap-2"
+                      >
+                        <FiPlus className="w-4 h-4" /> Create Recurring Payment
+                      </button>
+                    </div>
+                  </Collapsible>
+                </div>
+
+                {/* Row 2: Payment History + Recurring Payments List */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+                  <div className="card min-w-0 overflow-hidden">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-900">Payment History</h3>
+                    {payments.length === 0 ? (
+                      <p className="text-gray-500">No payments yet</p>
+                    ) : (
+                      <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                        <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                          <thead className="sticky top-0 bg-gray-50">
+                            <tr>
+                              <th className="text-gray-700">Amount</th>
+                              <th className="text-gray-700">Customer</th>
+                              <th className="text-gray-700">Status</th>
+                              <th className="text-gray-700">Link</th>
+                              <th className="text-gray-700">Created</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payments.map((payment) => (
+                              <tr key={payment.id}>
+                                <td className="text-gray-900 font-medium">{formatCurrency(payment.amount, payment.currency)}</td>
+                                <td className="text-gray-700 text-sm">{payment.customerId?.slice(0, 12)}...</td>
+                                <td>
+                                  <span className={getStatusBadge(payment.status)}>{payment.status}</span>
+                                </td>
+                                <td>
+                                  {payment.paymentLink ? (
+                                    <div className="flex items-center gap-1">
+                                      <a
+                                        href={payment.paymentLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800"
+                                        title="Open payment link"
+                                      >
+                                        <FiExternalLink className="w-4 h-4" />
+                                      </a>
+                                      <button
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(payment.paymentLink!);
+                                          setStatus(" Payment link copied!");
+                                        }}
+                                        className="text-gray-500 hover:text-gray-700"
+                                        title="Copy link"
+                                      >
+                                        <FiCopy className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeletePayment(payment.id)}
+                                        className="text-red-500 hover:text-red-700"
+                                        title="Delete payment record"
+                                      >
+                                        <FiTrash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">-</span>
+                                  )}
+                                </td>
+                                <td className="text-gray-500 text-xs">{new Date(payment.createdAt).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="card min-w-0 overflow-hidden">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-900">Recurring Payments</h3>
+                    {recurringPayments.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No recurring payments set up yet</p>
+                    ) : (
+                      <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                        <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                          <thead className="sticky top-0 bg-gray-50">
+                            <tr>
+                              <th className="text-gray-700">Name</th>
+                              <th className="text-gray-700">Amount</th>
+                              <th className="text-gray-700">Interval</th>
+                              <th className="text-gray-700">Status</th>
+                              <th className="text-gray-700">Next Run</th>
+                              <th className="text-gray-700">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recurringPayments.map((rp) => {
+                              const customer = customers.find(c => c.id === rp.customerId);
+                              const hasSavedCard = customer && (
+                                (customer as any).paystackAuthorizationCode || 
+                                (customer as any).stripePaymentMethodId ||
+                                (customer as any).cardLastFour
+                              );
+                              const latestPayment = payments
+                                .filter((p: any) => p.recurringPaymentId === rp.id)
+                                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                              
+                              return (
+                                <tr key={rp.id}>
+                                  <td className="text-gray-900 font-medium">{rp.name}</td>
+                                  <td className="text-gray-700">{formatCurrency(rp.amount, rp.currency)}</td>
+                                  <td className="text-gray-600 text-sm capitalize">{rp.interval}</td>
+                                  <td>
+                                    <span className={`badge ${
+                                      rp.status === "active" ? "badge-success" :
+                                      rp.status === "paused" ? "badge-warning" :
+                                      "badge-danger"
+                                    }`}>
+                                      {rp.status}
+                                    </span>
+                                  </td>
+                                  <td className="text-gray-500 text-xs">{new Date(rp.nextRunAt).toLocaleDateString()}</td>
+                                  <td>
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                      {latestPayment?.paymentLink && (
+                                        <>
+                                          <a
+                                            href={latestPayment.paymentLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:text-blue-800"
+                                            title="Open payment link"
+                                          >
+                                            <FiExternalLink className="w-4 h-4" />
+                                          </a>
+                                          <button
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(latestPayment.paymentLink!);
+                                              setStatus(" Link copied!");
+                                            }}
+                                            className="text-gray-500 hover:text-gray-700"
+                                            title="Copy link"
+                                          >
+                                            <FiCopy className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      )}
+
+                                      {rp.status === "active" && (
+                                        <>
+                                          {hasSavedCard && (
+                                            <button
+                                              onClick={() => {
+                                                setConfirmModalData({
+                                                  title: "Process Payment",
+                                                  message: `Process payment of ${formatCurrency(rp.amount, rp.currency)} using saved card?`,
+                                                  variant: "info",
+                                                  onConfirm: async () => {
+                                                    setShowConfirmModal(false);
+                                                    try {
+                                                      const response = await apiRequest<{
+                                                        success: boolean;
+                                                        paymentId: string;
+                                                        reference: string;
+                                                        message: string;
+                                                      }>(`/business/recurring-payments/${rp.id}/process`, {
+                                                        method: "POST",
+                                                        accessToken,
+                                                        csrfToken,
+                                                      });
+                                                      setStatus(` ${response.message}`);
+                                                      await loadData();
+                                                    } catch (err: any) {
+                                                      const errorMsg = err?.response?.data?.error || err?.message || "Unknown error";
+                                                      setStatus(` Failed: ${errorMsg}`);
+                                                    }
+                                                  }
+                                                });
+                                                setShowConfirmModal(true);
+                                              }}
+                                              className="text-green-600 hover:text-green-800"
+                                              title="Process with saved card"
+                                            >
+                                              <FiCreditCard className="w-4 h-4" />
+                                            </button>
+                                          )}
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                const response = await apiRequest<{
+                                                  success: boolean;
+                                                  paymentLink: string;
+                                                  message: string;
+                                                }>(`/business/recurring-payments/${rp.id}/generate-payment-link`, {
+                                                  method: "POST",
+                                                  accessToken,
+                                                  csrfToken,
+                                                });
+                                                setStatus(` Link generated!`);
+                                                await loadData();
+                                              } catch (err: any) {
+                                                const errorMsg = err?.message || err?.response?.data?.error || "Unknown error";
+                                                setStatus(` ${errorMsg}`);
+                                              }
+                                            }}
+                                            className="text-blue-600 hover:text-blue-800"
+                                            title="Generate payment link"
+                                          >
+                                            <FiLink2 className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                await apiRequest(`/business/recurring-payments/${rp.id}`, {
+                                                  method: "PATCH",
+                                                  accessToken,
+                                                  csrfToken,
+                                                  body: { status: "paused" },
+                                                });
+                                                setStatus(" Paused");
+                                                await loadData();
+                                              } catch (err: any) {
+                                                setStatus(` Failed to pause`);
+                                              }
+                                            }}
+                                            className="text-orange-600 hover:text-orange-800"
+                                            title="Pause"
+                                          >
+                                            <FiPause className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      )}
+                                      {rp.status === "paused" && (
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              await apiRequest(`/business/recurring-payments/${rp.id}`, {
+                                                method: "PATCH",
+                                                accessToken,
+                                                csrfToken,
+                                                body: { status: "active" },
+                                              });
+                                              setStatus(" Resumed");
+                                              await loadData();
+                                            } catch (err: any) {
+                                              setStatus(` Failed to resume`);
+                                            }
+                                          }}
+                                          className="text-blue-600 hover:text-blue-800"
+                                          title="Resume"
+                                        >
+                                          <FiPlay className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={async () => {
+                                          setConfirmModalData({
+                                            title: "Delete Recurring Payment",
+                                            message: `Delete "${rp.name}"?`,
+                                            variant: "danger",
+                                            onConfirm: async () => {
+                                              setShowConfirmModal(false);
+                                              try {
+                                                await apiRequest(`/business/recurring-payments/${rp.id}`, {
+                                                  method: "DELETE",
+                                                  accessToken,
+                                                  csrfToken,
+                                                });
+                                                setStatus(" Deleted");
+                                                await loadData();
+                                              } catch (err: any) {
+                                                setStatus(` Failed to delete`);
+                                              }
+                                            }
+                                          });
+                                          setShowConfirmModal(true);
+                                        }}
+                                        className="text-red-600 hover:text-red-800"
+                                        title="Delete"
+                                      >
+                                        <FiTrash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 3: Payment Plans */}
+                <div className="card min-w-0 overflow-hidden">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900">Payment Plans (Installments)</h3>
+                  {paymentPlans.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No payment plans created yet. Create a payment plan by checking "Split into installments" when creating a payment.</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead className="sticky top-0 bg-gray-50">
+                          <tr>
+                            <th className="text-gray-700">Plan ID</th>
+                            <th className="text-gray-700">Total Amount</th>
+                            <th className="text-gray-700">Installments</th>
+                            <th className="text-gray-700">Progress</th>
+                            <th className="text-gray-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentPlans.map((plan: any) => (
+                            <tr key={plan.planId}>
+                              <td className="text-gray-700 text-xs font-mono">{plan.planId?.substring(0, 20) || "N/A"}...</td>
+                              <td className="text-gray-900 font-medium">{formatCurrency(plan.totalAmount || 0, "USD")}</td>
+                              <td className="text-gray-700">{plan.totalInstallments || 0}</td>
+                              <td>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                    <div 
+                                      className="bg-blue-600 h-2 rounded-full transition-all"
+                                      style={{ width: `${plan.progress?.percentage || 0}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-gray-600">
+                                    {plan.progress?.paid || 0}/{plan.totalInstallments || 0}
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const planDetails = await apiRequest<{ plan: any }>(`/business/payment-plans/${plan.planId}`, { accessToken });
+                                      setPaymentPlanDetails(planDetails.plan);
+                                      setShowPaymentPlanModal(true);
+                                    } catch (err: any) {
+                                      setStatus(` ${err?.message || "Failed to load plan details"}`);
+                                    }
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 text-sm"
+                                >
+                                  View Details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Scheduled Payments */}
+                <div className="card min-w-0 overflow-hidden">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <FiCalendar className="w-5 h-5" />
+                      Scheduled Payments
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setScheduledPaymentForm({ customerId: "", amount: "", currency: "USD", scheduledFor: "" });
+                        setShowScheduledPaymentModal(true);
+                      }}
+                      className="btn btn-secondary text-sm"
+                    >
+                      <FiPlus className="w-4 h-4" />
+                      Schedule Payment
+                    </button>
+                  </div>
+                  {scheduledPayments.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No scheduled payments</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th>Customer</th>
+                            <th>Amount</th>
+                            <th>Scheduled For</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scheduledPayments.map((sp: any) => (
+                            <tr key={sp.id}>
+                              <td>{sp.customer?.email || sp.customerId}</td>
+                              <td>{formatCurrency(sp.amount, sp.currency)}</td>
+                              <td>{new Date(sp.scheduledFor).toLocaleDateString()}</td>
+                              <td>
+                                <span className={`badge ${
+                                  sp.status === "completed" ? "badge-success" :
+                                  sp.status === "failed" ? "badge-danger" :
+                                  sp.status === "cancelled" ? "badge" :
+                                  "badge-warning"
+                                }`}>
+                                  {sp.status}
+                                </span>
+                              </td>
+                              <td>
+                                {sp.status === "scheduled" && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await apiRequest(`/business/scheduled-payments/${sp.id}`, {
+                                          method: "DELETE",
+                                          accessToken,
+                                          csrfToken
+                                        });
+                                        setStatus(" Scheduled payment cancelled");
+                                        await loadData();
+                                      } catch (err: any) {
+                                        setStatus(` ${err?.message || "Failed to cancel"}`);
+                                      }
+                                    }}
+                                    className="text-red-600 hover:text-red-800 text-sm"
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payment Plan Templates */}
+                <div className="card">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <FiFileText className="w-5 h-5" />
+                      Payment Plan Templates
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setPaymentPlanTemplateForm({ name: "", numberOfInstallments: "2", intervalDays: "30" });
+                        setShowPaymentPlanTemplateModal(true);
+                      }}
+                      className="btn btn-secondary text-sm"
+                    >
+                      <FiPlus className="w-4 h-4" />
+                      Create Template
+                    </button>
+                  </div>
+                  {paymentPlanTemplates.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No templates created</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Installments</th>
+                            <th>Interval</th>
+                            <th>Default</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentPlanTemplates.map((tpl: any) => (
+                            <tr key={tpl.id}>
+                              <td className="font-medium">{tpl.name}</td>
+                              <td>{tpl.numberOfInstallments}</td>
+                              <td>{tpl.intervalDays} days</td>
+                              <td>{tpl.isDefault ? <span className="badge badge-success">Default</span> : "-"}</td>
+                              <td>
+                                <button
+                                  onClick={() => {
+                                    setNumberOfInstallments(tpl.numberOfInstallments);
+                                    setIntervalDays(tpl.intervalDays);
+                                    setIsPaymentPlan(true);
+                                    setStatus(` Template "${tpl.name}" loaded`);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 text-sm mr-2"
+                                >
+                                  Use
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    setConfirmModalData({
+                                      title: "Delete Template",
+                                      message: "Delete this template?",
+                                      variant: "danger",
+                                      onConfirm: async () => {
+                                        setShowConfirmModal(false);
+                                        try {
+                                          await apiRequest(`/business/payment-plan-templates/${tpl.id}`, {
+                                            method: "DELETE",
+                                            accessToken,
+                                            csrfToken
+                                          });
+                                          setStatus(" Template deleted");
+                                          await loadData();
+                                        } catch (err: any) {
+                                          setStatus(` ${err?.message || "Failed"}`);
+                                        }
+                                      }
+                                    });
+                                    setShowConfirmModal(true);
+                                  }}
+                                  className="text-red-600 hover:text-red-800 text-sm"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bulk Operations */}
+                <div className="card">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
+                    <FiUpload className="w-5 h-5" />
+                    Bulk Operations
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <button
+                      onClick={() => setBulkOperationMode("messages")}
+                      className="btn btn-secondary flex items-center gap-2"
+                    >
+                      <FiMessageSquare className="w-4 h-4" />
+                      Bulk Messages
+                    </button>
+                    <button
+                      onClick={() => setBulkOperationMode("payments")}
+                      className="btn btn-secondary flex items-center gap-2"
+                    >
+                      <FiCreditCard className="w-4 h-4" />
+                      Bulk Payments
+                    </button>
+                    <a
+                      href={`/business/bulk/customers/export`}
+                      download
+                      className="btn btn-secondary flex items-center gap-2"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        try {
+                          const csv = await apiRequest<string>("/business/bulk/customers/export", { accessToken });
+                          const blob = new Blob([csv], { type: "text/csv" });
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `customers-${Date.now()}.csv`;
+                          a.click();
+                          setStatus(" Customers exported");
+                        } catch (err: any) {
+                          setStatus(` ${err?.message || "Failed"}`);
+                        }
+                      }}
+                    >
+                      <FiDownload className="w-4 h-4" />
+                      Export Customers
+                    </a>
+                  </div>
+                </div>
+
+                {/* Receipts */}
+                <div className="card">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <FiFileText className="w-5 h-5" />
+                      Receipts
+                    </h3>
+                    {receipts.length > 0 && (
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => {
+                          setConfirmModalData({
+                            title: "Clear Receipts",
+                            message: "Clear all receipts from view?",
+                            variant: "warning",
+                            onConfirm: () => {
+                              setShowConfirmModal(false);
+                              setReceipts([]);
+                              setStatus(" Receipts cleared");
+                            }
+                          });
+                          setShowConfirmModal(true);
+                        }}
+                      >
+                        <FiTrash2 className="mr-1" /> Clear
+                      </button>
+                    )}
+                  </div>
+                  {receipts.length === 0 ? (
+                    <p className="text-gray-500">No receipts generated yet. Receipts are auto-generated when payments are completed.</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th className="text-gray-700">Receipt #</th>
+                            <th className="text-gray-700">Payment</th>
+                            <th className="text-gray-700">Sent</th>
+                            <th className="text-gray-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {receipts.map((r) => (
+                            <tr key={r.id}>
+                              <td className="text-gray-900 font-medium">{r.receiptNumber}</td>
+                              <td className="text-gray-700">{r.payment?.amount} {r.payment?.currency}</td>
+                              <td className="text-gray-600 text-sm">{r.sentAt ? new Date(r.sentAt).toLocaleString() : "Not sent"}</td>
+                              <td>
+                                {r.pdfUrl && (
+                                  <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="btn btn-xs btn-secondary">
+                                    <FiDownload className="mr-1" /> Download
+                                  </a>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payment Reminders */}
+                <div className="card">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <FiBell className="w-5 h-5" />
+                      Payment Reminders
+                    </h3>
+                    {paymentReminders.length > 0 && (
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => {
+                          setConfirmModalData({
+                            title: "Clear Reminders",
+                            message: "Clear all reminders from view?",
+                            variant: "warning",
+                            onConfirm: () => {
+                              setShowConfirmModal(false);
+                              setPaymentReminders([]);
+                              setStatus(" Reminders cleared");
+                            }
+                          });
+                          setShowConfirmModal(true);
+                        }}
+                      >
+                        <FiTrash2 className="mr-1" /> Clear
+                      </button>
+                    )}
+                  </div>
+                  {paymentReminders.length === 0 ? (
+                    <p className="text-gray-500">No reminders scheduled. Schedule reminders when creating payments.</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th className="text-gray-700">Payment</th>
+                            <th className="text-gray-700">Scheduled For</th>
+                            <th className="text-gray-700">Channel</th>
+                            <th className="text-gray-700">Status</th>
+                            <th className="text-gray-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentReminders.map((r) => (
+                            <tr key={r.id}>
+                              <td className="text-gray-700">{r.paymentId?.substring(0, 8)}</td>
+                              <td className="text-gray-600 text-sm">{new Date(r.scheduledFor).toLocaleString()}</td>
+                              <td className="text-gray-700">{r.channel}</td>
+                              <td><span className={getStatusBadge(r.status)}>{r.status}</span></td>
+                              <td>
+                                {r.status === "scheduled" && (
+                                  <button
+                                    className="btn btn-xs btn-danger"
+                                    onClick={async () => {
+                                      try {
+                                        await apiRequest(`/business/reminders/${r.id}`, {
+                                          method: "DELETE",
+                                          accessToken,
+                                          csrfToken
+                                        });
+                                        setPaymentReminders(paymentReminders.filter(x => x.id !== r.id));
+                                        setStatus(" Reminder cancelled");
+                                      } catch (err: any) {
+                                        setStatus(` ${err?.response?.data?.error || "Failed to cancel"}`);
+                                      }
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Automation Tab */}
+            {activeTab === "automation" && (
+              <div className="space-y-3 sm:space-y-6">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-3xl font-bold text-gray-900">Automation Engine</h2>
+                    <button 
+                        className="btn btn-primary flex items-center gap-2"
+                        onClick={async () => {
+                            setIsSavingAutomation(true);
+                            try {
+                                await apiRequest("/business/automation/settings", {
+                                    method: "PATCH",
+                                    accessToken,
+                                    csrfToken,
+                                    body: automationSettings
+                                });
+                                setStatus(" Automation settings saved");
+                            } catch (err) {
+                                setStatus(" Failed to save settings");
+                            } finally {
+                                setIsSavingAutomation(false);
+                            }
+                        }}
+                        disabled={isSavingAutomation}
+                    >
+                        <FiRefreshCw className={isSavingAutomation ? "animate-spin" : ""} />
+                        Save All Changes
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
+                    {/* Feature Toggles */}
+                    <div className="card lg:col-span-1">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900">
+                            <FiZap className="text-yellow-500" /> Feature Controls
+                        </h3>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p className="font-medium text-gray-900">Automated Reminders</p>
+                                    <p className="text-xs text-gray-500">Send 3d, 2d, 1d nudges</p>
+                                </div>
+                                <input 
+                                    type="checkbox" 
+                                    className="toggle toggle-primary" 
+                                    checked={automationSettings.remindersEnabled}
+                                    onChange={(e) => setAutomationSettings({...automationSettings, remindersEnabled: e.target.checked})}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p className="font-medium text-gray-900">Payment Recovery</p>
+                                    <p className="text-xs text-gray-500">Nudge incomplete payments</p>
+                                </div>
+                                <input 
+                                    type="checkbox" 
+                                    className="toggle toggle-primary"
+                                    checked={automationSettings.recoveryEnabled}
+                                    onChange={(e) => setAutomationSettings({...automationSettings, recoveryEnabled: e.target.checked})}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p className="font-medium text-gray-900">AI Support Bot</p>
+                                    <p className="text-xs text-gray-500">WhatsApp/SMS auto-replies</p>
+                                </div>
+                                <input 
+                                    type="checkbox" 
+                                    className="toggle toggle-primary"
+                                    checked={automationSettings.aiBotEnabled}
+                                    onChange={(e) => setAutomationSettings({...automationSettings, aiBotEnabled: e.target.checked})}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Preferred Payment Gateway */}
+                        <div className="mt-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                            <h4 className="text-sm font-semibold text-purple-800 mb-3 flex items-center gap-2">
+                                <FiCreditCard /> Preferred Payment Gateway
+                            </h4>
+                            <p className="text-xs text-purple-700 mb-3">
+                                Choose which payment gateway to use by default when both Stripe and Paystack are connected.
+                            </p>
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-purple-100">
+                                    <input
+                                        type="radio"
+                                        name="preferredGateway"
+                                        value="paystack"
+                                        checked={automationSettings.preferredPaymentGateway === "paystack"}
+                                        onChange={(e) => setAutomationSettings({...automationSettings, preferredPaymentGateway: "paystack"})}
+                                        disabled={!availableGateways.paystack && availableGateways.stripe}
+                                        className="w-4 h-4"
+                                    />
+                                    <span className={`text-sm ${automationSettings.preferredPaymentGateway === "paystack" ? "font-semibold text-purple-900" : "text-purple-700"}`}>
+                                        Paystack {!availableGateways.paystack && "(Not Connected)"}
+                                    </span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-purple-100">
+                                    <input
+                                        type="radio"
+                                        name="preferredGateway"
+                                        value="stripe"
+                                        checked={automationSettings.preferredPaymentGateway === "stripe"}
+                                        onChange={(e) => setAutomationSettings({...automationSettings, preferredPaymentGateway: "stripe"})}
+                                        disabled={!availableGateways.stripe && availableGateways.paystack}
+                                        className="w-4 h-4"
+                                    />
+                                    <span className={`text-sm ${automationSettings.preferredPaymentGateway === "stripe" ? "font-semibold text-purple-900" : "text-purple-700"}`}>
+                                        Stripe {!availableGateways.stripe && "(Not Connected)"}
+                                    </span>
+                                </label>
+                            </div>
+                            <p className="text-xs text-purple-600 mt-2">
+                                Default: Paystack. This setting is saved automatically when you click "Save All Changes".
+                            </p>
+                        </div>
+                        
+                        <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                            <h4 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                                <FiMessageSquare /> WhatsApp Bot Configuration
+                            </h4>
+                            
+                            <div className="space-y-4 pt-2">
+                                <div>
+                                    <p className="text-[11px] font-bold text-blue-900 uppercase tracking-tight mb-1">1. Message Webhook (Bot Response)</p>
+                                    <div className="bg-white p-2 rounded border border-blue-200 flex items-center justify-between gap-2 overflow-hidden">
+                                        <code className="text-[10px] text-gray-600 truncate">
+                                            {(window.location.origin.includes('localhost') ? 'https://debby-backend-production.up.railway.app' : window.location.origin.replace('debbyfrontend', 'debby-backend')) + '/webhooks/twilio/incoming'}
+                                        </code>
+                                        <button 
+                                            onClick={() => {
+                                                navigator.clipboard.writeText((window.location.origin.includes('localhost') ? 'https://debby-backend-production.up.railway.app' : window.location.origin.replace('debbyfrontend', 'debby-backend')) + '/webhooks/twilio/incoming');
+                                                setStatus(" Incoming Webhook copied");
+                                            }}
+                                            className="text-blue-600 hover:text-blue-800"
+                                        >
+                                            <FiCopy className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <p className="text-[11px] font-bold text-blue-900 uppercase tracking-tight mb-1">2. Status Webhook (Delivery Tracking)</p>
+                                    <div className="bg-white p-2 rounded border border-blue-200 flex items-center justify-between gap-2 overflow-hidden">
+                                        <code className="text-[10px] text-gray-600 truncate">
+                                            {(window.location.origin.includes('localhost') ? 'https://debby-backend-production.up.railway.app' : window.location.origin.replace('debbyfrontend', 'debby-backend')) + '/webhooks/twilio/status'}
+                                        </code>
+                                        <button 
+                                            onClick={() => {
+                                                navigator.clipboard.writeText((window.location.origin.includes('localhost') ? 'https://debby-backend-production.up.railway.app' : window.location.origin.replace('debbyfrontend', 'debby-backend')) + '/webhooks/twilio/status');
+                                                setStatus(" Status Webhook copied");
+                                            }}
+                                            className="text-blue-600 hover:text-blue-800"
+                                        >
+                                            <FiCopy className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Template Editor */}
+                    <div className="card lg:col-span-2">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900">
+                            <FiBell className="text-blue-500" /> Messaging Templates
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-6">
+                            Customize the automated messages sent to your customers. Use <code className="bg-gray-100 px-1 rounded">{"{{customerName}}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{{amount}}"}</code>, and <code className="bg-gray-100 px-1 rounded">{"{{link}}"}</code> variables.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {[
+                                { name: 'payment_request', label: 'Initial Request' },
+                                { name: 'reminder_3d', label: '3-Day Reminder' },
+                                { name: 'reminder_1d', label: '1-Day Reminder' },
+                                { name: 'reminder_due', label: 'Due Date Message' },
+                                { name: 'reminder_abandoned', label: 'Recovery Message' }
+                            ].map(tpl => {
+                                const dbTpl = automationTemplates.find(t => t.name === tpl.name);
+                                return (
+                                    <div key={tpl.name} className="p-3 border border-gray-100 rounded-xl bg-gray-50/50 flex flex-col gap-2">
+                                        <label className="text-sm font-semibold text-gray-700 mb-1 block">{tpl.label}</label>
+                                        <textarea 
+                                            className="input text-sm w-full h-20 p-2.5 bg-white leading-tight"
+                                            value={dbTpl?.body || ""}
+                                            onChange={(e) => {
+                                                const newTemplates = [...automationTemplates];
+                                                const idx = newTemplates.findIndex(t => t.name === tpl.name);
+                                                if (idx > -1) {
+                                                    newTemplates[idx].body = e.target.value;
+                                                } else {
+                                                    newTemplates.push({ name: tpl.name, body: e.target.value, channel: 'whatsapp' });
+                                                }
+                                                setAutomationTemplates(newTemplates);
+                                            }}
+                                            placeholder="Message body..."
+                                        />
+                                        <div className="flex justify-end mt-1">
+                                            <button 
+                                                className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+                                                onClick={async () => {
+                                                    const target = automationTemplates.find(t => t.name === tpl.name);
+                                                    if (!target) return;
+                                                    try {
+                                                        await apiRequest("/business/automation/templates", {
+                                                            method: "POST",
+                                                            accessToken,
+                                                            csrfToken,
+                                                            body: {
+                                                                name: tpl.name,
+                                                                body: target.body,
+                                                                channel: target.channel || 'whatsapp'
+                                                            }
+                                                        });
+                                                        setStatus(` ${tpl.label} template updated`);
+                                                    } catch (err) {
+                                                        setStatus(" Update failed");
+                                                    }
+                                                }}
+                                            >
+                                                Save This
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notifications Tab */}
+            {activeTab === "notifications" && (
+              <div className="space-y-3 sm:space-y-6">
+                <Collapsible title="Send Notification" defaultOpen={false}>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="label">Channel</label>
+                      <select className="input" value={channel} onChange={(e) => {
+                        setChannel(e.target.value as "email" | "sms" | "whatsapp");
+                        // Reset customer selection when channel changes
+                        setSelectedCustomerId("");
+                      }}>
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                        <option value="whatsapp">WhatsApp</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Select Customer</label>
+                      {loadingCustomers ? (
+                        <div className="text-sm text-gray-500 py-2">Loading customers...</div>
+                      ) : customers.length === 0 ? (
+                        <div className="text-sm text-gray-500 py-2">
+                          No customers found. <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab("customers"); }} className="text-blue-600 hover:underline">Add customers first</a>
+                        </div>
+                      ) : (
+                        <select
+                          className="input"
+                          value={selectedCustomerId}
+                          onChange={(e) => setSelectedCustomerId(e.target.value)}
+                        >
+                          <option value="">-- Select a customer --</option>
+                          {customers
+                            .filter(customer => {
+                              // Filter customers based on channel requirements
+                              if (channel === "email") return customer.email;
+                              if (channel === "sms" || channel === "whatsapp") return customer.phone;
+                              return true;
+                            })
+                            .map((customer) => (
+                              <option key={customer.id} value={customer.id}>
+                                {customer.firstName || customer.lastName 
+                                  ? `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+                                  : customer.email}
+                                {channel === "email" && customer.email ? ` (${customer.email})` : ""}
+                                {(channel === "sms" || channel === "whatsapp") && customer.phone ? ` (${customer.phone})` : ""}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">
+                        Recipient {selectedCustomerId ? "(Auto-filled from customer)" : ""}
+                      </label>
+                      <input
+                        className="input"
+                        value={recipient}
+                        onChange={(e) => setRecipient(e.target.value)}
+                        placeholder={channel === "email" ? "customer@example.com" : channel === "sms" ? "+1234567890" : "WhatsApp number"}
+                        disabled={!!selectedCustomerId}
+                      />
+                      {selectedCustomerId && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {channel === "email" 
+                            ? " Email auto-filled from selected customer. Clear customer selection to edit manually."
+                            : channel === "sms"
+                            ? " Phone number auto-filled from selected customer. Clear customer selection to edit manually."
+                            : " WhatsApp number auto-filled from selected customer. Clear customer selection to edit manually."}
+                        </p>
+                      )}
+                      {!selectedCustomerId && customers.length > 0 && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Select a customer above to auto-fill the recipient, or enter manually
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">Message</label>
+                      <textarea
+                        className="input resize-y"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Your notification message..."
+                        rows={4}
+                      />
+                    </div>
+                    <button className="btn btn-primary w-full" onClick={sendNotification} disabled={!recipient || !message}>
+                      Send Notification
+                    </button>
+                  </div>
+                </Collapsible>
+
+                <div className="card">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold m-0 text-gray-900">Notification History</h3>
+                    <button
+                      className={`btn btn-sm ${notifications.length > 0 ? "btn-danger" : "btn-secondary"}`}
+                      disabled={notifications.length === 0}
+                      onClick={async () => {
+                        if (notifications.length === 0) return;
+                        setConfirmModalData({
+                          title: "Delete All Notifications",
+                          message: "Are you sure you want to delete all notifications from the database? This action cannot be undone.",
+                          variant: "danger",
+                          onConfirm: async () => {
+                            setShowConfirmModal(false);
+                            try {
+                              await apiRequest("/business/notifications", {
+                                method: "DELETE",
+                                accessToken,
+                                csrfToken
+                              });
+                              setNotifications([]);
+                              setStatus(" All notifications deleted from database");
+                              await loadData();
+                            } catch (err: any) {
+                              setStatus(` ${err?.response?.data?.error || "Failed to delete notifications"}`);
+                            }
+                          }
+                        });
+                        setShowConfirmModal(true);
+                      }}
+                      title={notifications.length === 0 ? "No notifications to clear" : "Clear all notifications"}
+                    >
+                      <FiTrash2 className="mr-1" /> Clear All {notifications.length > 0 && `(${notifications.length})`}
+                    </button>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <p className="text-gray-500">No notifications yet</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th className="text-gray-700">Channel</th>
+                            <th className="text-gray-700">Recipient</th>
+                            <th className="text-gray-700">Status</th>
+                            <th className="text-gray-700">Created</th>
+                            <th className="text-gray-700">Sent</th>
+                            <th className="text-gray-700">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {notifications.map((notif) => (
+                            <tr key={notif.id}>
+                              <td className="text-gray-900 font-medium">{notif.channel.toUpperCase()}</td>
+                              <td className="text-gray-700">{notif.recipient}</td>
+                              <td><span className={getStatusBadge(notif.status)}>{notif.status}</span></td>
+                              <td className="text-gray-600 text-sm">{new Date(notif.createdAt).toLocaleString()}</td>
+                              <td className="text-gray-600 text-sm">{notif.sentAt ? new Date(notif.sentAt).toLocaleString() : "-"}</td>
+                              <td>
+                                <button
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => {
+                                    setNotifications(notifications.filter(n => n.id !== notif.id));
+                                    setStatus(" Notification removed");
+                                  }}
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Integrations Tab */}
+            {activeTab === "integrations" && (
+              <div className="space-y-3 sm:space-y-6">
+                <div className="bg-white border border-gray-200 rounded-xl p-2">
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { key: "calls", label: "Calls & Notifications" },
+                      { key: "payments", label: "Payments & Webhooks" },
+                      { key: "marketplace", label: "Marketplace" },
+                      { key: "connected", label: "Connected Integrations" }
+                    ].map((tab) => {
+                      const isActive = integrationSectionTab === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            isActive
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                          onClick={() =>
+                            setIntegrationSectionTab(
+                              tab.key as "calls" | "payments" | "marketplace" | "connected"
+                            )
+                          }
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {integrationSectionTab === "calls" && (
+                  <>
+                <Collapsible title="Notification Settings" defaultOpen={false}>
+                  <p className="text-gray-600 mb-4 text-sm">
+                    Configure your Email, SMS, and WhatsApp credentials to send notifications. Each organization manages their own settings.
+                  </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="label">Notification Channel</label>
+                      <select className="input" value={notificationProvider} onChange={(e) => setNotificationProvider(e.target.value as "email" | "sms" | "whatsapp")}>
+                        <option value="email">Email (SendGrid)</option>
+                        <option value="sms">SMS (Twilio)</option>
+                        <option value="whatsapp">WhatsApp (Twilio)</option>
+                      </select>
+                    </div>
+
+                    {notificationProvider === "email" && (
+                      <>
+                        <div>
+                          <label className="label">SendGrid API Key</label>
+                          <input
+                            className="input"
+                            type="password"
+                            value={emailApiKey}
+                            onChange={(e) => setEmailApiKey(e.target.value)}
+                            placeholder="SG.xxxxxxxxxxxxx"
+                          />
+                          <p className="mt-2 text-xs text-gray-500">
+                            Get your API key from <a href="https://app.sendgrid.com/settings/api_keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">SendGrid Settings</a>
+                          </p>
+                        </div>
+                        <div>
+                          <label className="label">From Email (Optional)</label>
+                          <input
+                            className="input"
+                            type="email"
+                            value={emailFrom}
+                            onChange={(e) => setEmailFrom(e.target.value)}
+                            placeholder="noreply@yourcompany.com"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {notificationProvider === "sms" && (
+                      <>
+                        <div>
+                          <label className="label">Twilio Account SID</label>
+                          <input
+                            className="input"
+                            type="text"
+                            value={smsAccountSid}
+                            onChange={(e) => setSmsAccountSid(e.target.value)}
+                            placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Twilio Auth Token</label>
+                          <input
+                            className="input"
+                            type="password"
+                            value={smsAuthToken}
+                            onChange={(e) => setSmsAuthToken(e.target.value)}
+                            placeholder="Your auth token"
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Twilio Phone Number</label>
+                          <input
+                            className="input"
+                            type="text"
+                            value={smsPhoneNumber}
+                            onChange={(e) => setSmsPhoneNumber(e.target.value)}
+                            placeholder="+1234567890"
+                          />
+                          <p className="mt-2 text-xs text-gray-500">
+                            Get credentials from <a href="https://console.twilio.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Twilio Console</a>
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {notificationProvider === "whatsapp" && (
+                      <>
+                        <div>
+                          <label className="label">Twilio Account SID</label>
+                          <input
+                            className="input"
+                            type="text"
+                            value={whatsappAccountSid}
+                            onChange={(e) => setWhatsappAccountSid(e.target.value)}
+                            placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Twilio Auth Token</label>
+                          <input
+                            className="input"
+                            type="password"
+                            value={whatsappAuthToken}
+                            onChange={(e) => setWhatsappAuthToken(e.target.value)}
+                            placeholder="Your auth token"
+                          />
+                        </div>
+                        <div>
+                          <label className="label">WhatsApp Number</label>
+                          <input
+                            className="input"
+                            type="text"
+                            value={whatsappNumber}
+                            onChange={(e) => setWhatsappNumber(e.target.value)}
+                            placeholder="+1234567890 or whatsapp:+1234567890"
+                          />
+                          <p className="mt-2 text-xs text-gray-500">
+                            Get credentials from <a href="https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Twilio WhatsApp</a>
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    <button className="btn btn-primary w-full" onClick={saveNotificationSettings}>
+                      Save {notificationProvider.charAt(0).toUpperCase() + notificationProvider.slice(1)} Settings
+                    </button>
+                  </div>
+                </Collapsible>
+
+                <Collapsible title="Voice & Customer Calls" defaultOpen={false}>
+                  <p className="text-gray-600 mb-4 text-sm">
+                    Register your incoming voice numbers so Debby can route customer calls and
+                    save callers to your customer records.
+                  </p>
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <p className="text-xs font-semibold text-gray-700 m-0">Twilio Voice Webhook URL</p>
+                        <button
+                          className="btn btn-xs btn-secondary"
+                          onClick={() => {
+                            navigator.clipboard.writeText(twilioVoiceWebhookUrl);
+                            setStatus("? Twilio voice webhook URL copied");
+                          }}
+                        >
+                          <FiCopy className="mr-1" /> Copy
+                        </button>
+                      </div>
+                      <code className="block text-xs font-mono text-gray-800 break-all">
+                        {twilioVoiceWebhookUrl}
+                      </code>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="label">Phone Number (E.164)</label>
+                        <input
+                          className="input"
+                          placeholder="+2348012345678"
+                          value={newPhoneNumber}
+                          onChange={(e) => setNewPhoneNumber(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Label (optional)</label>
+                        <input
+                          className="input"
+                          placeholder="Main line, Support, Sales..."
+                          value={newPhoneLabel}
+                          onChange={(e) => setNewPhoneLabel(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Type</label>
+                        <select
+                          className="input"
+                          value={newPhoneType}
+                          onChange={(e) => setNewPhoneType(e.target.value as "voice" | "sms" | "whatsapp")}
+                        >
+                          <option value="voice">Voice</option>
+                          <option value="sms">SMS</option>
+                          <option value="whatsapp">WhatsApp</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button className="btn btn-primary" onClick={saveVoicePhoneNumber}>
+                      Save Phone Number
+                    </button>
+
+                    <div className="border-t pt-4">
+                      <h4 className="text-sm font-semibold text-gray-800 mb-2">Registered Numbers</h4>
+                      {phoneNumbers.length === 0 ? (
+                        <p className="text-sm text-gray-500">No phone numbers registered yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {phoneNumbers.map((p) => (
+                            <div
+                              key={p.id}
+                              className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
+                            >
+                              <div>
+                                <p className="m-0 font-medium text-gray-900">{p.phoneNumber}</p>
+                                <p className="text-xs text-gray-500">
+                                  {p.label || "No label"}  Type: {p.type}
+                                </p>
+                              </div>
+                              <button
+                                className="text-xs text-red-600 hover:text-red-800"
+                                onClick={() => removeVoicePhoneNumber(p.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Collapsible>
+                  </>
+                )}
+
+                {integrationSectionTab === "payments" && (
+                  <>
+                <Collapsible title="Connect Revenue Tracking" defaultOpen={false}>
+                  <p className="text-gray-600 mb-4 text-sm">
+                    Connect Stripe or Paystack to automatically track revenue and receive alerts when payments are processed.
+                  </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="label">Provider</label>
+                      <select className="input" value={integrationProvider} onChange={(e) => setIntegrationProvider(e.target.value as "stripe" | "paystack")}>
+                        <option value="stripe">Stripe</option>
+                        <option value="paystack">Paystack</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">API Key / Secret Key</label>
+                      <input
+                        className="input"
+                        type="password"
+                        value={integrationToken}
+                        onChange={(e) => setIntegrationToken(e.target.value)}
+                        placeholder={integrationProvider === "stripe" ? "sk_live_..." : "sk_live_..."}
+                      />
+                      <p className="mt-2 text-xs text-gray-500">
+                        {integrationProvider === "stripe" 
+                          ? "Get your API key from https://dashboard.stripe.com/apikeys"
+                          : "Get your secret key from https://dashboard.paystack.com/#/settings/developer"}
+                      </p>
+                    </div>
+                    <button className="btn btn-primary w-full" onClick={connectIntegration} disabled={!integrationToken}>
+                      Connect {integrationProvider.charAt(0).toUpperCase() + integrationProvider.slice(1)}
+                    </button>
+                  </div>
+                </Collapsible>
+
+                <Collapsible title="Webhook URLs for Payment Gateways" defaultOpen={true}>
+                  <p className="text-gray-600 mb-4 text-sm">
+                    Add these webhook URLs to your Stripe or Paystack dashboard to automatically update payment statuses when customers pay.
+                  </p>
+                  
+                  {webhookUrls ? (
+                    <div className="space-y-4">
+                      {/* Stripe Webhook */}
+                      {integrations.some(i => i.provider === "stripe") && (
+                        <div className="p-4 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="label mb-0 font-semibold">Stripe Webhook URL</label>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(webhookUrls.webhooks.stripe);
+                                setStatus(" Stripe webhook URL copied to clipboard");
+                              }}
+                              className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                              title="Copy URL"
+                            >
+                              <FiCopy className="w-4 h-4 text-gray-600" />
+                            </button>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded-lg font-mono text-sm break-all text-gray-800">
+                            {webhookUrls.webhooks.stripe}
+                          </div>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Add this URL in <a href="https://dashboard.stripe.com/webhooks" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Stripe Dashboard  Webhooks</a>
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Paystack Webhook */}
+                      {integrations.some(i => i.provider === "paystack") && (
+                        <div className="p-4 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="label mb-0 font-semibold">Paystack Webhook URL</label>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(webhookUrls.webhooks.paystack);
+                                setStatus(" Paystack webhook URL copied to clipboard");
+                              }}
+                              className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                              title="Copy URL"
+                            >
+                              <FiCopy className="w-4 h-4 text-gray-600" />
+                            </button>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded-lg font-mono text-sm break-all text-gray-800">
+                            {webhookUrls.webhooks.paystack}
+                          </div>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Add this URL in <a href="https://dashboard.paystack.com/#/settings/developer" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Paystack Dashboard  Settings  Developer  Webhooks</a>
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Instructions for Local Development */}
+                      {webhookUrls.webhooks.stripe.includes("localhost") || webhookUrls.webhooks.paystack.includes("localhost") ? (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-yellow-900 mb-2"> Local Development Setup</h4>
+                          <p className="text-sm text-yellow-800 mb-3">
+                            Paystack and Stripe cannot reach <code>localhost</code>. You need to expose your backend publicly using ngrok:
+                          </p>
+                          <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
+                            <li>Install ngrok: <code className="bg-yellow-100 px-1 rounded">npm install -g ngrok</code> or download from <a href="https://ngrok.com/download" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">ngrok.com</a></li>
+                            <li>Run: <code className="bg-yellow-100 px-1 rounded">ngrok http 4000</code></li>
+                            <li>Copy the HTTPS URL (e.g., <code className="bg-yellow-100 px-1 rounded">https://abc123.ngrok.io</code>)</li>
+                            <li>Set environment variable: <code className="bg-yellow-100 px-1 rounded">WEBHOOK_BASE_URL=https://abc123.ngrok.io</code></li>
+                            <li>Restart your backend server</li>
+                            <li>Refresh this page to see the updated webhook URLs</li>
+                          </ol>
+                          <p className="text-xs text-yellow-700 mt-3">
+                            <strong>Note:</strong> The ngrok URL changes each time you restart ngrok (unless you have a paid plan). Update the webhook URL in Paystack/Stripe dashboard each time.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <p className="text-sm text-green-800">
+                             Your webhook URLs are configured for production. Make sure your backend is publicly accessible.
+                          </p>
+                        </div>
+                      )}
+
+                      {!integrations.some(i => i.provider === "stripe" || i.provider === "paystack") && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <p className="text-sm text-gray-600">
+                            Connect Stripe or Paystack above to see your webhook URLs.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">Loading webhook URLs...</p>
+                  )}
+                </Collapsible>
+                  </>
+                )}
+
+                {integrationSectionTab === "marketplace" && (
+                  <>
+                <Collapsible title="Integration Marketplace" defaultOpen={false}>
+                  <div className="space-y-4">
+                    {marketplaceTemplatesForDisplay.length === 0 ? (
+                      <p className="text-gray-500">Loading integrations...</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {marketplaceTemplatesForDisplay.map((template) => {
+                          const provider = String(template?.provider || "").trim().toLowerCase();
+                          const templateStatus = String(template?.status || "").trim().toLowerCase();
+                          const connected =
+                            templateStatus === "connected" ||
+                            Boolean(template?.connected) ||
+                            connectedIntegrationProviders.has(provider);
+                          const failed = templateStatus === "failed";
+                          const requested = Boolean(template?.requested) || templateStatus === "requested";
+                          const busy = settingUpMarketplaceProvider === provider;
+                          const clearing = clearingMarketplaceProvider === provider;
+                          const canClearRequest = !connected && (requested || failed);
+                          const providerConfig = marketplaceConfigByProvider[provider] || {};
+                          const shopifyUsesOAuth =
+                            provider === "shopify" && !String(providerConfig.accessToken || "").trim();
+                          const connectionSummary = template?.connectionSummary || {};
+                          const inventorySync = template?.inventorySync || {};
+                          const supportsInventorySyncProvider =
+                            provider === "amazon" || provider === "cjdropshipping" || provider === "aliexpress";
+                          const syncingInventory = syncingMarketplaceProvider === provider;
+                          const lastError = String(template?.lastError || "").trim();
+                          return (
+                            <div key={provider} className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <h4 className="font-semibold text-gray-900 m-0">{template.name}</h4>
+                                {connected ? (
+                                  <span className="badge badge-success">Connected</span>
+                                ) : failed ? (
+                                  <span className="badge badge-danger">Failed</span>
+                                ) : requested ? (
+                                  <span className="badge badge-warning">Request Sent</span>
+                                ) : (
+                                  <span className="badge">Available</span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600">{template.description}</p>
+                              {!connected && (
+                                <div className="space-y-2">
+                                  {provider === "shopify" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Shopify domain (your-store.myshopify.com)"
+                                        value={providerConfig.shopDomain || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "shopDomain", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Shopify Admin API token (optional for OAuth)"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                      <p className="text-xs text-gray-500">
+                                        Leave token empty to connect securely via Shopify OAuth.
+                                      </p>
+                                    </>
+                                  )}
+                                  {provider === "woocommerce" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Store URL (https://store.example.com)"
+                                        value={providerConfig.storeUrl || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "storeUrl", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Consumer Key"
+                                        value={providerConfig.consumerKey || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "consumerKey", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Consumer Secret"
+                                        value={providerConfig.consumerSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "consumerSecret", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "zapier" && (
+                                    <input
+                                      className="input text-sm"
+                                      placeholder="Zapier Catch Hook URL"
+                                      value={providerConfig.webhookUrl || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "webhookUrl", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "amazon" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Seller ID"
+                                        value={providerConfig.sellerId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "sellerId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Marketplace ID (e.g. ATVPDKIKX0DER)"
+                                        value={providerConfig.marketplaceId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "marketplaceId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="LWA Client ID"
+                                        value={providerConfig.lwaClientId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "lwaClientId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="LWA Client Secret"
+                                        value={providerConfig.lwaClientSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "lwaClientSecret", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Refresh Token"
+                                        value={providerConfig.refreshToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "refreshToken", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="AWS Access Key ID"
+                                        value={providerConfig.awsAccessKeyId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "awsAccessKeyId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="AWS Secret Access Key"
+                                        value={providerConfig.awsSecretAccessKey || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "awsSecretAccessKey", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.endpointRegion || "na"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "endpointRegion", e.target.value)
+                                        }
+                                      >
+                                        <option value="na">Endpoint Region: North America</option>
+                                        <option value="eu">Endpoint Region: Europe</option>
+                                        <option value="fe">Endpoint Region: Far East</option>
+                                      </select>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Signing Region (optional, default auto)"
+                                        value={providerConfig.signingRegion || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "signingRegion", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Inventory endpoint (optional, e.g. /listings/.../{sku})"
+                                        value={providerConfig.inventoryEndpoint || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "inventoryEndpoint", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {(provider === "cjdropshipping" || provider === "aliexpress") && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="API Base URL"
+                                        value={providerConfig.apiBaseUrl || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiBaseUrl", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Access Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                      {provider === "aliexpress" && (
+                                        <>
+                                          <input
+                                            className="input text-sm"
+                                            placeholder="App Key (optional)"
+                                            value={providerConfig.appKey || ""}
+                                            onChange={(e) =>
+                                              updateMarketplaceConfig(provider, "appKey", e.target.value)
+                                            }
+                                          />
+                                          <input
+                                            className="input text-sm"
+                                            type="password"
+                                            placeholder="App Secret (optional)"
+                                            value={providerConfig.appSecret || ""}
+                                            onChange={(e) =>
+                                              updateMarketplaceConfig(provider, "appSecret", e.target.value)
+                                            }
+                                          />
+                                        </>
+                                      )}
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Test Endpoint (default /)"
+                                        value={providerConfig.testEndpoint || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "testEndpoint", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Inventory Endpoint with {sku}"
+                                        value={providerConfig.inventoryEndpoint || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "inventoryEndpoint", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Inventory Field Path (default data.stock)"
+                                        value={providerConfig.inventoryFieldPath || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "inventoryFieldPath", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.inventoryMethod || "GET"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "inventoryMethod", e.target.value)
+                                        }
+                                      >
+                                        <option value="GET">Inventory Method: GET</option>
+                                        <option value="POST">Inventory Method: POST</option>
+                                      </select>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {connected && (
+                                <div className="text-xs text-gray-600 bg-white rounded border border-gray-200 p-2 space-y-1">
+                                  {connectionSummary.shopName ? (
+                                    <p><span className="font-semibold text-gray-700">Shop:</span> {connectionSummary.shopName}</p>
+                                  ) : null}
+                                  {connectionSummary.shopDomain ? (
+                                    <p><span className="font-semibold text-gray-700">Domain:</span> {connectionSummary.shopDomain}</p>
+                                  ) : null}
+                                  {connectionSummary.storeUrl ? (
+                                    <p><span className="font-semibold text-gray-700">Store URL:</span> {connectionSummary.storeUrl}</p>
+                                  ) : null}
+                                  {connectionSummary.apiBaseUrl ? (
+                                    <p><span className="font-semibold text-gray-700">API Base:</span> {connectionSummary.apiBaseUrl}</p>
+                                  ) : null}
+                                  {connectionSummary.sellerId ? (
+                                    <p><span className="font-semibold text-gray-700">Seller ID:</span> {connectionSummary.sellerId}</p>
+                                  ) : null}
+                                  {connectionSummary.marketplaceId ? (
+                                    <p><span className="font-semibold text-gray-700">Marketplace:</span> {connectionSummary.marketplaceId}</p>
+                                  ) : null}
+                                  {connectionSummary.webhookUrl ? (
+                                    <p className="truncate"><span className="font-semibold text-gray-700">Webhook:</span> {connectionSummary.webhookUrl}</p>
+                                  ) : null}
+                                  {template?.connectedAt ? (
+                                    <p><span className="font-semibold text-gray-700">Connected:</span> {new Date(template.connectedAt).toLocaleString()}</p>
+                                  ) : null}
+                                  {inventorySync.lastRunAt ? (
+                                    <p>
+                                      <span className="font-semibold text-gray-700">Last Sync:</span>{" "}
+                                      {new Date(inventorySync.lastRunAt).toLocaleString()}
+                                    </p>
+                                  ) : null}
+                                  {inventorySync?.stats ? (
+                                    <p className="text-[11px] text-gray-500">
+                                      Sync stats: {inventorySync.stats.updated || 0} updated,{" "}
+                                      {inventorySync.stats.unchanged || 0} unchanged, {inventorySync.stats.failed || 0} failed
+                                    </p>
+                                  ) : null}
+                                </div>
+                              )}
+                              {!connected && failed && lastError && (
+                                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+                                  {lastError}
+                                </p>
+                              )}
+                              <button
+                                className={`btn btn-sm w-full ${
+                                  connected ? "btn-secondary" : "btn-primary"
+                                }`}
+                                onClick={() => setupMarketplaceIntegration(template)}
+                                disabled={connected || requested || busy || clearing}
+                              >
+                                {busy
+                                  ? "Connecting..."
+                                  : connected
+                                  ? "Connected"
+                                  : requested
+                                  ? "Request Submitted"
+                                  : failed
+                                  ? "Retry Setup"
+                                  : shopifyUsesOAuth
+                                  ? "Connect with Shopify OAuth"
+                                  : "Connect"}
+                              </button>
+                              {connected && supportsInventorySyncProvider && (
+                                <button
+                                  className="btn btn-sm btn-secondary w-full"
+                                  onClick={() => syncMarketplaceInventory(template, false)}
+                                  disabled={busy || clearing || syncingInventory}
+                                >
+                                  {syncingInventory ? "Syncing Inventory..." : "Sync Inventory"}
+                                </button>
+                              )}
+                              {canClearRequest && (
+                                <button
+                                  className="btn btn-sm btn-secondary w-full"
+                                  onClick={() => clearMarketplaceSetupRequest(template)}
+                                  disabled={busy || clearing}
+                                >
+                                  {clearing ? "Clearing..." : "Clear Request"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </Collapsible>
+
+                <Collapsible title="Shopify Commerce Insights" defaultOpen={false}>
+                  {!isShopifyMarketplaceConnected ? (
+                    <p className="text-sm text-gray-500">
+                      Connect Shopify in Integration Marketplace to load live orders, customers, products, and sales insights.
+                    </p>
+                  ) : loadingShopifyInsights && !shopifyOverview ? (
+                    <p className="text-sm text-gray-500">Loading Shopify insights...</p>
+                  ) : !shopifyOverview ? (
+                    <p className="text-sm text-gray-500">
+                      Shopify is connected, but insights are not available yet. Click refresh to retry.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">
+                          Connected shop: <span className="font-semibold text-gray-900">{shopifyOverview.shopDomain}</span>
+                        </p>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={loadShopifyInsights}
+                          disabled={loadingShopifyInsights}
+                        >
+                          {loadingShopifyInsights ? "Refreshing..." : "Refresh"}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                        <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                          <p className="text-xs text-gray-500">Total Orders</p>
+                          <p className="text-2xl font-bold text-gray-900">{shopifyOverview.totals.orders}</p>
+                        </div>
+                        <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                          <p className="text-xs text-gray-500">Sales (30d)</p>
+                          <p className="text-2xl font-bold text-gray-900">
+                            {formatCurrency(
+                              shopifyOverview.totals.sales30d,
+                              shopifyOverview.totals.sales30dCurrency || "USD"
+                            )}
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                          <p className="text-xs text-gray-500">Customers</p>
+                          <p className="text-2xl font-bold text-gray-900">{shopifyOverview.totals.customers}</p>
+                        </div>
+                        <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                          <p className="text-xs text-gray-500">Products</p>
+                          <p className="text-2xl font-bold text-gray-900">{shopifyOverview.totals.products}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="p-3 rounded-lg border border-green-200 bg-green-50">
+                          <p className="text-xs text-green-700">Paid Orders (30d)</p>
+                          <p className="text-xl font-bold text-green-800">{shopifyOverview.health.paidOrders30d}</p>
+                        </div>
+                        <div className="p-3 rounded-lg border border-yellow-200 bg-yellow-50">
+                          <p className="text-xs text-yellow-700">Pending Orders (30d)</p>
+                          <p className="text-xl font-bold text-yellow-800">{shopifyOverview.health.pendingOrders30d}</p>
+                        </div>
+                        <div className="p-3 rounded-lg border border-red-200 bg-red-50">
+                          <p className="text-xs text-red-700">Failed Orders (30d)</p>
+                          <p className="text-xl font-bold text-red-800">{shopifyOverview.health.failedOrders30d}</p>
+                        </div>
+                      </div>
+
+                      <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                        <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                          <thead>
+                            <tr>
+                              <th>Order</th>
+                              <th>Customer</th>
+                              <th>Items</th>
+                              <th>Total</th>
+                              <th>Payment</th>
+                              <th>Fulfillment</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(shopifyOrders.length ? shopifyOrders : shopifyOverview.recentOrders).map((order) => (
+                              <tr key={order.id || `${order.name}-${order.createdAt}`}>
+                                <td>
+                                  <div>
+                                    <p className="font-semibold text-gray-900">{order.name || "Order"}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td>{order.customerName || "Guest"}</td>
+                                <td>{order.itemsCount}</td>
+                                <td>{formatCurrency(order.totalPrice || 0, order.currency || "USD")}</td>
+                                <td><span className={getStatusBadge(order.financialStatus || "queued")}>{order.financialStatus || "unknown"}</span></td>
+                                <td><span className={getStatusBadge(order.fulfillmentStatus || "queued")}>{order.fulfillmentStatus || "unfulfilled"}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </Collapsible>
+                  </>
+                )}
+
+                {integrationSectionTab === "connected" && (
+                <div className="card min-w-0">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900">Connected Integrations</h3>
+                  {integrations.length === 0 ? (
+                    <p className="text-gray-500">No integrations connected</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {integrations.map((integration, index) => (
+                        <div key={index} className="p-4 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg flex justify-between items-center">
+                          <div>
+                            <p className="m-0 font-semibold capitalize text-gray-900">{integration.provider}</p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              Connected {new Date(integration.connectedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="badge badge-success">Connected</span>
+                            <button
+                              onClick={() => deleteIntegration(integration.provider)}
+                              className="btn btn-danger text-sm px-3 py-1.5"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === "settings" && (
+          <div className="space-y-3 sm:space-y-6">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Settings</h2>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap gap-2">
+                {[
+                  { key: "account", label: "Account" },
+                  { key: "payments", label: "Payments" },
+                  { key: "calls", label: "Calls" },
+                  { key: "growth", label: "Growth" },
+                  { key: "branding", label: "Branding" }
+                ].map((tab) => {
+                  const isActive = settingsSectionTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      className={`w-full lg:w-auto px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                      onClick={() =>
+                        setSettingsSectionTab(
+                          tab.key as "account" | "payments" | "calls" | "growth" | "branding"
+                        )
+                      }
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Profile Settings */}
+            {settingsSectionTab === "account" && (
+            <Collapsible title="Profile Settings" defaultOpen={true}>
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Email Address</label>
+                  <input
+                    type="email"
+                    className="input"
+                    placeholder="your@email.com"
+                    disabled
+                    value={user?.email || ""}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Contact support to change your email address
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Change Password</label>
+                  <input
+                    type="password"
+                    className="input mb-2"
+                    placeholder="Current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                  />
+                  <input
+                    type="password"
+                    className="input mb-2"
+                    placeholder="New password (min 12 characters)"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <input
+                    type="password"
+                    className="input"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                  <button 
+                    className="btn btn-primary mt-4"
+                    onClick={handleUpdatePassword}
+                    disabled={passwordLoading || !currentPassword || !newPassword || !confirmPassword}
+                  >
+                    {passwordLoading ? "Updating..." : "Update Password"}
+                  </button>
+                </div>
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Organization Settings - Only visible on small screens */}
+            {settingsSectionTab === "account" && (
+            <div className="md:hidden">
+              <Collapsible title="Organization Settings" defaultOpen={false}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">Organization Name</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Your Organization"
+                      disabled
+                      value={user?.orgName || ""}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Organization name cannot be changed
+                    </p>
+                  </div>
+                  <div>
+                    <label className="label">Organization ID</label>
+                    <input
+                      type="text"
+                      className="input"
+                      disabled
+                      value={user?.orgId || ""}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Email Address</label>
+                    <input
+                      type="email"
+                      className="input"
+                      disabled
+                      value={user?.email || ""}
+                    />
+                  </div>
+                </div>
+              </Collapsible>
+            </div>
+            )}
+
+            {/* Notification Preferences */}
+            {settingsSectionTab === "account" && (
+            <Collapsible title="Notification Preferences" defaultOpen={false}>
+              <div className="space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-2 border-gray-300 text-blue-500 focus:ring-2 focus:ring-blue-400" 
+                      checked={emailRevenueAlerts}
+                      onChange={(e) => setEmailRevenueAlerts(e.target.checked)}
+                    />
+                    <span className="text-gray-700">Enable email notifications for revenue alerts</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-2 border-gray-300 text-blue-500 focus:ring-2 focus:ring-blue-400" 
+                      checked={emailFailedPayments}
+                      onChange={(e) => setEmailFailedPayments(e.target.checked)}
+                    />
+                    <span className="text-gray-700">Send notifications for failed payments</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-2 border-gray-300 text-blue-500 focus:ring-2 focus:ring-blue-400" 
+                      checked={weeklyReports}
+                      onChange={(e) => setWeeklyReports(e.target.checked)}
+                    />
+                    <span className="text-gray-700">Receive weekly summary reports</span>
+                  </label>
+                </div>
+                <button 
+                  className="btn btn-primary"
+                  onClick={handleSavePreferences}
+                  disabled={preferencesLoading}
+                >
+                  {preferencesLoading ? "Saving..." : "Save Preferences"}
+                </button>
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Payment Gateway Preferences */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Payment Gateway Preferences" defaultOpen={false}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Choose your preferred payment gateway when both Stripe and Paystack are connected. This determines which gateway is used for payment links.
+                </p>
+                <div>
+                  <label className="label">Preferred Payment Gateway</label>
+                  <select
+                    className="input"
+                    value={automationSettings.preferredPaymentGateway}
+                    onChange={(e) => setAutomationSettings({...automationSettings, preferredPaymentGateway: e.target.value as "stripe" | "paystack"})}
+                  >
+                    <option value="paystack">Paystack (Default)</option>
+                    <option value="stripe">Stripe</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {integrations.filter(i => i.provider === "stripe").length > 0 && integrations.filter(i => i.provider === "paystack").length > 0
+                      ? "Both gateways are connected. Your selection will be used as the default."
+                      : integrations.filter(i => i.provider === "stripe").length > 0
+                      ? "Only Stripe is connected."
+                      : integrations.filter(i => i.provider === "paystack").length > 0
+                      ? "Only Paystack is connected."
+                      : "No payment gateways connected. Please connect one in the Integrations tab."}
+                  </p>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    try {
+                      await apiRequest("/business/automation/settings", {
+                        method: "PATCH",
+                        accessToken,
+                        csrfToken,
+                        body: { preferredPaymentGateway: automationSettings.preferredPaymentGateway }
+                      });
+                      setStatus(" Preferred payment gateway saved");
+                    } catch (err: any) {
+                      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save preference"}`);
+                    }
+                  }}
+                >
+                  Save Payment Gateway Preference
+                </button>
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Payment Link Customization */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Payment Link Customization" defaultOpen={false}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Customize the branding and appearance of your payment links.
+                </p>
+                <div>
+                  <label className="label">Logo URL</label>
+                  <input
+                    className="input"
+                    type="url"
+                    value={paymentLinkCustomization?.logoUrl || ""}
+                    onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, logoUrl: e.target.value })}
+                    placeholder="https://example.com/logo.png"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Primary Color</label>
+                    <input
+                      className="input"
+                      type="color"
+                      value={paymentLinkCustomization?.primaryColor || "#6366f1"}
+                      onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, primaryColor: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Secondary Color</label>
+                    <input
+                      className="input"
+                      type="color"
+                      value={paymentLinkCustomization?.secondaryColor || "#8b5cf6"}
+                      onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, secondaryColor: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Custom Domain (optional)</label>
+                  <input
+                    className="input"
+                    type="text"
+                    value={paymentLinkCustomization?.customDomain || ""}
+                    onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, customDomain: e.target.value })}
+                    placeholder="payments.yourcompany.com"
+                  />
+                </div>
+                <div>
+                  <label className="label">Thank You Message</label>
+                  <textarea
+                    className="input"
+                    rows={3}
+                    value={paymentLinkCustomization?.thankYouMessage || ""}
+                    onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, thankYouMessage: e.target.value })}
+                    placeholder="Thank you for your payment!"
+                  />
+                </div>
+                <div>
+                  <label className="label">Redirect URL (after payment)</label>
+                  <input
+                    className="input"
+                    type="url"
+                    value={paymentLinkCustomization?.redirectUrl || ""}
+                    onChange={(e) => setPaymentLinkCustomization({ ...paymentLinkCustomization, redirectUrl: e.target.value })}
+                    placeholder="https://yourcompany.com/thank-you"
+                  />
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    try {
+                      await apiRequest("/business/payment-link/customization", {
+                        method: "PATCH",
+                        accessToken,
+                        csrfToken,
+                        body: paymentLinkCustomization
+                      });
+                      setStatus(" Customization saved");
+                    } catch (err: any) {
+                      setStatus(` ${err?.message || "Failed to save"}`);
+                    }
+                  }}
+                >
+                  Save Customization
+                </button>
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Voice & Phone Numbers (for automated call handling) */}
+            {settingsSectionTab === "calls" && (
+            <Collapsible title="Voice & Phone Numbers (Customer Calls)" defaultOpen={false}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Configure the phone numbers that route to Debby's automated voice assistant. 
+                  When a customer calls one of these numbers, the system can pick the call, collect their details,
+                  save them to your customers list, and answer basic questions.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Phone Number (E.164 format)</label>
+                    <input
+                      className="input"
+                      placeholder="+2348012345678"
+                      value={newPhoneNumber}
+                      onChange={(e) => setNewPhoneNumber(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Label (optional)</label>
+                    <input
+                      className="input"
+                      placeholder="Main line, Support, Sales..."
+                      value={newPhoneLabel}
+                      onChange={(e) => setNewPhoneLabel(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Type</label>
+                    <select
+                      className="input"
+                      value={newPhoneType}
+                      onChange={(e) => setNewPhoneType(e.target.value as "voice" | "sms" | "whatsapp")}
+                    >
+                      <option value="voice">Voice</option>
+                      <option value="sms">SMS</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    className="btn btn-primary"
+                    onClick={saveVoicePhoneNumber}
+                  >
+                    Save Phone Number
+                  </button>
+                  <p className="text-xs text-gray-500">
+                    After adding, point your Twilio Voice number&apos;s webhook to{" "}
+                    <code className="bg-gray-100 px-1 py-0.5 rounded">
+                      /webhooks/twilio/voice/incoming
+                    </code>{" "}
+                    on your backend.
+                  </p>
+                </div>
+
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                    Registered Numbers
+                  </h4>
+                  {phoneNumbers.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      No phone numbers registered yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {phoneNumbers.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
+                        >
+                          <div>
+                            <p className="m-0 font-medium text-gray-900">
+                              {p.phoneNumber}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {p.label || "No label"}  Type: {p.type}
+                            </p>
+                          </div>
+                          <button
+                            className="text-xs text-red-600 hover:text-red-800"
+                            onClick={() => removeVoicePhoneNumber(p.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                    Twilio Voice Setup (high level)
+                  </h4>
+                  <ol className="list-decimal list-inside text-xs text-gray-600 space-y-1">
+                    <li>Buy a phone number in Twilio with Voice enabled.</li>
+                    <li>
+                      In Twilio Console, set the number&apos;s Voice webhook URL to your backend:
+                      <span className="block font-mono bg-gray-100 rounded px-1 py-0.5 mt-1 break-all">
+                        {twilioVoiceWebhookUrl}
+                      </span>
+                      <button
+                        className="btn btn-xs btn-secondary mt-2"
+                        onClick={() => {
+                          navigator.clipboard.writeText(twilioVoiceWebhookUrl);
+                          setStatus("? Twilio voice webhook URL copied");
+                        }}
+                      >
+                        <FiCopy className="mr-1" /> Copy URL
+                      </button>
+                    </li>
+                    <li>
+                      Add the same phone number here so Debby can route incoming calls to your
+                      organization and save callers as customers.
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Invoice Templates */}
+            {settingsSectionTab === "growth" && (
+            <Collapsible title="Invoice Templates" defaultOpen={false}>
+              <div className="space-y-4">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setInvoiceTemplateForm({ name: "", htmlTemplate: "<html><body><h1>Invoice {{invoiceNumber}}</h1><p>Amount: {{amount}}</p></body></html>" });
+                    setShowInvoiceTemplateModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Create Template
+                </button>
+                {invoiceTemplates.length === 0 ? (
+                  <p className="text-gray-500">No templates yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {invoiceTemplates.map((t) => (
+                      <div key={t.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-900">{t.name}</p>
+                          {t.isDefault && <span className="badge badge-success text-xs">Default</span>}
+                        </div>
+                        <button
+                          className="btn btn-xs btn-danger"
+                          onClick={async () => {
+                            setConfirmModalData({
+                              title: "Delete Template",
+                              message: "Delete this template?",
+                              variant: "danger",
+                              onConfirm: async () => {
+                                setShowConfirmModal(false);
+                                try {
+                                  await apiRequest(`/business/invoice-templates/${t.id}`, {
+                                    method: "DELETE",
+                                    accessToken,
+                                    csrfToken
+                                  });
+                                  setInvoiceTemplates(invoiceTemplates.filter(x => x.id !== t.id));
+                                  setStatus(" Template deleted");
+                                } catch (err: any) {
+                                  setStatus(` ${err?.response?.data?.error || "Failed to delete"}`);
+                                }
+                              }
+                            });
+                            setShowConfirmModal(true);
+                          }}
+                        >
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Receipts */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Receipts" defaultOpen={false}>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-semibold text-gray-900">Generated Receipts</h4>
+                  {receipts.length > 0 && (
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => {
+                        setConfirmModalData({
+                          title: "Clear Receipts",
+                          message: "Clear all receipts from view?",
+                          variant: "warning",
+                          onConfirm: () => {
+                            setShowConfirmModal(false);
+                            setReceipts([]);
+                            setStatus(" Receipts cleared");
+                          }
+                        });
+                        setShowConfirmModal(true);
+                      }}
+                    >
+                      <FiTrash2 className="mr-1" /> Clear
+                    </button>
+                  )}
+                </div>
+                {receipts.length === 0 ? (
+                  <p className="text-gray-500">No receipts generated yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {receipts.map((r) => (
+                      <div key={r.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-900">Receipt #{r.receiptNumber}</p>
+                            <p className="text-sm text-gray-600">Payment: {r.payment?.amount} {r.payment?.currency}</p>
+                            {r.sentAt && <p className="text-xs text-gray-500">Sent: {new Date(r.sentAt).toLocaleString()}</p>}
+                          </div>
+                          {r.pdfUrl && (
+                            <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="btn btn-xs btn-secondary">
+                              <FiDownload className="mr-1" /> Download
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Payment Link Analytics */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Payment Link Analytics" defaultOpen={false}>
+              <div className="space-y-4">
+                {paymentLinkAnalytics ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="card min-w-0">
+                      <p className="text-sm text-gray-500">Total Links</p>
+                      <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.total}</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Viewed</p>
+                      <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.viewed}</p>
+                      <p className="text-xs text-gray-500">{paymentLinkAnalytics.viewRate?.toFixed(1)}%</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Clicked</p>
+                      <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.clicked}</p>
+                      <p className="text-xs text-gray-500">{paymentLinkAnalytics.clickRate?.toFixed(1)}%</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Converted</p>
+                      <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.converted}</p>
+                      <p className="text-xs text-gray-500">{paymentLinkAnalytics.conversionRate?.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500">No analytics data yet</p>
+                )}
+              </div>
+            </Collapsible>
+            )}
+            {/* Revenue Forecasting */}
+            {settingsSectionTab === "growth" && (
+            <Collapsible title="Revenue Forecasting" defaultOpen={false}>
+              <div className="space-y-4">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const nextRange = getForecastDateRange("monthly");
+                    setForecastForm({ 
+                      period: "monthly", 
+                      startDate: nextRange.startDate,
+                      endDate: nextRange.endDate,
+                      scenario: "base"
+                    });
+                    setShowForecastModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Generate Forecast
+                </button>
+                {revenueForecasts.length === 0 ? (
+                  <p className="text-gray-500">No forecasts yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {revenueForecasts.map((f) => (
+                      <div key={f.id} className="p-3 bg-gray-50 rounded-lg">
+                        <p className="font-medium text-gray-900">{f.period} Forecast ({f.scenario})</p>
+                        <p className="text-lg font-bold text-gray-900">{f.forecastedRevenue?.toFixed(2)}</p>
+                        <p className="text-sm text-gray-600">Confidence: {(f.confidence * 100).toFixed(0)}%</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* A/B Testing */}
+            {settingsSectionTab === "growth" && (
+            <Collapsible title="A/B Testing" defaultOpen={false}>
+              <div className="space-y-4">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setAbTestForm(createABTestForm());
+                    setShowABTestModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Create Test
+                </button>
+                {abTests.length === 0 ? (
+                  <p className="text-gray-500">No A/B tests yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {abTests.map((t) => (
+                      <div key={t.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-900">{t.name}</p>
+                            <p className="text-sm text-gray-600">Status: {t.status}  {t.variants?.length || 0} variants</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {t.status === "draft" && (
+                              <button
+                                className="btn btn-xs btn-primary"
+                                onClick={() => handleStartABTest(t.id)}
+                              >
+                                <FiPlay className="mr-1" /> Start
+                              </button>
+                            )}
+                            {t.status === "running" && (
+                              <button
+                                className="btn btn-xs btn-warning"
+                                onClick={() => handleEndABTest(t.id)}
+                              >
+                                <FiPause className="mr-1" /> End
+                              </button>
+                            )}
+                            {t.winnerId && <span className="badge badge-success">Winner selected</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Custom Fields */}
+            {settingsSectionTab === "branding" && (
+            <Collapsible title="Custom Customer Fields" defaultOpen={false}>
+              <div className="space-y-4">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setCustomFieldForm({ name: "", label: "", type: "text", options: "" });
+                    setShowCustomFieldModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Add Field
+                </button>
+                {customFields.length === 0 ? (
+                  <p className="text-gray-500">No custom fields yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {customFields.map((f) => (
+                      <div key={f.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-900">{f.label}</p>
+                          <p className="text-sm text-gray-600">Type: {f.type}</p>
+                        </div>
+                        <button
+                          className="btn btn-xs btn-danger"
+                          onClick={async () => {
+                            setConfirmModalData({
+                              title: "Delete Field",
+                              message: "Delete this field?",
+                              variant: "danger",
+                              onConfirm: async () => {
+                                setShowConfirmModal(false);
+                                try {
+                                  await apiRequest(`/business/custom-fields/${f.id}`, {
+                                    method: "DELETE",
+                                    accessToken,
+                                    csrfToken
+                                  });
+                                  setCustomFields(customFields.filter(x => x.id !== f.id));
+                                  setStatus(" Field deleted");
+                                } catch (err: any) {
+                                  setStatus(` ${err?.response?.data?.error || "Failed to delete"}`);
+                                }
+                              }
+                            });
+                            setShowConfirmModal(true);
+                          }}
+                        >
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* White-Label Settings */}
+            {settingsSectionTab === "branding" && (
+            <Collapsible title="White-Label Settings" defaultOpen={false}>
+              <div className="space-y-4">
+                {whiteLabelSettings ? (
+                  <div className="space-y-4">
+                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white/70">
+                      <label className="flex items-center gap-2 text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={whiteLabelSettings.enabled || false}
+                          onChange={async (e) => {
+                            try {
+                              const updated = await apiRequest<{ settings: any }>("/business/white-label", {
+                                method: "PATCH",
+                                accessToken,
+                                csrfToken,
+                                body: { enabled: e.target.checked }
+                              });
+                              setWhiteLabelSettings(updated.settings);
+                              setStatus(" Settings updated");
+                            } catch (err: any) {
+                              setStatus(` ${err?.response?.data?.error || "Failed to update"}`);
+                            }
+                          }}
+                        />
+                        <span className="font-medium text-gray-900">Enable White-Label</span>
+                      </label>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white/70">
+                      <label className="label">Custom Domain</label>
+                      <input
+                        className="input"
+                        value={whiteLabelCustomDomainDraft}
+                        onChange={(e) => setWhiteLabelCustomDomainDraft(e.target.value)}
+                        placeholder="payments.yourdomain.com"
+                      />
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          className="btn btn-sm btn-primary"
+                          disabled={savingWhiteLabelDomain}
+                          onClick={async () => {
+                            try {
+                              setSavingWhiteLabelDomain(true);
+                              const updated = await apiRequest<{ settings: any }>("/business/white-label", {
+                                method: "PATCH",
+                                accessToken,
+                                csrfToken,
+                                body: { customDomain: whiteLabelCustomDomainDraft.trim() || null }
+                              });
+                              setWhiteLabelSettings(updated.settings);
+                              setWhiteLabelCustomDomainDraft(updated.settings?.customDomain || "");
+                              setStatus("? Custom domain saved");
+                            } catch (err: any) {
+                              setStatus(`? ${err?.response?.data?.error || "Failed to save custom domain"}`);
+                            } finally {
+                              setSavingWhiteLabelDomain(false);
+                            }
+                          }}
+                        >
+                          {savingWhiteLabelDomain ? "Saving..." : "Save Domain"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white/70">
+                      <label className="flex items-center gap-2 text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={whiteLabelSettings.removeBranding || false}
+                          onChange={async (e) => {
+                            try {
+                              const updated = await apiRequest<{ settings: any }>("/business/white-label", {
+                                method: "PATCH",
+                                accessToken,
+                                csrfToken,
+                                body: { removeBranding: e.target.checked }
+                              });
+                              setWhiteLabelSettings(updated.settings);
+                              setStatus(" Settings updated");
+                            } catch (err: any) {
+                              setStatus(` ${err?.response?.data?.error || "Failed to update"}`);
+                            }
+                          }}
+                        />
+                        <span className="font-medium text-gray-900">Remove "Powered by Debby" Branding</span>
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500">Loading white-label settings...</p>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Payment Reminders */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Payment Reminders" defaultOpen={false}>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-semibold text-gray-900">Scheduled Reminders</h4>
+                  {paymentReminders.length > 0 && (
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => {
+                        setConfirmModalData({
+                          title: "Clear Reminders",
+                          message: "Clear all reminders from view?",
+                          variant: "warning",
+                          onConfirm: () => {
+                            setShowConfirmModal(false);
+                            setPaymentReminders([]);
+                            setStatus(" Reminders cleared");
+                          }
+                        });
+                        setShowConfirmModal(true);
+                      }}
+                    >
+                      <FiTrash2 className="mr-1" /> Clear
+                    </button>
+                  )}
+                </div>
+                {paymentReminders.length === 0 ? (
+                  <p className="text-gray-500">No reminders scheduled</p>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {paymentReminders.map((r) => (
+                      <div key={r.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-900">Payment #{r.paymentId?.substring(0, 8)}</p>
+                            <p className="text-sm text-gray-600">Scheduled: {new Date(r.scheduledFor).toLocaleString()}</p>
+                            <p className="text-xs text-gray-500">Status: {r.status}  Channel: {r.channel}</p>
+                          </div>
+                          {r.status === "scheduled" && (
+                            <button
+                              className="btn btn-xs btn-danger"
+                              onClick={async () => {
+                                try {
+                                  await apiRequest(`/business/reminders/${r.id}`, {
+                                    method: "DELETE",
+                                    accessToken,
+                                    csrfToken
+                                  });
+                                  setPaymentReminders(paymentReminders.filter(x => x.id !== r.id));
+                                  setStatus(" Reminder cancelled");
+                                } catch (err: any) {
+                                  setStatus(` ${err?.response?.data?.error || "Failed to cancel"}`);
+                                }
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Advanced Reporting */}
+            {settingsSectionTab === "growth" && (
+            <Collapsible title="Advanced Reporting" defaultOpen={false}>
+              <div className="space-y-4">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setReportForm(createReportBuilderForm());
+                    setShowReportModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Create Report
+                </button>
+                {savedReports.length === 0 ? (
+                  <p className="text-gray-500">No saved reports yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {savedReports.map((r) => (
+                      <div key={r.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-900">{r.name}</p>
+                          <p className="text-sm text-gray-600">Type: {r.type}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn btn-xs btn-secondary"
+                            onClick={() => handleGenerateReport(r.id, r.name || "report", "pdf")}
+                          >
+                            PDF
+                          </button>
+                          <button
+                            className="btn btn-xs btn-secondary"
+                            onClick={() => handleGenerateReport(r.id, r.name || "report", "csv")}
+                          >
+                            CSV
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Payment Method Management */}
+            {settingsSectionTab === "payments" && (
+            <Collapsible title="Payment Method Management" defaultOpen={false}>
+              <div className="space-y-4">
+                {paymentMethodAnalytics && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Total Cards</p>
+                      <p className="text-2xl font-bold text-gray-900">{paymentMethodAnalytics.totalWithCards}</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Expiring This Month</p>
+                      <p className="text-2xl font-bold text-orange-600">{paymentMethodAnalytics.expiringThisMonth}</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Expiring Next Month</p>
+                      <p className="text-2xl font-bold text-yellow-600">{paymentMethodAnalytics.expiringNextMonth}</p>
+                    </div>
+                    <div className="card">
+                      <p className="text-sm text-gray-500">Expired</p>
+                      <p className="text-2xl font-bold text-red-600">{paymentMethodAnalytics.expired}</p>
+                    </div>
+                  </div>
+                )}
+                {expiringCards.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">Expiring Cards</h4>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {expiringCards.map((c) => (
+                        <div key={c.id} className="p-3 bg-orange-50 rounded-lg">
+                          <p className="font-medium text-gray-900">{c.firstName} {c.lastName}</p>
+                          <p className="text-sm text-gray-600">{c.email}</p>
+                          <p className="text-xs text-gray-500">Card: ****{c.cardLastFour} ({c.cardBrand}) - Expires: {c.cardExpMonth}/{c.cardExpYear}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+            )}
+
+            {/* Danger Zone */}
+            {settingsSectionTab === "account" && (
+            <Collapsible title="Danger Zone" defaultOpen={false}>
+              <div className="space-y-4">
+                <div className="p-6 bg-gradient-to-r from-red-50/80 to-rose-50/80 backdrop-blur-sm rounded-2xl shadow-lg shadow-red-200/30">
+                  <h4 className="font-bold text-red-900 mb-2 text-lg">Delete Account</h4>
+                  {hasPendingDeletion ? (
+                    <div>
+                      <p className="text-sm text-red-700 mb-2">
+                        You have a pending account deletion request.
+                      </p>
+                      <p className="text-sm text-red-600 mb-4">
+                        Your account will be permanently deleted on:{" "}
+                        <strong>{deletionScheduledAt ? new Date(deletionScheduledAt).toLocaleDateString() : "N/A"}</strong>
+                      </p>
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={handleCancelDeletion}
+                      >
+                        Cancel Deletion Request
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-red-700 mb-4">
+                        Once you delete your account, there is no going back. Please be certain.
+                      </p>
+                      <button 
+                        className="btn btn-danger"
+                        onClick={() => setShowDeleteModal(true)}
+                      >
+                        Delete Account
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Collapsible>
+            )}
+          </div>
+        )}
+
+        {/* Activity Tab */}
+        {activeTab === "activity" && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Activity Feed</h2>
+                <p className="text-gray-500 mt-1">Real-time updates on payments and notifications</p>
+              </div>
+              <button
+                onClick={() => setHelpOpen(true)}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                <FiHelpCircle className="w-4 h-4" />
+                Help
+              </button>
+            </div>
+            <ActivityFeed className="w-full" limit={50} autoRefresh={true} refreshInterval={10000} />
+          </div>
+        )}
+
+        {/* Billing Tab */}
+        {activeTab === "billing" && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Billing & Plans</h2>
+                <p className="text-gray-500 mt-1">Manage your subscription and usage</p>
+              </div>
+            </div>
+            <BillingPlans role="business" />
+          </div>
+        )}
+
+            {/* Customers Tab */}
+            {activeTab === "customers" && (
+          <div className="space-y-3 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
+            <div className="card space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Shop Customers</h3>
+                  <p className="text-sm text-gray-500">
+                    Customers created from storefront checkout, grouped by selected shop.
+                  </p>
+                </div>
+                <div className="md:w-80">
+                  <label className="label">Shop</label>
+                  <select
+                    className="input"
+                    value={selectedShopId || ""}
+                    onChange={(e) => setSelectedShopId(e.target.value || null)}
+                    disabled={shops.length === 0}
+                  >
+                    {shops.length === 0 && <option value="">No shops available</option>}
+                    {shops.map((shop) => (
+                      <option key={shop.id} value={shop.id}>
+                        {shop.name} ({shop.slug})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {loadingShopCustomers ? (
+                <p className="text-sm text-gray-500">Loading shop customers...</p>
+              ) : shopCustomers.length === 0 ? (
+                <p className="text-sm text-gray-500">No checkout customers yet for this shop.</p>
+              ) : (
+                <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[65vh] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Address</th>
+                        <th>Orders</th>
+                        <th>Total Spend</th>
+                        <th>Last Seen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shopCustomers.map((entry) => {
+                        const firstName = entry.customer?.firstName || "";
+                        const lastName = entry.customer?.lastName || "";
+                        const fullName = `${firstName} ${lastName}`.trim() || "N/A";
+                        return (
+                          <tr key={entry.id}>
+                            <td className="font-medium text-gray-900">{fullName}</td>
+                            <td>{entry.customer?.email || "N/A"}</td>
+                            <td>{entry.customer?.phone || "N/A"}</td>
+                            <td>{entry.customer?.address || "N/A"}</td>
+                            <td>{entry.totalOrders}</td>
+                            <td>{Number(entry.totalSpend || 0).toFixed(2)}</td>
+                            <td>{entry.lastSeenAt ? new Date(entry.lastSeenAt).toLocaleString() : "N/A"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <React.Suspense fallback={<div className="text-center py-12 text-gray-500">Loading customers...</div>}>
+              <CustomerManager onStatusChange={setStatus} />
+            </React.Suspense>
+
+            <div className="card">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Customer Segments</h3>
+                  <p className="text-sm text-gray-500">
+                    Build customer groups by spend, payment behavior, profile fields, and tags.
+                  </p>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setSegmentForm(createSegmentForm());
+                    setShowSegmentModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-2" /> Create Segment
+                </button>
+              </div>
+
+              {customerSegments.length === 0 ? (
+                <p className="text-sm text-gray-500">No segments yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {customerSegments.map((segment) => (
+                    <div
+                      key={segment.id}
+                      className="p-3 bg-gray-50 rounded-lg flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900">{segment.name}</p>
+                        <p className="text-sm text-gray-600">
+                          {segment.customerCount} customers
+                          {segment.description ? `  ${segment.description}` : ""}
+                        </p>
+                      </div>
+                      <button
+                        className="btn btn-xs"
+                        onClick={async () => {
+                          try {
+                            const data = await apiRequest<{ customers: any[] }>(
+                              `/business/segments/${segment.id}/customers`,
+                              { accessToken }
+                            );
+                            setSegmentCustomersData({
+                              segmentName: segment.name,
+                              customers: data.customers
+                            });
+                            setShowSegmentCustomersModal(true);
+                          } catch (err: any) {
+                            setStatus(err?.response?.data?.error || err?.message || "Failed to load segment customers");
+                          }
+                        }}
+                      >
+                        View Customers
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Communication History */}
+            <div className="card">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold m-0 text-gray-900 flex items-center gap-2">
+                  <FiActivity className="w-5 h-5" />
+                  Communication History
+                </h3>
+                {communicationHistory.length > 0 && (
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => {
+                      setConfirmModalData({
+                        title: "Clear Communication History",
+                        message: "Are you sure you want to clear communication history for this customer?",
+                        variant: "warning",
+                        onConfirm: () => {
+                          setShowConfirmModal(false);
+                          setCommunicationHistory([]);
+                          setStatus(" Communication history cleared");
+                        }
+                      });
+                      setShowConfirmModal(true);
+                    }}
+                  >
+                    <FiTrash2 className="mr-1" /> Clear History
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                <select
+                  className="input"
+                  value={selectedCustomerForHistory || ""}
+                  onChange={(e) => {
+                    setSelectedCustomerForHistory(e.target.value);
+                    if (e.target.value) {
+                      apiRequest<{ history: any[] }>(`/business/customers/${e.target.value}/communication-history`, { accessToken })
+                        .then((data) => setCommunicationHistory(data.history))
+                        .catch((err: any) => setStatus(` ${err?.message || "Failed to load history"}`));
+                    } else {
+                      setCommunicationHistory([]);
+                    }
+                  }}
+                >
+                  <option value="">Select a customer...</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.firstName} {c.lastName} ({c.email})
+                    </option>
+                  ))}
+                </select>
+                {selectedCustomerForHistory && communicationHistory.length > 0 && (
+                  <div className="mt-4 space-y-2 max-h-96 overflow-y-auto">
+                    {communicationHistory.map((event: any) => (
+                      <div key={event.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-900 capitalize">{event.type}</span>
+                          <span className="text-xs text-gray-500">{new Date(event.timestamp).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{event.content}</p>
+                        {event.channel && (
+                          <span className="text-xs text-gray-500">via {event.channel}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {selectedCustomerForHistory && communicationHistory.length === 0 && (
+                  <p className="text-gray-500 mt-4">No communication history for this customer</p>
+                )}
+              </div>
+            </div>
+
+            {/* Customer Notes */}
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
+                <FiEdit3 className="w-5 h-5" />
+                Customer Notes
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <select
+                    className="input mb-2"
+                    value={newNote.customerId}
+                    onChange={(e) => setNewNote({ ...newNote, customerId: e.target.value })}
+                  >
+                    <option value="">Select customer...</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.firstName} {c.lastName} ({c.email})
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    className="input"
+                    placeholder="Add a note..."
+                    value={newNote.content}
+                    onChange={(e) => setNewNote({ ...newNote, content: e.target.value })}
+                    rows={3}
+                  />
+                  <label className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      checked={newNote.isPrivate}
+                      onChange={(e) => setNewNote({ ...newNote, isPrivate: e.target.checked })}
+                    />
+                    <span className="text-sm text-gray-600">Private note (only visible to me)</span>
+                  </label>
+                  <button
+                    onClick={async () => {
+                      if (!newNote.customerId || !newNote.content) {
+                        setStatus(" Select customer and enter note");
+                        return;
+                      }
+                      try {
+                        await apiRequest(`/business/customers/${newNote.customerId}/notes`, {
+                          method: "POST",
+                          accessToken,
+                          csrfToken,
+                          body: { content: newNote.content, isPrivate: newNote.isPrivate }
+                        });
+                        setStatus(" Note added");
+                        setNewNote({ customerId: "", content: "", isPrivate: false });
+                        const notes = await apiRequest<{ notes: any[] }>(`/business/customers/${newNote.customerId}/notes`, { accessToken });
+                        setCustomerNotes({ ...customerNotes, [newNote.customerId]: notes.notes });
+                      } catch (err: any) {
+                        setStatus(` ${err?.message || "Failed"}`);
+                      }
+                    }}
+                    className="btn btn-primary mt-2"
+                  >
+                    Add Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === "analytics" && (
+          <div className="space-y-3 sm:space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Analytics & Insights</h2>
+                <p className="text-gray-500 mt-1">Call analytics, churn prediction, and business metrics</p>
+              </div>
+            </div>
+
+            {/* Call Analytics */}
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
+                <FiPhone className="w-5 h-5" />
+                Call Analytics
+              </h3>
+              {callAnalytics ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Total Calls</p>
+                    <p className="text-2xl font-bold text-gray-900">{callAnalytics.totalCalls || 0}</p>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Resolution Rate</p>
+                    <p className="text-2xl font-bold text-gray-900">{callAnalytics.resolutionRate?.toFixed(1) || 0}%</p>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Avg Duration</p>
+                    <p className="text-2xl font-bold text-gray-900">{callAnalytics.averageDuration ? `${Math.round(callAnalytics.averageDuration / 60)}m` : "N/A"}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500">No call data available yet.</p>
+              )}
+            </div>
+
+            {/* Churn Prediction */}
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
+                <FiAlertTriangle className="w-5 h-5 text-orange-500" />
+                High-Risk Customers
+              </h3>
+              {highRiskCustomers.length > 0 ? (
+                <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <thead>
+                      <tr>
+                        <th>Customer</th>
+                        <th>Risk Score</th>
+                        <th>Factors</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {highRiskCustomers.slice(0, 10).map((customer: any) => (
+                        <tr key={customer.customerId}>
+                          <td>{customer.customerId}</td>
+                          <td>
+                            <span className={`badge ${customer.riskScore > 70 ? "badge-danger" : "badge-warning"}`}>
+                              {customer.riskScore}%
+                            </span>
+                          </td>
+                          <td className="text-sm text-gray-600">
+                            {Object.entries(customer.factors || {}).filter(([_, v]: any) => v).map(([k]: any) => k).join(", ")}
+                          </td>
+                          <td>
+                            <button className="text-blue-600 hover:underline text-sm">View Details</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500">No high-risk customers identified.</p>
+              )}
+            </div>
+
+            {/* Payment Link Analytics */}
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
+                <FiLink className="w-5 h-5" />
+                Payment Link Analytics
+              </h3>
+              {paymentLinkAnalytics ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Total Links</p>
+                    <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.total || 0}</p>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Viewed</p>
+                    <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.viewed || 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">{paymentLinkAnalytics.viewRate?.toFixed(1) || 0}% view rate</p>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Clicked</p>
+                    <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.clicked || 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">{paymentLinkAnalytics.clickRate?.toFixed(1) || 0}% click rate</p>
+                  </div>
+                  <div className="bg-orange-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Converted</p>
+                    <p className="text-2xl font-bold text-gray-900">{paymentLinkAnalytics.converted || 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">{paymentLinkAnalytics.conversionRate?.toFixed(1) || 0}% conversion</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500">No payment link analytics available yet.</p>
+              )}
+            </div>
+
+            {/* Revenue Forecasting */}
+            <div className="card">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <FiTrendingUp className="w-5 h-5" />
+                  Revenue Forecasting
+                </h3>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => {
+                    const nextRange = getForecastDateRange("monthly");
+                    setForecastForm({ 
+                      period: "monthly", 
+                      startDate: nextRange.startDate,
+                      endDate: nextRange.endDate,
+                      scenario: "base"
+                    });
+                    setShowForecastModal(true);
+                  }}
+                >
+                  <FiPlus className="mr-1" /> Generate Forecast
+                </button>
+              </div>
+              {revenueForecasts.length === 0 ? (
+                <p className="text-gray-500">No forecasts generated yet. Click "Generate Forecast" to create one.</p>
+              ) : (
+                <div className="space-y-3">
+                  {revenueForecasts.map((f) => (
+                    <div key={f.id} className="p-4 bg-gray-50 rounded-lg">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-semibold text-gray-900 capitalize">{f.period} Forecast ({f.scenario})</p>
+                          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(f.forecastedRevenue || 0, "USD")}</p>
+                          <p className="text-sm text-gray-600 mt-1">Confidence: {(f.confidence * 100).toFixed(0)}%</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(f.startDate).toLocaleDateString()} - {new Date(f.endDate).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          className="btn btn-xs btn-danger"
+                          onClick={async () => {
+                            try {
+                              await apiRequest(`/business/forecasts/${f.id}`, {
+                                method: "DELETE",
+                                accessToken,
+                                csrfToken
+                              });
+                              setRevenueForecasts(revenueForecasts.filter(x => x.id !== f.id));
+                              setStatus(" Forecast deleted");
+                            } catch (err: any) {
+                              setStatus(` ${err?.response?.data?.error || "Failed to delete"}`);
+                            }
+                          }}
+                        >
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Intelligence Tab */}
+        {activeTab === "intelligence" && (
+          <div className="space-y-3 sm:space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Intelligence Center</h2>
+                <p className="text-gray-500 mt-1">Cash flow and customer risk insights</p>
+              </div>
+              <button className="btn btn-primary" onClick={queueIntelligenceRefreshJob}>
+                <FiRefreshCw className="mr-2" /> Queue Refresh
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                className={`btn btn-sm ${intelligenceSection === "cashflow" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setIntelligenceSection("cashflow")}
+              >
+                Cash Flow
+              </button>
+              <button
+                className={`btn btn-sm ${intelligenceSection === "customers" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setIntelligenceSection("customers")}
+              >
+                Customers
+              </button>
+            </div>
+
+            {intelligenceOverview ? (
+              <>
+                {intelligenceSection === "cashflow" && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="card">
+                        <p className="text-sm text-gray-500">Runway (days)</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {intelligenceOverview?.cashFlow?.runwayDays ?? 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Cash Flow Intelligence</p>
+                      </div>
+                      <div className="card">
+                        <p className="text-sm text-gray-500">High Payment Risk Customers</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {intelligenceOverview?.cashFlow?.paymentRisk?.highRiskCount ?? 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Risk Score Indicator</p>
+                      </div>
+                      <div className="card">
+                        <p className="text-sm text-gray-500">30/60/90 Forecasts</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {(intelligenceOverview?.cashFlow?.forecasts || []).length}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Forecast windows generated</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
+                      <div className="card">
+                        <h3 className="text-lg font-semibold mb-3 text-gray-900">Recent Cash Gap Alerts</h3>
+                        {(intelligenceOverview?.cashFlow?.alerts || []).length === 0 ? (
+                          <p className="text-gray-500">No alerts available</p>
+                        ) : (
+                          <div className="space-y-2 max-h-72 overflow-y-auto">
+                            {intelligenceOverview.cashFlow.alerts.map((alert: any) => (
+                              <div key={alert.id} className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-sm text-gray-900 font-medium">{alert.message || "Cash gap alert"}</p>
+                                <p className="text-xs text-gray-500 mt-1">{new Date(alert.createdAt).toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="card">
+                        <h3 className="text-lg font-semibold mb-3 text-gray-900">Smart Reminders</h3>
+                        {(intelligenceOverview?.cashFlow?.reminders || []).length === 0 ? (
+                          <p className="text-gray-500">No smart reminders scheduled</p>
+                        ) : (
+                          <div className="space-y-2 max-h-72 overflow-y-auto">
+                            {intelligenceOverview.cashFlow.reminders.map((reminder: any) => (
+                              <div key={reminder.id} className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-sm text-gray-900 font-medium">{reminder.message || "Smart reminder"}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {reminder.scheduledFor ? new Date(reminder.scheduledFor).toLocaleString() : "Not scheduled"}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {intelligenceSection === "customers" && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="card">
+                        <p className="text-sm text-gray-500">High Churn Risk</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {intelligenceOverview?.customers?.churn?.highRiskCount ?? 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Customer Intelligence</p>
+                      </div>
+                      <div className="card">
+                        <p className="text-sm text-gray-500">Negative Sentiment</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {intelligenceOverview?.customers?.sentiment?.negative ?? 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Sentiment Analyzer</p>
+                      </div>
+                      <div className="card">
+                        <p className="text-sm text-gray-500">Retention Workflows</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {(intelligenceOverview?.customers?.retentionWorkflows || []).length}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Automated Retention</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
+                      <div className="card">
+                        <h3 className="text-lg font-semibold mb-3 text-gray-900">Customer Risk Alerts</h3>
+                        {(intelligenceOverview?.customers?.riskAlerts || []).length === 0 ? (
+                          <p className="text-gray-500">No customer risk alerts available</p>
+                        ) : (
+                          <div className="space-y-2 max-h-72 overflow-y-auto">
+                            {intelligenceOverview.customers.riskAlerts.map((alert: any) => (
+                              <div key={alert.id} className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-sm text-gray-900 font-medium">{alert.alertType || "Risk alert"}</p>
+                                <p className="text-xs text-gray-500 mt-1">{new Date(alert.createdAt).toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="card">
+                        <h3 className="text-lg font-semibold mb-3 text-gray-900">Risk Leaderboard</h3>
+                        {(intelligenceOverview?.customers?.riskLeaderboard || []).length === 0 ? (
+                          <p className="text-gray-500">No leaderboard data available</p>
+                        ) : (
+                          <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-72 pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                            <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                              <thead>
+                                <tr>
+                                  <th>Customer</th>
+                                  <th>Churn %</th>
+                                  <th>Sentiment</th>
+                                  <th>Revenue at Risk</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {intelligenceOverview.customers.riskLeaderboard.map((entry: any) => (
+                                  <tr key={entry.customerId}>
+                                    <td>{entry.email || entry.customerId}</td>
+                                    <td>{Math.round((Number(entry.churnProbability) || 0) * 100)}%</td>
+                                    <td>{Number(entry.sentimentScore ?? 0).toFixed(2)}</td>
+                                    <td>{formatCurrency(Number(entry.revenueAtRisk) || 0, "USD")}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <div className="card">
+                <p className="text-gray-600">
+                  Intelligence data is not available yet. Ensure the intelligence migration is applied and data exists.
+                </p>
+              </div>
+            )}
+
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-3 text-gray-900">Intelligence Jobs</h3>
+              {intelligenceJobs.length === 0 ? (
+                <p className="text-gray-500">No queued jobs</p>
+              ) : (
+                <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <thead>
+                      <tr>
+                        <th className="text-gray-700">Job Type</th>
+                        <th className="text-gray-700">Status</th>
+                        <th className="text-gray-700">Priority</th>
+                        <th className="text-gray-700">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {intelligenceJobs.map((job) => (
+                        <tr key={job.id}>
+                          <td className="text-gray-900">{job.jobType}</td>
+                          <td><span className={getStatusBadge(job.status)}>{job.status}</span></td>
+                          <td className="text-gray-700">{job.priority}</td>
+                          <td className="text-gray-600 text-sm">{new Date(job.createdAt).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Ops Tab */}
+        {activeTab === "ops" && (
+          <div className="space-y-3 sm:space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Operations Control Plane</h2>
+                <p className="text-gray-500 mt-1">Unified runs, retries, reconciliation, reliability, and admin controls</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn btn-secondary btn-sm" onClick={loadOpsData} disabled={loadingOps}>
+                  <FiRefreshCw className="mr-1" />
+                  {loadingOps ? "Refreshing..." : "Refresh Ops"}
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={runOpsPaymentReconcile}>
+                  Reconcile Payments
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="card">
+                <p className="text-sm text-gray-500">Active Workflows</p>
+                <p className="text-2xl font-bold text-gray-900">{opsControlPlane?.workflows?.active ?? 0}</p>
+                <p className="text-xs text-gray-500 mt-1">of {opsWorkflows.length} total</p>
+              </div>
+              <div className="card">
+                <p className="text-sm text-gray-500">Stale Payments (15m+)</p>
+                <p className="text-2xl font-bold text-gray-900">{opsPaymentHealth?.stalePayments?.over15Minutes ?? 0}</p>
+                <p className="text-xs text-gray-500 mt-1">Health: {opsPaymentHealth?.health || "unknown"}</p>
+              </div>
+              <div className="card">
+                <p className="text-sm text-gray-500">Open Dead Letters</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {opsDeadLetters.filter((d: any) => String(d?.status || "open") === "open").length}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Replay/discard pending</p>
+              </div>
+              <div className="card">
+                <p className="text-sm text-gray-500">SLO (24h)</p>
+                <p className="text-2xl font-bold text-gray-900">{opsSlo?.achievedSlo ?? 0}%</p>
+                <p className="text-xs text-gray-500 mt-1">Target: {opsSlo?.targetSlo ?? 99}%</p>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Incident Mode & Backfills</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  {opsAdminState?.incidentMode ? (
+                    <button className="btn btn-warning btn-sm" onClick={() => toggleIncidentMode(false)}>
+                      <FiPlay className="mr-1" /> Disable Incident Mode
+                    </button>
+                  ) : (
+                    <button className="btn btn-danger btn-sm" onClick={() => toggleIncidentMode(true)}>
+                      <FiPause className="mr-1" /> Enable Incident Mode
+                    </button>
+                  )}
+                  <button className="btn btn-secondary btn-sm" onClick={() => enqueueOpsBackfill("payment_reconcile")}>
+                    Queue Payment Backfill
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => enqueueOpsBackfill("webhook_replay")}>
+                    Queue Webhook Replay
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-semibold text-gray-900">Queue Health</p>
+                  <p className="text-sm text-gray-700 mt-1">Status: {opsControlPlane?.queueHealth?.status || "unknown"}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Payments: {opsControlPlane?.queueHealth?.queues?.payments ?? 0}  Notifications: {opsControlPlane?.queueHealth?.queues?.notifications ?? 0}  Failed webhooks: {opsControlPlane?.queueHealth?.queues?.failedWebhooks ?? 0}
+                  </p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-semibold text-gray-900">Backfill Jobs</p>
+                  <p className="text-xs text-gray-500 mt-1">{opsBackfills.length} tracked jobs</p>
+                  <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                    {opsBackfills.length === 0 ? (
+                      <p className="text-sm text-gray-500">No backfill jobs</p>
+                    ) : (
+                      opsBackfills.map((job: any) => (
+                        <div key={job.id} className="p-2 bg-white rounded border border-gray-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-medium text-gray-900">{job.type}</p>
+                            <span className={getStatusBadge(job.status)}>{job.status}</span>
+                          </div>
+                          {job.status === "queued" && (
+                            <button
+                              className="btn btn-xs btn-primary mt-2"
+                              disabled={processingBackfillId === job.id}
+                              onClick={() => processOpsBackfill(job.id)}
+                            >
+                              {processingBackfillId === job.id ? "Processing..." : "Process Now"}
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
+              <div className="card">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Dead Letter Queue</h3>
+                {opsDeadLetters.length === 0 ? (
+                  <p className="text-sm text-gray-500">No dead letters recorded.</p>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {opsDeadLetters.slice(0, 20).map((entry: any) => (
+                      <div key={entry.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-900">{entry.scope || "unknown_scope"}</p>
+                          <span className={getStatusBadge(entry.status || "queued")}>{entry.status || "open"}</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">{entry.error || "No error message available"}</p>
+                        {String(entry.status || "open") === "open" && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <button className="btn btn-xs btn-primary" onClick={() => updateDeadLetter(entry.id, "replayed")}>
+                              Replay
+                            </button>
+                            <button className="btn btn-xs btn-danger" onClick={() => updateDeadLetter(entry.id, "discarded")}>
+                              Discard
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="card">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Recent Execution Traces</h3>
+                {opsTraces.length === 0 ? (
+                  <p className="text-sm text-gray-500">No traces available.</p>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {opsTraces.map((trace: any) => (
+                      <div key={trace.traceId} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-900">{trace.operation || "operation"}</p>
+                          <span className={getStatusBadge(trace.status || "queued")}>{trace.status || "running"}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {trace.correlationId || trace.traceId}  {trace.startedAt ? new Date(trace.startedAt).toLocaleString() : "unknown"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Integration Contracts & Certifications</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Contracts ({opsContracts.length})</p>
+                  <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                    {opsContracts.length === 0 ? (
+                      <p className="text-sm text-gray-500">No contracts loaded.</p>
+                    ) : (
+                      opsContracts.map((contract: any) => (
+                        <div key={contract.provider} className="p-2 bg-gray-50 rounded border border-gray-200">
+                          <p className="text-sm font-medium text-gray-900">{contract.provider}</p>
+                          <p className="text-xs text-gray-600">
+                            Required fields: {(contract.requiredFields || []).join(", ") || "none"}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Certifications ({opsCertifications.length})</p>
+                  <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                    {opsCertifications.length === 0 ? (
+                      <p className="text-sm text-gray-500">No connector certifications yet.</p>
+                    ) : (
+                      opsCertifications.map((cert: any) => (
+                        <div key={cert.id} className="p-2 bg-gray-50 rounded border border-gray-200">
+                          <p className="text-sm font-medium text-gray-900">{cert.provider}</p>
+                          <p className="text-xs text-gray-600">
+                            Version: {cert.schemaVersion || "v1"}  {cert.createdAt ? new Date(cert.createdAt).toLocaleString() : "unknown"}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Managed Secrets</h3>
+              {opsSecrets.length === 0 ? (
+                <p className="text-sm text-gray-500">No managed secrets found.</p>
+              ) : (
+                <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <thead>
+                      <tr>
+                        <th>Scope</th>
+                        <th>Active Version</th>
+                        <th>Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {opsSecrets.map((secret: any) => (
+                        <tr key={secret.scope}>
+                          <td>{secret.scope}</td>
+                          <td>{secret.activeVersionId || "none"}</td>
+                          <td>{secret.updatedAt ? new Date(secret.updatedAt).toLocaleString() : "unknown"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Surveys Tab */}
+        {activeTab === "surveys" && (
+          <div className="space-y-3 sm:space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Customer Surveys</h2>
+                <p className="text-gray-500 mt-1">Create and manage customer satisfaction surveys</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSurveyForm({
+                    name: "",
+                    type: "nps",
+                    triggerEvent: "payment_completed",
+                    enabled: true,
+                    questions: []
+                  });
+                  setShowSurveyModal(true);
+                }}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <FiPlus className="w-4 h-4" />
+                Create Survey
+              </button>
+            </div>
+            {surveys.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {surveys.map((survey: any) => (
+                  <div key={survey.id} className="card">
+                    <h4 className="font-semibold text-gray-900">{survey.name}</h4>
+                    <p className="text-sm text-gray-600 mt-1">Type: {survey.type.toUpperCase()}</p>
+                    <p className="text-sm text-gray-600">Trigger: {survey.triggerEvent}</p>
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className={`badge ${survey.enabled ? "badge-success" : "badge"}`}>
+                        {survey.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const results = await apiRequest<{ stats: any; responses: any[] }>(`/business/surveys/${survey.id}/results`, { accessToken });
+                            setStatus(`Survey has ${results.stats.totalResponses} responses, avg score: ${results.stats.averageScore}`);
+                          } catch (err: any) {
+                            setStatus(` ${err?.message || "Failed to load results"}`);
+                          }
+                        }}
+                        className="text-blue-600 hover:underline text-sm"
+                      >
+                        View Results
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="card text-center py-12">
+                <FiClipboard className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No surveys created yet.</p>
+                <p className="text-sm text-gray-400 mt-2">Use the API to create surveys that trigger automatically on events.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Shop Tab */}
+        {activeTab === "shop" && (
+          <div className="space-y-3 sm:space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Ecommerce Shop</h2>
+                <p className="text-gray-500 mt-1">Manage storefront, categories, and products</p>
+              </div>
+              {shopData?.slug && (
+                <a
+                  className="btn btn-secondary"
+                  href={`/shop/${shopData.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open Storefront
+                </a>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={getShopSectionTabClass("shop")}
+                onClick={() => setShopSectionTab("shop")}
+              >
+                Shop
+              </button>
+              <button
+                className={getShopSectionTabClass("upload")}
+                onClick={() => setShopSectionTab("upload")}
+              >
+                Upload Product
+              </button>
+              <button
+                className={getShopSectionTabClass("products")}
+                onClick={() => setShopSectionTab("products")}
+              >
+                Products
+              </button>
+              <button
+                className={getShopSectionTabClass("orders")}
+                onClick={() => setShopSectionTab("orders")}
+              >
+                Orders
+              </button>
+            </div>
+
+            {shopSectionTab === "shop" && (
+            <div className="card space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Shop Details</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <label className="label">Select Shop</label>
+                  <select
+                    className="input"
+                    value={selectedShopId || ""}
+                    onChange={(e) => {
+                      const nextShopId = e.target.value || null;
+                      setIsCreatingAnotherShop(false);
+                      setSelectedShopId(nextShopId);
+                    }}
+                  >
+                    {isCreatingAnotherShop && <option value="">Creating new shop...</option>}
+                    {shops.length === 0 && <option value="">No shops yet</option>}
+                    {shops.map((shop) => (
+                      <option key={shop.id} value={shop.id}>
+                        {shop.name} ({shop.slug})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end gap-2">
+                  <button
+                    className="btn btn-secondary flex-1"
+                    onClick={() => {
+                      setIsCreatingAnotherShop(true);
+                      resetShopEditorForCreate();
+                    }}
+                  >
+                    Create Another Shop
+                  </button>
+                  {!isCreatingAnotherShop && !!selectedShopId && (
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => requestDeleteShop(selectedShopId)}
+                      disabled={deletingShopId === selectedShopId}
+                    >
+                      {deletingShopId === selectedShopId ? "Deleting..." : "Delete Shop"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {isCreatingAnotherShop && (
+                <p className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">
+                  Creating a new shop. Fill details and click <span className="font-semibold">Create Shop</span>.
+                </p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Shop Name</label>
+                  <input className="input" value={shopForm.name} onChange={(e) => setShopForm({ ...shopForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Shop Slug</label>
+                  <input className="input" value={shopForm.slug} onChange={(e) => setShopForm({ ...shopForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} placeholder="my-shop" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <textarea className="input" rows={3} value={shopForm.description} onChange={(e) => setShopForm({ ...shopForm, description: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 border rounded-lg bg-gray-50 space-y-2">
+                  <p className="text-sm font-medium text-gray-800">Shop Profile Image (Logo)</p>
+                  {shopForm.logoUrl ? (
+                    <img
+                      src={shopForm.logoUrl}
+                      alt="Shop profile preview"
+                      className="w-20 h-20 rounded-xl border object-cover bg-white"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-xl border bg-white flex items-center justify-center text-sm font-semibold text-gray-500">
+                      Logo
+                    </div>
+                  )}
+                  <input
+                    className="input"
+                    placeholder="Logo image URL (optional)"
+                    value={shopForm.logoUrl}
+                    onChange={(e) => setShopForm({ ...shopForm, logoUrl: e.target.value })}
+                  />
+                  <div className="flex gap-2">
+                    <label className="btn btn-secondary flex-1 cursor-pointer flex items-center justify-center gap-2">
+                      <FiUpload className="w-4 h-4" />
+                      {uploadingShopImageField === "logoUrl" ? "Uploading..." : "Upload Logo"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleShopImageUpload("logoUrl", e.target.files?.[0])}
+                      />
+                    </label>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => setShopForm({ ...shopForm, logoUrl: "" })}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="p-3 border rounded-lg bg-gray-50 space-y-2">
+                  <p className="text-sm font-medium text-gray-800">Shop Hero Image (Mobile/Tablet)</p>
+                  {shopForm.bannerUrl ? (
+                    <img
+                      src={shopForm.bannerUrl}
+                      alt="Shop hero preview"
+                      className="w-full h-24 rounded-xl border object-cover bg-white"
+                    />
+                  ) : (
+                    <div className="w-full h-24 rounded-xl border bg-white flex items-center justify-center text-sm font-medium text-gray-500">
+                      Hero image preview
+                    </div>
+                  )}
+                  <input
+                    className="input"
+                    placeholder="Hero image URL (optional)"
+                    value={shopForm.bannerUrl}
+                    onChange={(e) => setShopForm({ ...shopForm, bannerUrl: e.target.value })}
+                  />
+                  <div className="flex gap-2">
+                    <label className="btn btn-secondary flex-1 cursor-pointer flex items-center justify-center gap-2">
+                      <FiUpload className="w-4 h-4" />
+                      {uploadingShopImageField === "bannerUrl" ? "Uploading..." : "Upload Hero Image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleShopImageUpload("bannerUrl", e.target.files?.[0])}
+                      />
+                    </label>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => setShopForm({ ...shopForm, bannerUrl: "" })}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    This image appears over your color on small and medium screens.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Theme Color</label>
+                  <input type="color" className="input" value={shopForm.themeColor} onChange={(e) => setShopForm({ ...shopForm, themeColor: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Shop Type</label>
+                  <select
+                    className="input"
+                    value={shopForm.businessType}
+                    onChange={(e) => setShopForm({ ...shopForm, businessType: e.target.value as ShopType })}
+                    disabled={!isCreatingAnotherShop && !!selectedShopId}
+                  >
+                    {SHOP_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {!isCreatingAnotherShop && !!selectedShopId && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Shop type is locked after creation.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={async () => {
+                  try {
+                    if (isCreatingAnotherShop || !selectedShopId) {
+                      const response = await apiRequest<{ shop: ShopData }>("/business/shop", {
+                        method: "POST",
+                        accessToken,
+                        csrfToken,
+                        body: {
+                          name: shopForm.name,
+                          slug: shopForm.slug,
+                          description: shopForm.description || undefined,
+                          logoUrl: shopForm.logoUrl || undefined,
+                          bannerUrl: shopForm.bannerUrl || undefined,
+                          themeColor: shopForm.themeColor,
+                          businessType: shopForm.businessType
+                        }
+                      });
+                      setStatus(" Shop created");
+                      setIsCreatingAnotherShop(false);
+                      if (response?.shop?.id) {
+                        setSelectedShopId(response.shop.id);
+                      }
+                    } else {
+                      await apiRequest("/business/shop", {
+                        method: "PATCH",
+                        accessToken,
+                        csrfToken,
+                        body: {
+                          shopId: selectedShopId,
+                          name: shopForm.name,
+                          slug: shopForm.slug,
+                          description: shopForm.description,
+                          logoUrl: shopForm.logoUrl || "",
+                          bannerUrl: shopForm.bannerUrl || "",
+                          themeColor: shopForm.themeColor
+                        }
+                      });
+                      setStatus(" Shop updated");
+                    }
+                    await loadShopData();
+                  } catch (err: any) {
+                    setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save shop"}`);
+                  }
+                }}
+                disabled={!shopForm.name || !shopForm.slug}
+              >
+                {isCreatingAnotherShop || !selectedShopId ? "Create Shop" : "Update Shop"}
+              </button>
+            </div>
+            )}
+
+            {!shopData && shopSectionTab !== "shop" && (
+              <div className="card">
+                <p className="text-gray-600">Create or select a shop in the Shop tab first.</p>
+              </div>
+            )}
+
+            {shopData && (
+              <>
+                {shopSectionTab === "shop" && (
+                <div className="card space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Categories</h3>
+                  <p className="text-sm text-gray-500">
+                    Recommended categories for <span className="font-medium">{shopForm.businessType}</span> shops.
+                    You can add all defaults at once, then add custom ones if needed.
+                  </p>
+
+                  {categoryTemplates.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-700">Recommended Categories</p>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={seedCategoryTemplates}
+                          disabled={isSeedingCategoryTemplates}
+                        >
+                          {isSeedingCategoryTemplates ? "Adding..." : "Add Missing Recommended Categories"}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {categoryTemplates.map((template) => {
+                          const exists = hasCategoryFromTemplate(template);
+                          return (
+                            <div key={template.id} className="p-3 border rounded-lg bg-gray-50">
+                              <p className="font-semibold text-gray-900 text-sm">{template.name}</p>
+                              <p className="text-xs text-gray-600 mt-1">{template.description || "Recommended category"}</p>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <p className="text-xs text-gray-500">/{template.slug}</p>
+                                <button
+                                  className="btn btn-xs btn-secondary"
+                                  onClick={() => createCategoryFromTemplate(template)}
+                                  disabled={exists || addingCategoryTemplateId === template.id}
+                                >
+                                  {exists ? "Added" : addingCategoryTemplateId === template.id ? "Adding..." : "Add"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-1">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Add Custom Category</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <input className="input" placeholder="Name" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} />
+                    <input className="input" placeholder="Slug (optional)" value={categoryForm.slug} onChange={(e) => setCategoryForm({ ...categoryForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} />
+                    <input className="input" placeholder="Description" value={categoryForm.description} onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })} />
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        try {
+                          await apiRequest("/business/shop/categories", {
+                            method: "POST",
+                            accessToken,
+                            csrfToken,
+                            body: {
+                              shopId: shopData.id,
+                              name: categoryForm.name,
+                              slug: categoryForm.slug || undefined,
+                              description: categoryForm.description || undefined,
+                              sortOrder: categoryForm.sortOrder
+                            }
+                          });
+                          setCategoryForm({ name: "", slug: "", description: "", sortOrder: 0 });
+                          setStatus(" Category added");
+                          await loadShopData();
+                        } catch (err: any) {
+                          setStatus(` ${err?.response?.data?.error || err?.message || "Failed to create category"}`);
+                        }
+                      }}
+                      disabled={!categoryForm.name}
+                    >
+                      Add Category
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {visibleShopCategories.length === 0 ? (
+                      <p className="text-gray-500">No categories for this shop type yet</p>
+                    ) : (
+                      visibleShopCategories.map((c) => (
+                        <div key={c.id} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-900">{c.name}</p>
+                            <p className="text-sm text-gray-600">/{c.slug}</p>
+                          </div>
+                          <button
+                            className="btn btn-xs btn-danger"
+                            onClick={async () => {
+                              try {
+                                await apiRequest(withShopIdQuery(`/business/shop/categories/${c.id}`, shopData.id), {
+                                  method: "DELETE",
+                                  accessToken,
+                                  csrfToken
+                                });
+                                setStatus(" Category deleted");
+                                await loadShopData();
+                              } catch (err: any) {
+                                setStatus(` ${err?.response?.data?.error || err?.message || "Failed to delete category"}`);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                )}
+
+                {shopSectionTab !== "shop" && (
+                <div className="card space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {shopSectionTab === "upload"
+                      ? editingProductId
+                        ? "Edit Product"
+                        : "Upload Product"
+                      : shopSectionTab === "products"
+                      ? "Products"
+                      : "Orders"}
+                  </h3>
+                  {shopSectionTab === "upload" && (
+                  <p className="text-sm text-gray-500">
+                    Templates include all category setups. Measurement mode:
+                    {activeProductRules.showSize ? " size enabled" : " size disabled"} 
+                    {activeProductRules.showLength ? " length enabled" : " length disabled"} 
+                    {activeProductRules.showTexture ? " texture enabled" : " texture disabled"}
+                  </p>
+                  )}
+                  {shopSectionTab === "upload" && shopCapabilities && (
+                    <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900">Plan: {shopCapabilities.planId}</span>
+                        <span className={`badge ${shopCapabilities.canDropship ? "badge-success" : "badge-warning"}`}>
+                          {shopCapabilities.canDropship ? "Dropship enabled" : "Dropship disabled"}
+                        </span>
+                        <span className="badge">
+                          Checkout: {shopCapabilities.allowedCheckoutMethods.join(" + ") || "none"}
+                        </span>
+                      </div>
+                      {!shopCapabilities.canDropship && (
+                        <p className="text-amber-700">
+                          Upgrade to Professional to unlock dropship fulfillment and supplier routing.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {shopSectionTab === "upload" && (
+                    <div className="space-y-3 rounded-lg border p-3">
+                      <p className="text-sm font-semibold text-gray-900">Supplier Directory (Dropship)</p>
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                        <input
+                          className="input md:col-span-2"
+                          placeholder="Supplier name"
+                          value={supplierForm.name}
+                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                        />
+                        <select
+                          className="input"
+                          value={supplierForm.type}
+                          onChange={(e) =>
+                            setSupplierForm((prev) => ({
+                              ...prev,
+                              type: e.target.value as "manual" | "api" | "csv"
+                            }))
+                          }
+                        >
+                          <option value="manual">Manual</option>
+                          <option value="api">API</option>
+                          <option value="csv">CSV</option>
+                        </select>
+                        <select
+                          className="input"
+                          value={supplierForm.provider}
+                          onChange={(e) =>
+                            setSupplierForm((prev) => ({
+                              ...prev,
+                              provider: e.target.value as "" | "amazon" | "cjdropshipping" | "aliexpress"
+                            }))
+                          }
+                        >
+                          <option value="">No provider</option>
+                          <option value="amazon">Amazon</option>
+                          <option value="cjdropshipping">CJ Dropshipping</option>
+                          <option value="aliexpress">AliExpress</option>
+                        </select>
+                        <select
+                          className="input"
+                          value={supplierForm.channel}
+                          onChange={(e) =>
+                            setSupplierForm((prev) => ({
+                              ...prev,
+                              channel: e.target.value as "whatsapp" | "email" | "sms"
+                            }))
+                          }
+                        >
+                          <option value="whatsapp">WhatsApp</option>
+                          <option value="email">Email</option>
+                          <option value="sms">SMS</option>
+                        </select>
+                        <input
+                          className="input"
+                          placeholder="Recipient (phone/email)"
+                          value={supplierForm.recipient}
+                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, recipient: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          className="input flex-1 min-w-[220px]"
+                          placeholder="Notes (optional)"
+                          value={supplierForm.notes}
+                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, notes: e.target.value }))}
+                        />
+                        <button className="btn btn-secondary" onClick={createShopSupplier}>
+                          Add Supplier
+                        </button>
+                      </div>
+                      {shopSuppliers.length > 0 ? (
+                        <div className="space-y-2">
+                          {shopSuppliers.map((supplier) => (
+                            <div key={supplier.id} className="rounded-md border bg-white p-2 flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">{supplier.name}</p>
+                                <p className="text-xs text-gray-600 truncate">
+                                  {(supplier.channel || "no-channel").toUpperCase()} • {supplier.recipient || "No recipient"}
+                                </p>
+                                {supplier.provider && (
+                                  <p className="text-[11px] text-blue-700 truncate">Provider: {supplier.provider}</p>
+                                )}
+                              </div>
+                              <button
+                                className="btn btn-xs btn-danger"
+                                onClick={() => deleteShopSupplier(supplier.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">No suppliers yet.</p>
+                      )}
+                    </div>
+                  )}
+                  {shopSectionTab === "upload" && productTemplates.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Quick Product Templates (All Categories)</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {productTemplates.map((template) => {
+                          const templateRules = getTemplateRules(template);
+                          const isSelectedTemplate = selectedProductTemplateId === template.id;
+                          return (
+                          <div key={template.id} className={`p-3 border rounded-lg ${isSelectedTemplate ? "bg-blue-50 border-blue-300" : "bg-gray-50"}`}>
+                            <p className="font-semibold text-gray-900 text-sm">{template.name}</p>
+                            {template.categoryLabel && (
+                              <p className="text-xs text-blue-700 mt-1">{template.categoryLabel}</p>
+                            )}
+                            <p className="text-xs text-gray-600 mt-1">{template.description}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">
+                              {templateRules.showSize ? "Size" : "No Size"}  {templateRules.showLength ? "Length" : "No Length"}  {templateRules.showTexture ? "Texture" : "No Texture"}
+                            </p>
+                            <button
+                              className="btn btn-xs btn-secondary mt-2"
+                              onClick={() => applyProductTemplate(template)}
+                            >
+                              {isSelectedTemplate ? "Template Selected" : "Use Template"}
+                            </button>
+                          </div>
+                        )})}
+                      </div>
+                      {selectedProductTemplateId && (
+                        <button
+                          className="btn btn-xs btn-secondary"
+                          onClick={() => setSelectedProductTemplateId(null)}
+                        >
+                          Clear Selected Template
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {shopSectionTab === "upload" && (
+                  <div className="text-xs text-gray-600 bg-gray-50 border rounded-lg p-3">
+                    Required fields: <span className="font-semibold">Name, Price, Currency, Quantity</span>. Other fields are optional.
+                  </div>
+                  )}
+                  {shopSectionTab === "upload" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <input
+                      className="input"
+                      placeholder="Name *"
+                      value={productForm.name}
+                      onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                    />
+                    <input
+                      className="input"
+                      placeholder="Slug (optional)"
+                      value={productForm.slug}
+                      onChange={(e) => setProductForm({ ...productForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+                    />
+                    <input
+                      type="number"
+                      className="input"
+                      placeholder="Price *"
+                      value={productForm.price || ""}
+                      onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                    />
+                    <select
+                      className="input"
+                      value={productForm.currency}
+                      onChange={(e) => setProductForm({ ...productForm, currency: e.target.value })}
+                    >
+                      <option value="USD">USD</option>
+                      <option value="NGN">NGN</option>
+                      <option value="EUR">EUR</option>
+                      <option value="GBP">GBP</option>
+                    </select>
+                    <select
+                      className="input"
+                      value={productForm.categoryId}
+                      onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
+                    >
+                      <option value="">No category</option>
+                      {visibleShopCategories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      className="input"
+                      placeholder="Quantity *"
+                      value={productForm.inventory || 0}
+                      onChange={(e) => setProductForm({ ...productForm, inventory: Number(e.target.value) })}
+                    />
+                    <select
+                      className="input"
+                      value={useDropshipForProduct ? "dropship" : "self_fulfilled"}
+                      onChange={(e) =>
+                        setProductForm((prev) => ({
+                          ...prev,
+                          fulfillmentType:
+                            e.target.value === "dropship" && canUseDropshipForShop
+                              ? "dropship"
+                              : "self_fulfilled"
+                        }))
+                      }
+                      disabled={!canUseDropshipForShop}
+                    >
+                      <option value="self_fulfilled">Own fulfillment</option>
+                      <option value="dropship">Dropship supplier</option>
+                    </select>
+                    <input
+                      className="input"
+                      placeholder={activeProductRules.productTypePlaceholder}
+                      value={productForm.productType}
+                      onChange={(e) => setProductForm({ ...productForm, productType: e.target.value })}
+                    />
+                    {activeProductRules.showSize ? (
+                      <select
+                        className="input"
+                        value={productForm.sizeType || activeProductRules.defaultSizeType || "size"}
+                        onChange={(e) => setProductForm({ ...productForm, sizeType: e.target.value })}
+                      >
+                        <option value="size">Size</option>
+                        <option value="shoe-size">Shoe Size</option>
+                        <option value="numeric">Numeric</option>
+                      </select>
+                    ) : (
+                      <div className="input bg-gray-50 text-gray-500 flex items-center">No size measurements for this template</div>
+                    )}
+                  </div>
+                  )}
+                  {shopSectionTab === "upload" && useDropshipForProduct && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <select
+                      className="input md:col-span-2"
+                      value={productForm.supplierId}
+                      onChange={(e) => setProductForm({ ...productForm, supplierId: e.target.value })}
+                    >
+                      <option value="">Select supplier</option>
+                      {shopSuppliers
+                        .filter((supplier) => supplier.isActive)
+                        .map((supplier) => (
+                          <option key={supplier.id} value={supplier.id}>
+                            {supplier.name} ({supplier.channel || "manual"})
+                          </option>
+                        ))}
+                    </select>
+                    <input
+                      className="input"
+                      placeholder="Supplier SKU (optional)"
+                      value={productForm.supplierSku}
+                      onChange={(e) => setProductForm({ ...productForm, supplierSku: e.target.value })}
+                    />
+                    <input
+                      type="number"
+                      className="input"
+                      placeholder="Cost price (optional)"
+                      value={productForm.costPrice}
+                      onChange={(e) =>
+                        setProductForm({
+                          ...productForm,
+                          costPrice: e.target.value === "" ? "" : Number(e.target.value)
+                        })
+                      }
+                    />
+                    <label className="md:col-span-4 flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(productForm.trackInventory)}
+                        onChange={(e) =>
+                          setProductForm({ ...productForm, trackInventory: e.target.checked })
+                        }
+                      />
+                      Track supplier inventory for this product
+                    </label>
+                    {productForm.supplierId && selectedSupplier && (
+                      <p className="md:col-span-4 text-xs text-gray-600">
+                        Dispatch channel: {(selectedSupplier.channel || "none").toUpperCase()} â€¢ Recipient:{" "}
+                        {selectedSupplier.recipient || "Not set"}
+                      </p>
+                    )}
+                  </div>
+                  )}
+
+                  {shopSectionTab === "upload" && (
+                  <textarea
+                    className="input"
+                    rows={2}
+                    placeholder="Description"
+                    value={productForm.description}
+                    onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                  />
+                  )}
+
+                  {shopSectionTab === "upload" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {activeProductRules.showSize && (
+                      <>
+                        <input
+                          className="input"
+                          placeholder="Size options (comma-separated)"
+                          value={productForm.sizeOptionsInput}
+                          onChange={(e) => setProductForm({ ...productForm, sizeOptionsInput: e.target.value })}
+                        />
+                        <input
+                          className="input"
+                          placeholder="Size guide hint (optional)"
+                          value={productForm.sizeGuideHint}
+                          onChange={(e) => setProductForm({ ...productForm, sizeGuideHint: e.target.value })}
+                        />
+                      </>
+                    )}
+                    <input
+                      className="input"
+                      placeholder="Color options (comma-separated)"
+                      value={productForm.colorOptionsInput}
+                      onChange={(e) => setProductForm({ ...productForm, colorOptionsInput: e.target.value })}
+                    />
+                    {activeProductRules.showTexture && (
+                      <input
+                        className="input"
+                        placeholder="Texture options (comma-separated)"
+                        value={productForm.textureOptionsInput}
+                        onChange={(e) => setProductForm({ ...productForm, textureOptionsInput: e.target.value })}
+                      />
+                    )}
+                    {activeProductRules.showLength && (
+                      <input
+                        className={`input ${activeProductRules.showTexture ? "" : "md:col-span-2"}`}
+                        placeholder="Length options (comma-separated)"
+                        value={productForm.lengthOptionsInput}
+                        onChange={(e) => setProductForm({ ...productForm, lengthOptionsInput: e.target.value })}
+                      />
+                    )}
+                  </div>
+                  )}
+
+                  {shopSectionTab === "upload" && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Product Images (up to 4)</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {productForm.imageUrls.map((url, index) => (
+                        <div key={index} className="p-3 border rounded-lg bg-gray-50 space-y-2">
+                          {url ? (
+                            <img
+                              src={url}
+                              alt={`Product ${index + 1}`}
+                              className="w-full h-32 object-cover rounded-md border bg-white"
+                            />
+                          ) : (
+                            <div className="w-full h-32 rounded-md border bg-white flex items-center justify-center text-xs text-gray-500">
+                              No image selected
+                            </div>
+                          )}
+                          <input
+                            className="input"
+                            placeholder={`Image ${index + 1} URL (optional)`}
+                            value={url}
+                            onChange={(e) => setProductImageAt(index, e.target.value)}
+                          />
+                          <label className="btn btn-secondary w-full cursor-pointer flex items-center justify-center gap-2">
+                            <FiUpload className="w-4 h-4" />
+                            {uploadingProductImageSlot === index ? "Uploading..." : `Upload Image ${index + 1}`}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => handleProductImageUpload(index, e.target.files?.[0])}
+                            />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 p-3 border rounded-lg bg-gray-50 space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Optional Product Video</p>
+                      {productForm.videoUrl ? (
+                        <video
+                          src={productForm.videoUrl}
+                          controls
+                          className="w-full max-h-64 rounded-md border bg-black"
+                        />
+                      ) : (
+                        <div className="w-full h-40 rounded-md border bg-white flex items-center justify-center text-xs text-gray-500">
+                          No video selected
+                        </div>
+                      )}
+                      <input
+                        className="input"
+                        placeholder="Video URL (optional)"
+                        value={productForm.videoUrl}
+                        onChange={(e) => setProductForm({ ...productForm, videoUrl: e.target.value })}
+                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="btn btn-secondary w-full cursor-pointer flex items-center justify-center gap-2">
+                          <FiUpload className="w-4 h-4" />
+                          {uploadingProductVideo ? "Uploading..." : "Upload Video"}
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            onChange={(e) => handleProductVideoUpload(e.target.files?.[0])}
+                          />
+                        </label>
+                        {productForm.videoUrl ? (
+                          <button
+                            type="button"
+                            className="btn btn-danger w-full"
+                            onClick={() => setProductForm({ ...productForm, videoUrl: "" })}
+                          >
+                            Remove Video
+                          </button>
+                        ) : (
+                          <div />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Supported: video files up to 20MB or direct video URL.
+                      </p>
+                    </div>
+                  </div>
+                  )}
+                  {shopSectionTab === "upload" && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      try {
+                        const isEditing = Boolean(editingProductId);
+                        const payload = buildProductPayload();
+                        const resolvedShopId =
+                          (isEditing ? editingProductShopId : null) ||
+                          selectedShopId ||
+                          shopData?.id ||
+                          null;
+                        if (!resolvedShopId) {
+                          setStatus("? Could not determine the shop for this product. Refresh and try again.");
+                          return;
+                        }
+                        if (!payload.name || !payload.name.trim()) {
+                          setStatus("? Product name is required");
+                          return;
+                        }
+                        if (!payload.currency || payload.currency.trim().length !== 3) {
+                          setStatus("? Product currency is required");
+                          return;
+                        }
+                        if (!Number.isFinite(payload.price) || payload.price < 0) {
+                          setStatus("? Enter a valid product price");
+                          return;
+                        }
+                        if (!Number.isFinite(payload.inventory) || payload.inventory < 0) {
+                          setStatus("? Enter a valid product inventory");
+                          return;
+                        }
+                        payload.inventory = Math.trunc(payload.inventory);
+                        if (isEditing && !payload.slug) {
+                          payload.slug =
+                            editingProductSlug ||
+                            shopData?.products?.find((product) => product?.id === editingProductId)?.slug ||
+                            undefined;
+                        }
+                        const targetShopId = resolvedShopId;
+                        if (isEditing && editingProductId) {
+                          const editPath = withShopIdQuery(`/business/shop/products/${editingProductId}`, targetShopId);
+                          try {
+                            await apiRequest(editPath, {
+                              method: "PATCH",
+                              accessToken,
+                              csrfToken,
+                              body: payload
+                            });
+                          } catch (primaryErr: any) {
+                            const code = primaryErr?.response?.status;
+                            if (code === 400 || code === 404) {
+                              await apiRequest(`/business/shop/products/${editingProductId}`, {
+                                method: "PATCH",
+                                accessToken,
+                                csrfToken,
+                                body: payload
+                              });
+                            } else {
+                              throw primaryErr;
+                            }
+                          }
+                        } else {
+                          await apiRequest(withShopIdQuery("/business/shop/products", targetShopId), {
+                            method: "POST",
+                            accessToken,
+                            csrfToken,
+                            body: payload
+                          });
+                        }
+                        setProductForm(createProductFormForShopType(shopForm.businessType));
+                        setEditingProductId(null);
+                        setEditingProductShopId(null);
+                        setEditingProductSlug(null);
+                        setSelectedProductTemplateId(null);
+                        setStatus(isEditing ? " Product updated" : " Product added");
+                        await loadShopData();
+                      } catch (err: any) {
+                        setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save product"}`);
+                      }
+                    }}
+                    disabled={!isProductFormReady}
+                  >
+                    {editingProductId ? "Update Product" : "Add Product"}
+                  </button>
+                  )}
+                  {shopSectionTab === "upload" && editingProductId && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setProductForm(createProductFormForShopType(shopForm.businessType));
+                        setEditingProductId(null);
+                        setEditingProductShopId(null);
+                        setEditingProductSlug(null);
+                        setSelectedProductTemplateId(null);
+                      }}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+
+                  {shopSectionTab === "products" && (
+                  <div className="space-y-2">
+                    {shopData.products.length === 0 ? (
+                      <p className="text-gray-500">No products yet</p>
+                    ) : (
+                      shopData.products.map((p) => (
+                        <div key={p.id} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-3">
+                              {(p.metadata?.imageUrls?.[0] || p.imageUrl) && (
+                                <img
+                                  src={p.metadata?.imageUrls?.[0] || p.imageUrl || ""}
+                                  alt={p.name}
+                                  className="w-12 h-12 rounded-md object-cover border bg-white"
+                                />
+                              )}
+                              <div>
+                                <p className="font-medium text-gray-900">{p.name}</p>
+                                <p className="text-sm text-gray-600">{p.currency} {p.price.toFixed(2)}  Stock: {p.inventory}</p>
+                                <p className="text-xs text-gray-500">
+                                  Fulfillment:{" "}
+                                  {p.metadata?.fulfillment?.type === "dropship"
+                                    ? `Dropship${p.metadata?.fulfillment?.supplierName ? ` (${p.metadata.fulfillment.supplierName})` : ""}`
+                                    : "Own"}
+                                </p>
+                                {((p.metadata?.sizeOptions || []).length > 0 || (p.metadata?.colorOptions || []).length > 0) && (
+                                  <p className="text-xs text-gray-500">
+                                    {(p.metadata?.sizeOptions || []).length} size(s)  {(p.metadata?.colorOptions || []).length} color(s)
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="btn btn-xs btn-secondary"
+                              onClick={() => startEditingProduct(p)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="btn btn-xs btn-danger"
+                              onClick={async () => {
+                                try {
+                                  await apiRequest(withShopIdQuery(`/business/shop/products/${p.id}`, shopData.id), {
+                                    method: "DELETE",
+                                    accessToken,
+                                    csrfToken
+                                  });
+                                  if (editingProductId === p.id) {
+                                    setEditingProductId(null);
+                                    setEditingProductShopId(null);
+                                    setEditingProductSlug(null);
+                                    setProductForm(createProductFormForShopType(shopForm.businessType));
+                                    setSelectedProductTemplateId(null);
+                                  }
+                                  setStatus(" Product deleted");
+                                  await loadShopData();
+                                } catch (err: any) {
+                                  setStatus(` ${err?.response?.data?.error || err?.message || "Failed to delete product"}`);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  )}
+
+                  {shopSectionTab === "orders" && (
+                  <div className="mt-6 space-y-3">
+                    <h4 className="font-semibold text-gray-900">Recent Shop Orders</h4>
+                    {shopOrders.length === 0 ? (
+                      <p className="text-sm text-gray-500">No orders yet for this shop.</p>
+                    ) : (
+                      <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                        <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                          <thead>
+                            <tr>
+                              <th>Order #</th>
+                              <th>Customer</th>
+                              <th>Contact</th>
+                              <th>Items</th>
+                              <th>Total</th>
+                              <th>Status</th>
+                              <th>Date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shopOrders.map((order) => {
+                              const buyer = order.metadata?.buyer || {};
+                              const displayName =
+                                `${order.customer?.firstName || buyer.firstName || ""} ${
+                                  order.customer?.lastName || buyer.lastName || ""
+                                }`.trim() || "N/A";
+                              const contact =
+                                order.customer?.email ||
+                                buyer.email ||
+                                order.customer?.phone ||
+                                buyer.phone ||
+                                "N/A";
+                              const totalItems = order.items.reduce(
+                                (sum, item) => sum + (Number(item.quantity) || 0),
+                                0
+                              );
+                              return (
+                                <tr
+                                  key={order.id}
+                                  className="cursor-pointer hover:bg-gray-50"
+                                  onClick={() => setSelectedShopOrder(order)}
+                                >
+                                  <td className="font-medium text-gray-900">{order.orderNumber}</td>
+                                  <td>{displayName}</td>
+                                  <td className="text-gray-600">{contact}</td>
+                                  <td>{totalItems}</td>
+                                  <td>{order.currency} {Number(order.totalAmount || 0).toFixed(2)}</td>
+                                  <td>
+                                    <span className={`badge ${getShopOrderBadgeClass(order.status)}`}>
+                                      {String(order.status || "pending").replace(/_/g, " ")}
+                                    </span>
+                                  </td>
+                                  <td className="text-gray-600">
+                                    {order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                  )}
+                </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        </div>
+      </div>
+      
+      {/* Global Search Modal */}
+      <GlobalSearch
+        isOpen={isSearchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(result) => {
+          if (result.type === "customer") setActiveTab("customers");
+          else if (result.type === "payment") setActiveTab("payments");
+          else if (result.type === "notification") setActiveTab("notifications");
+          else if (result.type === "template") setActiveTab("notifications");
+        }}
+        role="business"
+      />
+      
+      {/* Help Center Modal */}
+      <HelpCenter isOpen={isHelpOpen} onClose={() => setHelpOpen(false)} />
+      
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <Onboarding
+          role="business"
+          onComplete={() => setShowOnboarding(false)}
+          onNavigate={(tab) => setActiveTab(tab as typeof activeTab)}
+        />
+      )}
+      
+      {/* Keyboard Shortcuts Modal */}
+      <ShortcutsModal />
+      
+      {/* Payment Plan Details Modal */}
+      <Modal
+        isOpen={showPaymentPlanModal}
+        onClose={() => {
+          setShowPaymentPlanModal(false);
+          setPaymentPlanDetails(null);
+        }}
+        title="Payment Plan Details"
+        size="lg"
+      >
+        {paymentPlanDetails && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-1">Total Amount</p>
+                <p className="text-2xl font-bold text-blue-900">
+                  {formatCurrency(paymentPlanDetails.totalAmount || 0, paymentPlanDetails.currency || "USD")}
+                </p>
+              </div>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-1">Total Installments</p>
+                <p className="text-2xl font-bold text-green-900">
+                  {paymentPlanDetails.totalInstallments || 0}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <h4 className="font-semibold text-gray-900 mb-3">Progress</h4>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Paid:</span>
+                  <span className="font-semibold text-green-600">{paymentPlanDetails.progress?.paid || 0}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Pending:</span>
+                  <span className="font-semibold text-yellow-600">{paymentPlanDetails.progress?.pending || 0}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Failed:</span>
+                  <span className="font-semibold text-red-600">{paymentPlanDetails.progress?.failed || 0}</span>
+                </div>
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Overall Progress</span>
+                    <span>{paymentPlanDetails.progress?.percentage || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className="bg-blue-600 h-3 rounded-full transition-all"
+                      style={{ width: `${paymentPlanDetails.progress?.percentage || 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {paymentPlanDetails.installments && paymentPlanDetails.installments.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Installment Schedule</h4>
+                <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Amount</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentPlanDetails.installments.map((inst: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{inst.installmentNumber || idx + 1}</td>
+                          <td>{formatCurrency(inst.amount || 0, paymentPlanDetails.currency || "USD")}</td>
+                          <td>{inst.dueDate ? new Date(inst.dueDate).toLocaleDateString() : "N/A"}</td>
+                          <td>
+                            <span className={`badge ${
+                              inst.status === "paid" ? "badge-success" :
+                              inst.status === "pending" ? "badge-warning" :
+                              inst.status === "failed" ? "badge-danger" :
+                              "badge-secondary"
+                            }`}>
+                              {inst.status || "pending"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+      
+      {/* Delete Account Modal - Step 1 */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Account"
+        size="md"
+        footer={
+          <>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowDeleteModal(false)}
+            >
+              Cancel
+            </button>
+            <button 
+              className="btn btn-danger"
+              onClick={() => {
+                setShowDeleteModal(false);
+                setShowDeleteConfirmModal(true);
+              }}
+            >
+              Continue
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 bg-red-50/70 rounded-lg">
+            <FiAlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-red-900">Warning: This action is irreversible</h4>
+              <ul className="mt-2 text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Your account data will be permanently deleted after <strong>30 days</strong></li>
+                <li>You will <strong>NOT</strong> be able to create another account with this email</li>
+                <li>All your integrations, payments, and notifications will be removed</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <label className="label">Reason for leaving (optional)</label>
+            <textarea
+              className="input min-h-[80px]"
+              placeholder="Tell us why you're leaving..."
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+            />
+          </div>
+        </div>
+      </Modal>
+      
+      {/* Delete Account Modal - Step 2 Confirmation */}
+      <Modal
+        isOpen={showDeleteConfirmModal}
+        onClose={() => setShowDeleteConfirmModal(false)}
+        title="Are you absolutely sure?"
+        size="md"
+        footer={
+          <>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowDeleteConfirmModal(false)}
+              disabled={deletionLoading}
+            >
+              Go Back
+            </button>
+            <button 
+              className="btn btn-danger"
+              onClick={handleRequestDeletion}
+              disabled={deletionLoading}
+            >
+              {deletionLoading ? "Processing..." : "Yes, Delete My Account"}
+            </button>
+          </>
+        }
+      >
+        <div className="text-center py-4">
+          <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+            <FiAlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <p className="text-gray-700 mb-4">
+            This will submit a deletion request. Your account and all associated data will be 
+            <strong className="text-red-600"> permanently deleted after 30 days</strong>.
+          </p>
+          <p className="text-sm text-gray-500">
+            You can cancel this request within the 30-day period from your Settings page.
+          </p>
+        </div>
+      </Modal>
+      
+      {/* Integration Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showIntegrationDeleteModal}
+        onClose={() => {
+          setShowIntegrationDeleteModal(false);
+          setIntegrationToDelete(null);
+        }}
+        onConfirm={confirmDeleteIntegration}
+        title="Delete Integration"
+        message={
+          <div>
+            <p>Are you sure you want to disconnect <strong className="capitalize">{integrationToDelete}</strong>?</p>
+            <p className="mt-2 text-sm text-gray-500">
+              You'll need to re-enter your credentials to reconnect this integration.
+            </p>
+          </div>
+        }
+        confirmText="Delete"
+        variant="danger"
+      />
+
+      {/* Recurring Payment Modal */}
+      <Modal
+        isOpen={showRecurringModal}
+        onClose={() => {
+          setShowRecurringModal(false);
+          setRecurringForm({
+            name: "",
+            amount: 0,
+            currency: "USD",
+            customerId: "",
+            interval: "monthly",
+            startDate: "",
+            endDate: "",
+          });
+        }}
+        title="Create Recurring Payment"
+        size="md"
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setShowRecurringModal(false);
+                setRecurringForm({
+                  name: "",
+                  amount: 0,
+                  currency: "USD",
+                  customerId: "",
+                  interval: "monthly",
+                  startDate: "",
+                  endDate: "",
+                });
+              }}
+              className="btn btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!accessToken || !recurringForm.name || !recurringForm.amount || !recurringForm.customerId) {
+                  setStatus(" Please fill in all required fields");
+                  return;
+                }
+                try {
+                  await apiRequest("/business/recurring-payments", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: {
+                      name: recurringForm.name,
+                      amount: recurringForm.amount,
+                      currency: recurringForm.currency,
+                      customerId: recurringForm.customerId,
+                      interval: recurringForm.interval,
+                      startDate: recurringForm.startDate || undefined,
+                      endDate: recurringForm.endDate || undefined,
+                    },
+                  });
+                  setStatus(" Recurring payment created successfully");
+                  setShowRecurringModal(false);
+                  setRecurringForm({
+                    name: "",
+                    amount: 0,
+                    currency: "USD",
+                    customerId: "",
+                    interval: "monthly",
+                    startDate: "",
+                    endDate: "",
+                  });
+                  await loadData();
+                } catch (err: any) {
+                  setStatus(` ${err?.message || "Failed to create recurring payment"}`);
+                }
+              }}
+              className="btn btn-primary"
+              disabled={!recurringForm.name || !recurringForm.amount || !recurringForm.customerId}
+            >
+              Create Recurring Payment
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Payment Name *</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g., Monthly Subscription"
+              value={recurringForm.name}
+              onChange={(e) => setRecurringForm({ ...recurringForm, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Amount *</label>
+              <input
+                type="number"
+                className="input"
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+                value={recurringForm.amount || ""}
+                onChange={(e) => setRecurringForm({ ...recurringForm, amount: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="label">Currency *</label>
+              <select
+                className="input"
+                value={recurringForm.currency}
+                onChange={(e) => setRecurringForm({ ...recurringForm, currency: e.target.value })}
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="NGN">NGN</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Customer *</label>
+            {loadingCustomers ? (
+              <div className="text-sm text-gray-500 py-2">Loading customers...</div>
+            ) : customers.length === 0 ? (
+              <div className="text-sm text-gray-500 py-2">
+                No customers found. <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab("customers"); }} className="text-blue-600 hover:underline">Add customers first</a>
+              </div>
+            ) : (
+              <select
+                className="input"
+                value={recurringForm.customerId}
+                onChange={(e) => setRecurringForm({ ...recurringForm, customerId: e.target.value })}
+              >
+                <option value="">-- Select a customer --</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.firstName || customer.lastName 
+                      ? `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+                      : customer.email}
+                    {customer.email ? ` (${customer.email})` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="label">Interval *</label>
+            <select
+              className="input"
+              value={recurringForm.interval}
+              onChange={(e) => setRecurringForm({ ...recurringForm, interval: e.target.value as "daily" | "weekly" | "monthly" | "yearly" })}
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Start Date (Optional)</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: 'light' }}
+                value={recurringForm.startDate}
+                onChange={(e) => setRecurringForm({ ...recurringForm, startDate: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div>
+              <label className="label">End Date (Optional)</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: 'light' }}
+                value={recurringForm.endDate}
+                onChange={(e) => setRecurringForm({ ...recurringForm, endDate: e.target.value })}
+                min={recurringForm.startDate || new Date().toISOString().split('T')[0]}
+              />
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> The system will automatically process payments at the specified interval. 
+              Make sure you have a payment gateway (Stripe/Paystack) connected in the Integrations tab.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Scheduled Payment Modal */}
+      <Modal
+        isOpen={showScheduledPaymentModal}
+        onClose={() => setShowScheduledPaymentModal(false)}
+        title="Schedule Payment"
+        size="md"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowScheduledPaymentModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!scheduledPaymentForm.customerId || !scheduledPaymentForm.amount || !scheduledPaymentForm.scheduledFor) {
+                  setStatus(" Please fill all required fields");
+                  return;
+                }
+                try {
+                  await apiRequest("/business/scheduled-payments", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: {
+                      customerId: scheduledPaymentForm.customerId,
+                      amount: parseFloat(scheduledPaymentForm.amount),
+                      currency: scheduledPaymentForm.currency,
+                      scheduledFor: new Date(scheduledPaymentForm.scheduledFor).toISOString()
+                    }
+                  });
+                  setStatus(" Payment scheduled");
+                  setShowScheduledPaymentModal(false);
+                  await loadData();
+                } catch (err: any) {
+                  setStatus(` ${err?.message || "Failed"}`);
+                }
+              }}
+            >
+              Schedule
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Customer ID *</label>
+            <input
+              className="input"
+              value={scheduledPaymentForm.customerId}
+              onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, customerId: e.target.value })}
+              placeholder="Enter customer ID"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Amount *</label>
+              <input
+                type="number"
+                className="input"
+                value={scheduledPaymentForm.amount}
+                onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, amount: e.target.value })}
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="label">Currency *</label>
+              <select
+                className="input"
+                value={scheduledPaymentForm.currency}
+                onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, currency: e.target.value })}
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="NGN">NGN</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Scheduled Date *</label>
+            <input
+              type="date"
+              className="input"
+              style={{ colorScheme: 'light' }}
+              value={scheduledPaymentForm.scheduledFor}
+              onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, scheduledFor: e.target.value })}
+              min={new Date().toISOString().split('T')[0]}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Payment Plan Template Modal */}
+      <Modal
+        isOpen={showPaymentPlanTemplateModal}
+        onClose={() => setShowPaymentPlanTemplateModal(false)}
+        title="Create Payment Plan Template"
+        size="md"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowPaymentPlanTemplateModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!paymentPlanTemplateForm.name) {
+                  setStatus(" Template name is required");
+                  return;
+                }
+                try {
+                  await apiRequest("/business/payment-plan-templates", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: {
+                      name: paymentPlanTemplateForm.name,
+                      numberOfInstallments: parseInt(paymentPlanTemplateForm.numberOfInstallments),
+                      intervalDays: parseInt(paymentPlanTemplateForm.intervalDays)
+                    }
+                  });
+                  setStatus(" Template created");
+                  setShowPaymentPlanTemplateModal(false);
+                  await loadData();
+                } catch (err: any) {
+                  setStatus(` ${err?.message || "Failed"}`);
+                }
+              }}
+            >
+              Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Template Name *</label>
+            <input
+              className="input"
+              value={paymentPlanTemplateForm.name}
+              onChange={(e) => setPaymentPlanTemplateForm({ ...paymentPlanTemplateForm, name: e.target.value })}
+              placeholder="e.g., Monthly 3-Pay"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Number of Installments *</label>
+              <input
+                type="number"
+                className="input"
+                value={paymentPlanTemplateForm.numberOfInstallments}
+                onChange={(e) => setPaymentPlanTemplateForm({ ...paymentPlanTemplateForm, numberOfInstallments: e.target.value })}
+                min="2"
+                max="12"
+              />
+            </div>
+            <div>
+              <label className="label">Interval (Days) *</label>
+              <input
+                type="number"
+                className="input"
+                value={paymentPlanTemplateForm.intervalDays}
+                onChange={(e) => setPaymentPlanTemplateForm({ ...paymentPlanTemplateForm, intervalDays: e.target.value })}
+                min="1"
+                max="365"
+              />
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Invoice Template Modal */}
+      <Modal
+        isOpen={showInvoiceTemplateModal}
+        onClose={() => setShowInvoiceTemplateModal(false)}
+        title="Create Invoice Template"
+        size="lg"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowInvoiceTemplateModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!invoiceTemplateForm.name || !invoiceTemplateForm.htmlTemplate) {
+                  setStatus(" Name and HTML template are required");
+                  return;
+                }
+                try {
+                  const template = await apiRequest<{ template: any }>("/business/invoice-templates", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: invoiceTemplateForm
+                  });
+                  setInvoiceTemplates([...invoiceTemplates, template.template]);
+                  setStatus(" Invoice template created");
+                  setShowInvoiceTemplateModal(false);
+                } catch (err: any) {
+                  setStatus(` ${err?.response?.data?.error || "Failed to create template"}`);
+                }
+              }}
+            >
+              Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Template Name *</label>
+            <input
+              className="input"
+              value={invoiceTemplateForm.name}
+              onChange={(e) => setInvoiceTemplateForm({ ...invoiceTemplateForm, name: e.target.value })}
+              placeholder="e.g., Standard Invoice"
+            />
+          </div>
+          <div>
+            <label className="label">HTML Template *</label>
+            <textarea
+              className="input resize-y font-mono text-sm"
+              value={invoiceTemplateForm.htmlTemplate}
+              onChange={(e) => setInvoiceTemplateForm({ ...invoiceTemplateForm, htmlTemplate: e.target.value })}
+              placeholder="<html><body><h1>Invoice {{invoiceNumber}}</h1><p>Amount: {{amount}}</p></body></html>"
+              rows={10}
+            />
+            <p className="text-xs text-gray-500 mt-1">Use {"{{variableName}}"} for dynamic values</p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Segment Modal */}
+      <Modal
+        isOpen={showSegmentModal}
+        onClose={() => {
+          setShowSegmentModal(false);
+          setSegmentForm(createSegmentForm());
+        }}
+        title="Create Customer Segment"
+        size="lg"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowSegmentModal(false);
+                setSegmentForm(createSegmentForm());
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleCreateSegment}
+              disabled={!segmentForm.name.trim() || segmentForm.rules.length === 0}
+            >
+              Create Segment
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="label">Segment Name *</label>
+            <input
+              className="input"
+              value={segmentForm.name}
+              onChange={(e) => setSegmentForm({ ...segmentForm, name: e.target.value })}
+              placeholder="e.g., High-Value Customers"
+            />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input resize-y"
+              value={segmentForm.description}
+              onChange={(e) => setSegmentForm({ ...segmentForm, description: e.target.value })}
+              placeholder="Describe this segment..."
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="label m-0">Rules *</label>
+              <button
+                className="btn btn-xs btn-secondary"
+                onClick={() =>
+                  setSegmentForm((prev) => ({
+                    ...prev,
+                    rules: [...prev.rules, createSegmentRuleRow()]
+                  }))
+                }
+              >
+                <FiPlus className="mr-1" /> Add Rule
+              </button>
+            </div>
+            {segmentForm.rules.map((rule, index) => (
+              <div key={rule.id} className="p-3 bg-gray-50 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Rule {index + 1}</p>
+                  {segmentForm.rules.length > 1 && (
+                    <button
+                      className="btn btn-xs btn-danger"
+                      onClick={() =>
+                        setSegmentForm((prev) => ({
+                          ...prev,
+                          rules: prev.rules.filter((item) => item.id !== rule.id)
+                        }))
+                      }
+                    >
+                      <FiTrash2 />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Field</label>
+                    <select
+                      className="input"
+                      value={rule.field}
+                      onChange={(e) =>
+                        setSegmentForm((prev) => ({
+                          ...prev,
+                          rules: prev.rules.map((item) =>
+                            item.id === rule.id ? { ...item, field: e.target.value } : item
+                          )
+                        }))
+                      }
+                    >
+                      {segmentFieldOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Operator</label>
+                    <select
+                      className="input"
+                      value={rule.operator}
+                      onChange={(e) =>
+                        setSegmentForm((prev) => ({
+                          ...prev,
+                          rules: prev.rules.map((item) =>
+                            item.id === rule.id ? { ...item, operator: e.target.value as SegmentRuleOperator } : item
+                          )
+                        }))
+                      }
+                    >
+                      {segmentOperatorOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Value</label>
+                    <input
+                      className="input"
+                      value={rule.value}
+                      onChange={(e) =>
+                        setSegmentForm((prev) => ({
+                          ...prev,
+                          rules: prev.rules.map((item) =>
+                            item.id === rule.id ? { ...item, value: e.target.value } : item
+                          )
+                        }))
+                      }
+                      placeholder={rule.operator === "in" || rule.operator === "not_in" ? "Comma-separated values" : "Enter value"}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* A/B Test Modal */}
+      <Modal
+        isOpen={showABTestModal}
+        onClose={() => {
+          setShowABTestModal(false);
+          setAbTestForm(createABTestForm());
+        }}
+        title="Create A/B Test"
+        size="lg"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowABTestModal(false);
+                setAbTestForm(createABTestForm());
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleCreateABTest}
+              disabled={!abTestForm.name.trim() || abTestForm.variants.length < 2}
+            >
+              Create Test
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="label">Test Name *</label>
+            <input
+              className="input"
+              value={abTestForm.name}
+              onChange={(e) => setAbTestForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Payment Reminder Message Test"
+            />
+          </div>
+
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input resize-y"
+              value={abTestForm.description}
+              onChange={(e) => setAbTestForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Describe what this test is measuring..."
+              rows={2}
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={abTestForm.autoStart}
+              onChange={(e) => setAbTestForm((prev) => ({ ...prev, autoStart: e.target.checked }))}
+            />
+            Start test immediately after creation
+          </label>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="label m-0">Variants *</label>
+              <button className="btn btn-xs btn-secondary" onClick={createAdditionalABVariant}>
+                <FiPlus className="mr-1" /> Add Variant
+              </button>
+            </div>
+            {abTestForm.variants.map((variant, index) => (
+              <div key={variant.id} className="p-3 bg-gray-50 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Variant {index + 1}</p>
+                  {abTestForm.variants.length > 2 && (
+                    <button className="btn btn-xs btn-danger" onClick={() => removeABVariant(variant.id)}>
+                      <FiTrash2 />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Variant Name *</label>
+                    <input
+                      className="input"
+                      value={variant.name}
+                      onChange={(e) => updateABVariant(variant.id, { name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Channel *</label>
+                    <select
+                      className="input"
+                      value={variant.channel}
+                      onChange={(e) =>
+                        updateABVariant(variant.id, {
+                          channel: e.target.value as "email" | "sms" | "whatsapp"
+                        })
+                      }
+                    >
+                      <option value="email">Email</option>
+                      <option value="sms">SMS</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </div>
+                </div>
+                {variant.channel === "email" && (
+                  <div>
+                    <label className="label">Email Subject</label>
+                    <input
+                      className="input"
+                      value={variant.subject}
+                      onChange={(e) => updateABVariant(variant.id, { subject: e.target.value })}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="label">Message *</label>
+                  <textarea
+                    className="input resize-y"
+                    rows={3}
+                    value={variant.message}
+                    onChange={(e) => updateABVariant(variant.id, { message: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="label">Traffic Split (%)</label>
+                  <input
+                    type="number"
+                    className="input"
+                    min={0}
+                    max={100}
+                    value={variant.split}
+                    onChange={(e) => updateABVariant(variant.id, { split: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Report Builder Modal */}
+      <Modal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          setReportForm(createReportBuilderForm());
+        }}
+        title="Create Advanced Report"
+        size="lg"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowReportModal(false);
+                setReportForm(createReportBuilderForm());
+              }}
+            >
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handleCreateReport} disabled={!reportForm.name.trim()}>
+              Save Report
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Report Name *</label>
+            <input
+              className="input"
+              value={reportForm.name}
+              onChange={(e) => setReportForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Weekly Revenue Health"
+            />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input resize-y"
+              rows={2}
+              value={reportForm.description}
+              onChange={(e) => setReportForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Optional description"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="label">Type</label>
+              <select
+                className="input"
+                value={reportForm.type}
+                onChange={(e) =>
+                  setReportForm((prev) => ({
+                    ...prev,
+                    type: e.target.value as "revenue" | "customers" | "payments" | "custom"
+                  }))
+                }
+              >
+                <option value="revenue">Revenue</option>
+                <option value="customers">Customers</option>
+                <option value="payments">Payments</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Start Date *</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: "light" }}
+                value={reportForm.startDate}
+                onChange={(e) => setReportForm((prev) => ({ ...prev, startDate: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">End Date *</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: "light" }}
+                min={reportForm.startDate}
+                value={reportForm.endDate}
+                onChange={(e) => setReportForm((prev) => ({ ...prev, endDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Metrics (comma-separated, optional)</label>
+            <input
+              className="input"
+              value={reportForm.metricsInput}
+              onChange={(e) => setReportForm((prev) => ({ ...prev, metricsInput: e.target.value }))}
+              placeholder="totalRevenue,totalPayments,averageOrderValue"
+            />
+          </div>
+          <div>
+            <label className="label">Group By (comma-separated, optional)</label>
+            <input
+              className="input"
+              value={reportForm.groupByInput}
+              onChange={(e) => setReportForm((prev) => ({ ...prev, groupByInput: e.target.value }))}
+              placeholder="status,currency,month"
+            />
+          </div>
+          <div>
+            <label className="label">Filters JSON (optional)</label>
+            <textarea
+              className="input resize-y font-mono text-sm"
+              rows={3}
+              value={reportForm.filtersInput}
+              onChange={(e) => setReportForm((prev) => ({ ...prev, filtersInput: e.target.value }))}
+              placeholder='{"status":"completed","currency":"USD"}'
+            />
+          </div>
+
+          <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={reportForm.scheduleEnabled}
+                onChange={(e) => setReportForm((prev) => ({ ...prev, scheduleEnabled: e.target.checked }))}
+              />
+              Schedule report delivery
+            </label>
+            {reportForm.scheduleEnabled && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Frequency</label>
+                    <select
+                      className="input"
+                      value={reportForm.scheduleFrequency}
+                      onChange={(e) =>
+                        setReportForm((prev) => ({
+                          ...prev,
+                          scheduleFrequency: e.target.value as "daily" | "weekly" | "monthly"
+                        }))
+                      }
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">
+                      {reportForm.scheduleFrequency === "monthly" ? "Day of Month" : "Day of Week (0-6)"}
+                    </label>
+                    <input
+                      type="number"
+                      className="input"
+                      min={reportForm.scheduleFrequency === "monthly" ? 1 : 0}
+                      max={reportForm.scheduleFrequency === "monthly" ? 31 : 6}
+                      value={reportForm.scheduleDay}
+                      onChange={(e) => setReportForm((prev) => ({ ...prev, scheduleDay: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Time (HH:mm)</label>
+                    <input
+                      type="time"
+                      className="input"
+                      value={reportForm.scheduleTime}
+                      onChange={(e) => setReportForm((prev) => ({ ...prev, scheduleTime: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Recipients (comma-separated emails) *</label>
+                  <input
+                    className="input"
+                    value={reportForm.recipientsInput}
+                    onChange={(e) => setReportForm((prev) => ({ ...prev, recipientsInput: e.target.value }))}
+                    placeholder="ops@company.com, finance@company.com"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Forecast Modal */}
+      <Modal
+        isOpen={showForecastModal}
+        onClose={() => setShowForecastModal(false)}
+        title="Generate Revenue Forecast"
+        size="md"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowForecastModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!forecastForm.startDate || !forecastForm.endDate) {
+                  setStatus(" Start and end dates are required");
+                  return;
+                }
+                try {
+                  const forecast = await apiRequest<{ forecast: any }>("/business/forecasts", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: forecastForm
+                  });
+                  setRevenueForecasts([...revenueForecasts, forecast.forecast]);
+                  setStatus(" Forecast generated");
+                  setShowForecastModal(false);
+                } catch (err: any) {
+                  setStatus(` ${err?.response?.data?.error || "Failed to generate forecast"}`);
+                }
+              }}
+            >
+              Generate
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Period *</label>
+            <select
+              className="input"
+              value={forecastForm.period}
+              onChange={(e) => {
+                const nextPeriod = e.target.value as "monthly" | "quarterly" | "yearly";
+                const nextRange = getForecastDateRange(nextPeriod, forecastForm.startDate);
+                setForecastForm({
+                  ...forecastForm,
+                  period: nextPeriod,
+                  startDate: nextRange.startDate,
+                  endDate: nextRange.endDate
+                });
+              }}
+            >
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Start Date *</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: 'light' }}
+                value={forecastForm.startDate}
+                onChange={(e) => {
+                  const nextRange = getForecastDateRange(
+                    forecastForm.period as "monthly" | "quarterly" | "yearly",
+                    e.target.value
+                  );
+                  setForecastForm({
+                    ...forecastForm,
+                    startDate: nextRange.startDate,
+                    endDate: nextRange.endDate
+                  });
+                }}
+              />
+            </div>
+            <div>
+              <label className="label">End Date *</label>
+              <input
+                type="date"
+                className="input"
+                style={{ colorScheme: 'light' }}
+                value={forecastForm.endDate}
+                min={forecastForm.startDate}
+                readOnly
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                End date is set automatically based on selected period.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label className="label">Scenario</label>
+            <select
+              className="input"
+              value={forecastForm.scenario}
+              onChange={(e) => setForecastForm({ ...forecastForm, scenario: e.target.value })}
+            >
+              <option value="base">Base</option>
+              <option value="optimistic">Optimistic</option>
+              <option value="pessimistic">Pessimistic</option>
+            </select>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Custom Field Modal */}
+      <Modal
+        isOpen={showCustomFieldModal}
+        onClose={() => setShowCustomFieldModal(false)}
+        title="Add Custom Field"
+        size="md"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowCustomFieldModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!customFieldForm.name || !customFieldForm.label) {
+                  setStatus(" Name and label are required");
+                  return;
+                }
+                try {
+                  const field = await apiRequest<{ field: any }>("/business/custom-fields", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: {
+                      name: customFieldForm.name,
+                      label: customFieldForm.label,
+                      type: customFieldForm.type,
+                      ...(customFieldForm.type === "dropdown" && customFieldForm.options && {
+                        options: customFieldForm.options.split(",").map(o => o.trim())
+                      })
+                    }
+                  });
+                  setCustomFields([...customFields, field.field]);
+                  setStatus(" Custom field created");
+                  setShowCustomFieldModal(false);
+                } catch (err: any) {
+                  setStatus(` ${err?.response?.data?.error || "Failed to create field"}`);
+                }
+              }}
+            >
+              Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Field Name * (e.g., companySize)</label>
+            <input
+              className="input"
+              value={customFieldForm.name}
+              onChange={(e) => setCustomFieldForm({ ...customFieldForm, name: e.target.value })}
+              placeholder="companySize"
+            />
+          </div>
+          <div>
+            <label className="label">Field Label * (e.g., Company Size)</label>
+            <input
+              className="input"
+              value={customFieldForm.label}
+              onChange={(e) => setCustomFieldForm({ ...customFieldForm, label: e.target.value })}
+              placeholder="Company Size"
+            />
+          </div>
+          <div>
+            <label className="label">Field Type *</label>
+            <select
+              className="input"
+              value={customFieldForm.type}
+              onChange={(e) => setCustomFieldForm({ ...customFieldForm, type: e.target.value })}
+            >
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="dropdown">Dropdown</option>
+              <option value="checkbox">Checkbox</option>
+            </select>
+          </div>
+          {customFieldForm.type === "dropdown" && (
+            <div>
+              <label className="label">Options (comma-separated) *</label>
+              <input
+                className="input"
+                value={customFieldForm.options}
+                onChange={(e) => setCustomFieldForm({ ...customFieldForm, options: e.target.value })}
+                placeholder="Small, Medium, Large"
+              />
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Shop Order Details Modal */}
+      <Modal
+        isOpen={Boolean(selectedShopOrder)}
+        onClose={() => setSelectedShopOrder(null)}
+        title={selectedShopOrder ? `Order ${selectedShopOrder.orderNumber}` : "Order Details"}
+        size="lg"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setSelectedShopOrder(null)}>
+              Close
+            </button>
+            {selectedShopOrder &&
+              selectedShopOrder.status !== "in_transit" &&
+              selectedShopOrder.status !== "delivered" && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => updateShopOrderStatus(selectedShopOrder, "in_transit")}
+                  disabled={Boolean(updatingShopOrderStatus)}
+                >
+                  {updatingShopOrderStatus === "in_transit" ? "Updating..." : "Mark In Transit"}
+                </button>
+              )}
+            {selectedShopOrder && selectedShopOrder.status !== "delivered" && (
+              <button
+                className="btn btn-primary"
+                onClick={() => updateShopOrderStatus(selectedShopOrder, "delivered")}
+                disabled={Boolean(updatingShopOrderStatus)}
+              >
+                {updatingShopOrderStatus === "delivered" ? "Updating..." : "Mark Delivered"}
+              </button>
+            )}
+          </>
+        }
+      >
+        {selectedShopOrder &&
+          (() => {
+            const buyer = selectedShopOrder.metadata?.buyer || {};
+            const customerName =
+              `${selectedShopOrder.customer?.firstName || buyer.firstName || ""} ${
+                selectedShopOrder.customer?.lastName || buyer.lastName || ""
+              }`.trim() || "N/A";
+            const contactEmail = selectedShopOrder.customer?.email || buyer.email || "N/A";
+            const contactPhone = selectedShopOrder.customer?.phone || buyer.phone || "N/A";
+            const deliveryAddress =
+              buyer.address ||
+              buyer.deliveryAddress ||
+              selectedShopOrder.metadata?.address ||
+              selectedShopOrder.metadata?.deliveryAddress ||
+              "N/A";
+            const orderNote = buyer.note || buyer.orderNote || selectedShopOrder.metadata?.orderNote || "";
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500">Status</p>
+                    <p className="mt-1">
+                      <span className={`badge ${getShopOrderBadgeClass(selectedShopOrder.status)}`}>
+                        {String(selectedShopOrder.status || "pending").replace(/_/g, " ")}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500">Amount</p>
+                    <p className="font-semibold text-gray-900">
+                      {selectedShopOrder.currency} {Number(selectedShopOrder.totalAmount || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500">Created</p>
+                    <p className="font-semibold text-gray-900">
+                      {selectedShopOrder.createdAt
+                        ? new Date(selectedShopOrder.createdAt).toLocaleString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-2">
+                  <h4 className="font-semibold text-gray-900">Customer</h4>
+                  <p className="text-sm text-gray-700">{customerName}</p>
+                  <p className="text-sm text-gray-600">Email: {contactEmail}</p>
+                  <p className="text-sm text-gray-600">Phone: {contactPhone}</p>
+                  <p className="text-sm text-gray-600">Delivery Address: {deliveryAddress}</p>
+                  {orderNote && <p className="text-sm text-gray-600">Order Note: {orderNote}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-gray-900">Items</h4>
+                  {selectedShopOrder.items.length === 0 ? (
+                    <p className="text-sm text-gray-500">No items in this order</p>
+                  ) : (
+                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                        <thead>
+                          <tr>
+                            <th>Item</th>
+                            <th>Qty</th>
+                            <th>Unit Price</th>
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedShopOrder.items.map((item) => (
+                            <tr key={item.id}>
+                              <td className="font-medium text-gray-900">{item.name}</td>
+                              <td>{item.quantity}</td>
+                              <td>
+                                {selectedShopOrder.currency} {Number(item.unitPrice || 0).toFixed(2)}
+                              </td>
+                              <td>
+                                {selectedShopOrder.currency} {Number(item.totalPrice || 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+      </Modal>
+
+      {/* Global Status Modal */}
+      <Modal
+        isOpen={Boolean(status)}
+        onClose={() => setStatus(null)}
+        title={getStatusModalTitle(status)}
+        size="md"
+        footer={
+          <button
+            className="btn btn-primary"
+            onClick={() => setStatus(null)}
+          >
+            OK
+          </button>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5">{getStatusModalIcon(status)}</div>
+          <p className={getStatusModalTextClass(status)}>{getSanitizedStatusText(status)}</p>
+        </div>
+      </Modal>
+
+      {/* Info Modal (for alerts) */}
+      <Modal
+        isOpen={showInfoModal}
+        onClose={() => setShowInfoModal(false)}
+        title={infoModalContent.title}
+        size="md"
+        footer={
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowInfoModal(false)}
+          >
+            OK
+          </button>
+        }
+      >
+        <p className="text-gray-600">{infoModalContent.message}</p>
+      </Modal>
+
+      {/* Segment Customers Modal */}
+      <Modal
+        isOpen={showSegmentCustomersModal}
+        onClose={() => setShowSegmentCustomersModal(false)}
+        title={`Customers in "${segmentCustomersData?.segmentName || 'Segment'}"`}
+        size="lg"
+        footer={
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowSegmentCustomersModal(false)}
+          >
+            Close
+          </button>
+        }
+      >
+        {segmentCustomersData?.customers && segmentCustomersData.customers.length > 0 ? (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            <p className="text-sm text-gray-600 mb-3">Total: {segmentCustomersData.customers.length} customers</p>
+            <div className="space-y-2">
+              {segmentCustomersData.customers.map((customer: any) => (
+                <div key={customer.id} className="p-3 bg-gray-50 rounded-lg">
+                  <p className="font-medium text-gray-900">{customer.firstName} {customer.lastName}</p>
+                  <p className="text-sm text-gray-600">{customer.email}</p>
+                  {customer.phone && <p className="text-xs text-gray-500">{customer.phone}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-500">No customers in this segment</p>
+        )}
+      </Modal>
+
+      {/* Survey Creation Modal */}
+      <Modal
+        isOpen={showSurveyModal}
+        onClose={() => setShowSurveyModal(false)}
+        title="Create Survey"
+        size="lg"
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowSurveyModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!surveyForm.name || !surveyForm.triggerEvent) {
+                  setStatus(" Name and trigger event are required");
+                  return;
+                }
+                
+                // Auto-generate questions based on type
+                let questions: Array<{ type: string; question: string; required: boolean }> = [];
+                if (surveyForm.type === "nps") {
+                  questions = [{
+                    type: "nps",
+                    question: "How likely are you to recommend us to a friend or colleague?",
+                    required: true
+                  }];
+                } else if (surveyForm.type === "csat") {
+                  questions = [{
+                    type: "csat",
+                    question: "How satisfied are you with our service?",
+                    required: true
+                  }];
+                } else {
+                  // Custom - use questions from form
+                  questions = surveyForm.questions.length > 0 ? surveyForm.questions : [{
+                    type: "text",
+                    question: "Please share your feedback",
+                    required: false
+                  }];
+                }
+                
+                try {
+                  const survey = await apiRequest<{ survey: any }>("/business/surveys", {
+                    method: "POST",
+                    accessToken,
+                    csrfToken,
+                    body: {
+                      name: surveyForm.name,
+                      type: surveyForm.type,
+                      triggerEvent: surveyForm.triggerEvent,
+                      questions,
+                      enabled: surveyForm.enabled
+                    }
+                  });
+                  setSurveys([...surveys, survey.survey]);
+                  setStatus(" Survey created");
+                  setShowSurveyModal(false);
+                  await loadData();
+                } catch (err: any) {
+                  setStatus(` ${err?.response?.data?.error || "Failed to create survey"}`);
+                }
+              }}
+            >
+              Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Survey Name *</label>
+            <input
+              className="input"
+              value={surveyForm.name}
+              onChange={(e) => setSurveyForm({ ...surveyForm, name: e.target.value })}
+              placeholder="e.g., Post-Payment Feedback"
+            />
+          </div>
+          
+          <div>
+            <label className="label">Survey Type *</label>
+            <select
+              className="input"
+              value={surveyForm.type}
+              onChange={(e) => setSurveyForm({ ...surveyForm, type: e.target.value as "nps" | "csat" | "custom" })}
+            >
+              <option value="nps">NPS (Net Promoter Score) - 0-10 rating</option>
+              <option value="csat">CSAT (Customer Satisfaction) - 1-5 rating</option>
+              <option value="custom">Custom - Free text questions</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {surveyForm.type === "nps" && "Asks customers to rate likelihood to recommend (0-10)"}
+              {surveyForm.type === "csat" && "Asks customers to rate satisfaction (1-5)"}
+              {surveyForm.type === "custom" && "Create custom questions for detailed feedback"}
+            </p>
+          </div>
+          
+          <div>
+            <label className="label">Trigger Event *</label>
+            <select
+              className="input"
+              value={surveyForm.triggerEvent}
+              onChange={(e) => setSurveyForm({ ...surveyForm, triggerEvent: e.target.value })}
+            >
+              <option value="payment_completed">Payment Completed</option>
+              <option value="call_completed">Call Completed</option>
+              <option value="invoice_sent">Invoice Sent</option>
+              <option value="subscription_renewed">Subscription Renewed</option>
+              <option value="support_ticket_closed">Support Ticket Closed</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Survey will be automatically sent when this event occurs
+            </p>
+          </div>
+          
+          {surveyForm.type === "custom" && (
+            <div>
+              <label className="label">Custom Questions</label>
+              <div className="space-y-2">
+                {surveyForm.questions.map((q, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg flex items-start gap-2">
+                    <div className="flex-1">
+                      <input
+                        className="input text-sm mb-2"
+                        value={q.question}
+                        onChange={(e) => {
+                          const newQuestions = [...surveyForm.questions];
+                          newQuestions[idx].question = e.target.value;
+                          setSurveyForm({ ...surveyForm, questions: newQuestions });
+                        }}
+                        placeholder="Question text"
+                      />
+                      <div className="flex items-center gap-4">
+                        <select
+                          className="input text-sm"
+                          value={q.type}
+                          onChange={(e) => {
+                            const newQuestions = [...surveyForm.questions];
+                            newQuestions[idx].type = e.target.value;
+                            setSurveyForm({ ...surveyForm, questions: newQuestions });
+                          }}
+                        >
+                          <option value="text">Text</option>
+                          <option value="rating">Rating (1-5)</option>
+                        </select>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={q.required}
+                            onChange={(e) => {
+                              const newQuestions = [...surveyForm.questions];
+                              newQuestions[idx].required = e.target.checked;
+                              setSurveyForm({ ...surveyForm, questions: newQuestions });
+                            }}
+                          />
+                          Required
+                        </label>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-xs btn-danger"
+                      onClick={() => {
+                        setSurveyForm({
+                          ...surveyForm,
+                          questions: surveyForm.questions.filter((_, i) => i !== idx)
+                        });
+                      }}
+                    >
+                      <FiTrash2 />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  className="btn btn-sm btn-secondary w-full"
+                  onClick={() => {
+                    setSurveyForm({
+                      ...surveyForm,
+                      questions: [...surveyForm.questions, { type: "text", question: "", required: false }]
+                    });
+                  }}
+                >
+                  <FiPlus className="mr-1" /> Add Question
+                </button>
+              </div>
+            </div>
+          )}
+          
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={surveyForm.enabled}
+                onChange={(e) => setSurveyForm({ ...surveyForm, enabled: e.target.checked })}
+              />
+              <span>Enable survey (surveys are sent automatically when trigger event occurs)</span>
+            </label>
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              <strong>How it works:</strong> When the trigger event occurs (e.g., payment completed), 
+              the survey will be automatically sent to the customer via their preferred channel (WhatsApp/Email/SMS). 
+              They'll receive a link to complete the survey.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirm Modal (replaces all confirm() calls) */}
+      <ConfirmModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={confirmModalData.onConfirm}
+        title={confirmModalData.title}
+        message={confirmModalData.message}
+        variant={confirmModalData.variant || "info"}
+      />
+    </div>
+  );
+};
+
+
+
+
+
+
+
+
+
+
+
+

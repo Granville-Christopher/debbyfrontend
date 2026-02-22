@@ -1,0 +1,8 @@
+{
+  "root": ".",
+  "routes": {
+    "/**": {
+      "rewrite": "/index.html"
+    }
+  }
+}
