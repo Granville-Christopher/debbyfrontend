@@ -764,6 +764,63 @@ export const BusinessDashboard = () => {
       inventoryEndpoint: "",
       inventoryFieldPath: "data.stock",
       inventoryMethod: "GET"
+    },
+    paypal: {
+      clientId: "",
+      clientSecret: "",
+      mode: "live",
+      webhookId: ""
+    },
+    stripe_tax: {
+      secretKey: ""
+    },
+    taxjar: {
+      apiKey: ""
+    },
+    shippo: {
+      apiToken: ""
+    },
+    easypost: {
+      apiKey: ""
+    },
+    sift: {
+      accountId: "",
+      apiKey: ""
+    },
+    klaviyo: {
+      apiKey: ""
+    },
+    zendesk: {
+      subdomain: "",
+      email: "",
+      apiToken: ""
+    },
+    gorgias: {
+      domain: "",
+      email: "",
+      apiKey: ""
+    },
+    quickbooks: {
+      realmId: "",
+      accessToken: "",
+      environment: "production"
+    },
+    xero: {
+      tenantId: "",
+      accessToken: ""
+    },
+    loopreturns: {
+      apiBaseUrl: "https://api.loopreturns.com",
+      accessToken: ""
+    },
+    algolia: {
+      appId: "",
+      apiKey: "",
+      indexName: ""
+    },
+    ga4: {
+      measurementId: "",
+      apiSecret: ""
     }
   });
   const [shopifyOverview, setShopifyOverview] = useState<ShopifyOverview | null>(null);
@@ -1509,6 +1566,91 @@ export const BusinessDashboard = () => {
         inventoryMethod: String(config.inventoryMethod || "GET").trim()
       };
     }
+    if (providerKey === "paypal") {
+      return {
+        clientId: String(config.clientId || "").trim(),
+        clientSecret: String(config.clientSecret || "").trim(),
+        mode: String(config.mode || "live").trim().toLowerCase(),
+        webhookId: String(config.webhookId || "").trim()
+      };
+    }
+    if (providerKey === "stripe_tax") {
+      return {
+        secretKey: String(config.secretKey || "").trim()
+      };
+    }
+    if (providerKey === "taxjar") {
+      return {
+        apiKey: String(config.apiKey || "").trim()
+      };
+    }
+    if (providerKey === "shippo") {
+      return {
+        apiToken: String(config.apiToken || "").trim()
+      };
+    }
+    if (providerKey === "easypost") {
+      return {
+        apiKey: String(config.apiKey || "").trim()
+      };
+    }
+    if (providerKey === "sift") {
+      return {
+        accountId: String(config.accountId || "").trim(),
+        apiKey: String(config.apiKey || "").trim()
+      };
+    }
+    if (providerKey === "klaviyo") {
+      return {
+        apiKey: String(config.apiKey || "").trim()
+      };
+    }
+    if (providerKey === "zendesk") {
+      return {
+        subdomain: String(config.subdomain || "").trim(),
+        email: String(config.email || "").trim(),
+        apiToken: String(config.apiToken || "").trim()
+      };
+    }
+    if (providerKey === "gorgias") {
+      return {
+        domain: String(config.domain || "").trim(),
+        email: String(config.email || "").trim(),
+        apiKey: String(config.apiKey || "").trim()
+      };
+    }
+    if (providerKey === "quickbooks") {
+      return {
+        realmId: String(config.realmId || "").trim(),
+        accessToken: String(config.accessToken || "").trim(),
+        environment: String(config.environment || "production").trim().toLowerCase()
+      };
+    }
+    if (providerKey === "xero") {
+      return {
+        tenantId: String(config.tenantId || "").trim(),
+        accessToken: String(config.accessToken || "").trim()
+      };
+    }
+    if (providerKey === "loopreturns") {
+      return {
+        apiBaseUrl: String(config.apiBaseUrl || "").trim(),
+        accessToken: String(config.accessToken || "").trim()
+      };
+    }
+    if (providerKey === "algolia") {
+      return {
+        appId: String(config.appId || "").trim(),
+        apiKey: String(config.apiKey || "").trim(),
+        indexName: String(config.indexName || "").trim()
+      };
+    }
+    if (providerKey === "ga4") {
+      return {
+        measurementId: String(config.measurementId || "").trim(),
+        apiSecret: String(config.apiSecret || "").trim()
+      };
+    }
     return {};
   };
 
@@ -1549,6 +1691,72 @@ export const BusinessDashboard = () => {
     if (providerKey === "aliexpress") {
       if (!payload.apiBaseUrl) return "AliExpress API base URL is required";
       if (!payload.accessToken) return "AliExpress access token is required";
+      return null;
+    }
+    if (providerKey === "paypal") {
+      if (!payload.clientId) return "PayPal client ID is required";
+      if (!payload.clientSecret) return "PayPal client secret is required";
+      return null;
+    }
+    if (providerKey === "stripe_tax") {
+      if (!payload.secretKey) return "Stripe secret key is required";
+      return null;
+    }
+    if (providerKey === "taxjar") {
+      if (!payload.apiKey) return "TaxJar API key is required";
+      return null;
+    }
+    if (providerKey === "shippo") {
+      if (!payload.apiToken) return "Shippo API token is required";
+      return null;
+    }
+    if (providerKey === "easypost") {
+      if (!payload.apiKey) return "EasyPost API key is required";
+      return null;
+    }
+    if (providerKey === "sift") {
+      if (!payload.accountId) return "Sift account ID is required";
+      if (!payload.apiKey) return "Sift API key is required";
+      return null;
+    }
+    if (providerKey === "klaviyo") {
+      if (!payload.apiKey) return "Klaviyo API key is required";
+      return null;
+    }
+    if (providerKey === "zendesk") {
+      if (!payload.subdomain) return "Zendesk subdomain is required";
+      if (!payload.email) return "Zendesk email is required";
+      if (!payload.apiToken) return "Zendesk API token is required";
+      return null;
+    }
+    if (providerKey === "gorgias") {
+      if (!payload.domain) return "Gorgias domain is required";
+      if (!payload.email) return "Gorgias email is required";
+      if (!payload.apiKey) return "Gorgias API key is required";
+      return null;
+    }
+    if (providerKey === "quickbooks") {
+      if (!payload.realmId) return "QuickBooks realm ID is required";
+      if (!payload.accessToken) return "QuickBooks access token is required";
+      return null;
+    }
+    if (providerKey === "xero") {
+      if (!payload.tenantId) return "Xero tenant ID is required";
+      if (!payload.accessToken) return "Xero access token is required";
+      return null;
+    }
+    if (providerKey === "loopreturns") {
+      if (!payload.accessToken) return "Loop Returns access token is required";
+      return null;
+    }
+    if (providerKey === "algolia") {
+      if (!payload.appId) return "Algolia app ID is required";
+      if (!payload.apiKey) return "Algolia API key is required";
+      return null;
+    }
+    if (providerKey === "ga4") {
+      if (!payload.measurementId) return "GA4 measurement ID is required";
+      if (!payload.apiSecret) return "GA4 API secret is required";
       return null;
     }
     return "Unsupported integration provider";
@@ -1612,7 +1820,21 @@ export const BusinessDashboard = () => {
         provider === "woocommerce" ||
         provider === "amazon" ||
         provider === "cjdropshipping" ||
-        provider === "aliexpress"
+        provider === "aliexpress" ||
+        provider === "paypal" ||
+        provider === "stripe_tax" ||
+        provider === "taxjar" ||
+        provider === "shippo" ||
+        provider === "easypost" ||
+        provider === "sift" ||
+        provider === "klaviyo" ||
+        provider === "zendesk" ||
+        provider === "gorgias" ||
+        provider === "quickbooks" ||
+        provider === "xero" ||
+        provider === "loopreturns" ||
+        provider === "algolia" ||
+        provider === "ga4"
       ) {
         setMarketplaceConfigByProvider((prev) => {
           const current = prev[provider] || {};
@@ -1627,6 +1849,66 @@ export const BusinessDashboard = () => {
               lwaClientSecret: "",
               refreshToken: "",
               awsSecretAccessKey: ""
+            };
+          } else if (provider === "paypal") {
+            next[provider] = {
+              ...current,
+              clientSecret: ""
+            };
+          } else if (provider === "stripe_tax") {
+            next[provider] = {
+              ...current,
+              secretKey: ""
+            };
+          } else if (provider === "taxjar") {
+            next[provider] = {
+              ...current,
+              apiKey: ""
+            };
+          } else if (provider === "shippo") {
+            next[provider] = {
+              ...current,
+              apiToken: ""
+            };
+          } else if (provider === "easypost" || provider === "klaviyo") {
+            next[provider] = {
+              ...current,
+              apiKey: ""
+            };
+          } else if (provider === "sift") {
+            next[provider] = {
+              ...current,
+              apiKey: ""
+            };
+          } else if (provider === "zendesk") {
+            next[provider] = {
+              ...current,
+              apiToken: ""
+            };
+          } else if (provider === "gorgias") {
+            next[provider] = {
+              ...current,
+              apiKey: ""
+            };
+          } else if (provider === "quickbooks" || provider === "xero") {
+            next[provider] = {
+              ...current,
+              accessToken: ""
+            };
+          } else if (provider === "loopreturns") {
+            next[provider] = {
+              ...current,
+              accessToken: ""
+            };
+          } else if (provider === "algolia") {
+            next[provider] = {
+              ...current,
+              apiKey: ""
+            };
+          } else if (provider === "ga4") {
+            next[provider] = {
+              ...current,
+              apiSecret: ""
             };
           } else {
             next[provider] = {
@@ -5443,6 +5725,302 @@ export const BusinessDashboard = () => {
                                       </select>
                                     </>
                                   )}
+                                  {provider === "paypal" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="PayPal Client ID"
+                                        value={providerConfig.clientId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "clientId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="PayPal Client Secret"
+                                        value={providerConfig.clientSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "clientSecret", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.mode || "live"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "mode", e.target.value)
+                                        }
+                                      >
+                                        <option value="live">Mode: Live</option>
+                                        <option value="sandbox">Mode: Sandbox</option>
+                                      </select>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="PayPal Webhook ID (optional, for signature verification)"
+                                        value={providerConfig.webhookId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "webhookId", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "stripe_tax" && (
+                                    <input
+                                      className="input text-sm"
+                                      type="password"
+                                      placeholder="Stripe Secret Key"
+                                      value={providerConfig.secretKey || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "secretKey", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "taxjar" && (
+                                    <input
+                                      className="input text-sm"
+                                      type="password"
+                                      placeholder="TaxJar API Key"
+                                      value={providerConfig.apiKey || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "shippo" && (
+                                    <input
+                                      className="input text-sm"
+                                      type="password"
+                                      placeholder="Shippo API Token"
+                                      value={providerConfig.apiToken || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "apiToken", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "easypost" && (
+                                    <input
+                                      className="input text-sm"
+                                      type="password"
+                                      placeholder="EasyPost API Key"
+                                      value={providerConfig.apiKey || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "sift" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Sift Account ID"
+                                        value={providerConfig.accountId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accountId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Sift API Key"
+                                        value={providerConfig.apiKey || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "klaviyo" && (
+                                    <input
+                                      className="input text-sm"
+                                      type="password"
+                                      placeholder="Klaviyo Private API Key"
+                                      value={providerConfig.apiKey || ""}
+                                      onChange={(e) =>
+                                        updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                      }
+                                    />
+                                  )}
+                                  {provider === "zendesk" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Zendesk Subdomain (without .zendesk.com)"
+                                        value={providerConfig.subdomain || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "subdomain", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Zendesk Admin Email"
+                                        value={providerConfig.email || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "email", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Zendesk API Token"
+                                        value={providerConfig.apiToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiToken", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "gorgias" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Gorgias Domain (e.g. your-brand.gorgias.com)"
+                                        value={providerConfig.domain || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "domain", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Gorgias Email"
+                                        value={providerConfig.email || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "email", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Gorgias API Key"
+                                        value={providerConfig.apiKey || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "quickbooks" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="QuickBooks Realm ID"
+                                        value={providerConfig.realmId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "realmId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="QuickBooks Access Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.environment || "production"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "environment", e.target.value)
+                                        }
+                                      >
+                                        <option value="production">Environment: Production</option>
+                                        <option value="sandbox">Environment: Sandbox</option>
+                                      </select>
+                                    </>
+                                  )}
+                                  {provider === "xero" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Xero Tenant ID"
+                                        value={providerConfig.tenantId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "tenantId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Xero Access Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "loopreturns" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Loop Returns API Base URL (optional)"
+                                        value={providerConfig.apiBaseUrl || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiBaseUrl", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Loop Returns Access Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "algolia" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Algolia App ID"
+                                        value={providerConfig.appId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "appId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Algolia API Key"
+                                        value={providerConfig.apiKey || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiKey", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Algolia Index Name (optional)"
+                                        value={providerConfig.indexName || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "indexName", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "ga4" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="GA4 Measurement ID (G-XXXX)"
+                                        value={providerConfig.measurementId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "measurementId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="GA4 API Secret"
+                                        value={providerConfig.apiSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "apiSecret", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
                                 </div>
                               )}
                               {connected && (
@@ -5459,11 +6037,41 @@ export const BusinessDashboard = () => {
                                   {connectionSummary.apiBaseUrl ? (
                                     <p><span className="font-semibold text-gray-700">API Base:</span> {connectionSummary.apiBaseUrl}</p>
                                   ) : null}
+                                  {connectionSummary.mode ? (
+                                    <p><span className="font-semibold text-gray-700">Mode:</span> {connectionSummary.mode}</p>
+                                  ) : null}
+                                  {connectionSummary.webhookId ? (
+                                    <p><span className="font-semibold text-gray-700">Webhook ID:</span> {connectionSummary.webhookId}</p>
+                                  ) : null}
+                                  {connectionSummary.environment ? (
+                                    <p><span className="font-semibold text-gray-700">Environment:</span> {connectionSummary.environment}</p>
+                                  ) : null}
                                   {connectionSummary.sellerId ? (
                                     <p><span className="font-semibold text-gray-700">Seller ID:</span> {connectionSummary.sellerId}</p>
                                   ) : null}
                                   {connectionSummary.marketplaceId ? (
                                     <p><span className="font-semibold text-gray-700">Marketplace:</span> {connectionSummary.marketplaceId}</p>
+                                  ) : null}
+                                  {connectionSummary.accountId ? (
+                                    <p><span className="font-semibold text-gray-700">Account ID:</span> {connectionSummary.accountId}</p>
+                                  ) : null}
+                                  {connectionSummary.realmId ? (
+                                    <p><span className="font-semibold text-gray-700">Realm ID:</span> {connectionSummary.realmId}</p>
+                                  ) : null}
+                                  {connectionSummary.tenantId ? (
+                                    <p><span className="font-semibold text-gray-700">Tenant ID:</span> {connectionSummary.tenantId}</p>
+                                  ) : null}
+                                  {connectionSummary.subdomain ? (
+                                    <p><span className="font-semibold text-gray-700">Subdomain:</span> {connectionSummary.subdomain}</p>
+                                  ) : null}
+                                  {connectionSummary.domain ? (
+                                    <p><span className="font-semibold text-gray-700">Domain:</span> {connectionSummary.domain}</p>
+                                  ) : null}
+                                  {connectionSummary.appId ? (
+                                    <p><span className="font-semibold text-gray-700">App ID:</span> {connectionSummary.appId}</p>
+                                  ) : null}
+                                  {connectionSummary.measurementId ? (
+                                    <p><span className="font-semibold text-gray-700">Measurement ID:</span> {connectionSummary.measurementId}</p>
                                   ) : null}
                                   {connectionSummary.webhookUrl ? (
                                     <p className="truncate"><span className="font-semibold text-gray-700">Webhook:</span> {connectionSummary.webhookUrl}</p>
