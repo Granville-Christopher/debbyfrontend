@@ -196,7 +196,12 @@ export const CreatorDashboard = () => {
   // Load preferences
   const loadPreferences = async () => {
     try {
-      const response = await apiRequest("/auth/preferences", { accessToken });
+      const response = await apiRequest<{
+        timezone?: string;
+        emailScheduledPosts?: boolean;
+        emailWeeklyDigest?: boolean;
+        emailPostFailures?: boolean;
+      }>("/auth/preferences", { accessToken });
       setPreferences({
         timezone: response.timezone || "UTC",
         emailScheduledPosts: response.emailScheduledPosts ?? true,
@@ -1926,7 +1931,7 @@ export const CreatorDashboard = () => {
         <button
           onClick={() => {
             setEditingTemplate(null);
-            setTemplateForm({ name: "", content: "", category: "General" });
+            setTemplateForm({ name: "", content: "", category: "General", mediaUrls: [], tags: [] });
             setShowTemplateModal(true);
           }}
           className="btn btn-primary text-xs"
@@ -2552,7 +2557,7 @@ export const CreatorDashboard = () => {
                         postForm.content
                       );
                       if (suggestions.length > 0) {
-                        const currentHashtags = postForm.content.match(/#\w+/g) || [];
+                        const currentHashtags: string[] = postForm.content.match(/#\w+/g) || [];
                         const newHashtags = suggestions.filter(s => 
                           !currentHashtags.includes(s)
                         ).slice(0, 3);
@@ -2581,7 +2586,12 @@ export const CreatorDashboard = () => {
                       scheduledFor: postForm.scheduledFor || new Date().toISOString(),
                       status: postForm.status,
                       mediaUrls: postForm.mediaUrls,
-                      threadItems: postForm.threadItems,
+                      threadItems: postForm.threadItems.map((item, index) => ({
+                        id: `preview-thread-${index + 1}`,
+                        order: index + 1,
+                        content: item.content,
+                        mediaUrls: item.mediaUrls
+                      })),
                       createdAt: new Date().toISOString()
                     });
                     setShowPreviewModal(true);

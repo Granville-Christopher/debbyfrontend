@@ -53,6 +53,8 @@ type ShopResponse = {
     description?: string | null;
     logoUrl?: string | null;
     bannerUrl?: string | null;
+    heroImageUrls?: string[] | null;
+    heroVideoUrl?: string | null;
     themeColor?: string | null;
     sellerWhatsApp?: string | null;
     businessMode?: "own" | "dropship" | "hybrid";
@@ -194,6 +196,58 @@ type ShopCustomerAccessResponse = {
 
 type ShopCustomerOrder = ShopCustomerAccessResponse["orders"][number];
 
+type StorefrontAttribution = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  term?: string;
+  content?: string;
+  gclid?: string;
+  fbclid?: string;
+};
+
+type ShopCheckoutOptionsResponse = {
+  currency: string;
+  methods: Array<{
+    id: string;
+    label: string;
+    category: "card" | "wallet" | "bnpl" | "bank";
+    gateway: "stripe" | "paystack" | "paypal" | "hybrid";
+    enabled: boolean;
+    reason?: string;
+  }>;
+  hasAnyMethod: boolean;
+  allowedCheckoutMethods?: Array<"whatsapp" | "card">;
+};
+
+type ShopRecommendationProduct = ShopProduct & {
+  score?: number;
+  reasons?: string[];
+};
+
+type ShopRecommendationsResponse = {
+  settings: {
+    enabled: boolean;
+    maxItems: number;
+    boostInStock: number;
+    boostPopular: number;
+    boostPriceSimilarity: number;
+    synonyms: Array<{ term: string; aliases: string[] }>;
+  };
+  products: ShopRecommendationProduct[];
+};
+
+type ShopReturnRequestResponse = {
+  request: {
+    id: string;
+    status: string;
+    reason: string;
+    note?: string | null;
+  };
+  orderId: string;
+  orderNumber: string;
+};
+
 export const PublicShop = () => {
   const { slug } = useParams();
   const location = useLocation();
@@ -215,6 +269,7 @@ export const PublicShop = () => {
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [isHeroCompact, setIsHeroCompact] = useState(false);
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [showStoreMenu, setShowStoreMenu] = useState(false);
   const [storeMenuTab, setStoreMenuTab] = useState<"orders" | "account">("orders");
   const [showCheckout, setShowCheckout] = useState(false);
@@ -247,8 +302,100 @@ export const PublicShop = () => {
     address: "",
     note: ""
   });
+  const [checkoutOptions, setCheckoutOptions] = useState<ShopCheckoutOptionsResponse | null>(null);
+  const [recommendedProducts, setRecommendedProducts] = useState<ShopRecommendationProduct[]>([]);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [submittingReturn, setSubmittingReturn] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnNote, setReturnNote] = useState("");
+  const [returnItemQuantities, setReturnItemQuantities] = useState<Record<string, number>>({});
   const heroSectionRef = useRef<HTMLDivElement | null>(null);
   const [heroCollapseOffset, setHeroCollapseOffset] = useState(320);
+  const [storefrontSessionId, setStorefrontSessionId] = useState("");
+  const [storefrontAttribution, setStorefrontAttribution] = useState<StorefrontAttribution | null>(null);
+  const trackedPageViewRef = useRef<string>("");
+  const heroVideoUrl = String(shop?.heroVideoUrl || "").trim();
+  const heroImageUrls = useMemo(() => {
+    const direct = Array.isArray(shop?.heroImageUrls)
+      ? shop.heroImageUrls.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4)
+      : [];
+    if (direct.length > 0) return direct;
+    const fallbackBanner = String(shop?.bannerUrl || "").trim();
+    return fallbackBanner ? [fallbackBanner] : [];
+  }, [shop?.heroImageUrls, shop?.bannerUrl]);
+  const hasHeroCarousel = !heroVideoUrl && heroImageUrls.length > 1;
+
+  const createStorefrontSessionId = () =>
+    `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+
+  const normalizeAttribution = (raw: Record<string, unknown> | null | undefined): StorefrontAttribution => {
+    const source = String(raw?.source || "").trim();
+    const medium = String(raw?.medium || "").trim();
+    const campaign = String(raw?.campaign || "").trim();
+    const term = String(raw?.term || "").trim();
+    const content = String(raw?.content || "").trim();
+    const gclid = String(raw?.gclid || "").trim();
+    const fbclid = String(raw?.fbclid || "").trim();
+    const next: StorefrontAttribution = {};
+    if (source) next.source = source;
+    if (medium) next.medium = medium;
+    if (campaign) next.campaign = campaign;
+    if (term) next.term = term;
+    if (content) next.content = content;
+    if (gclid) next.gclid = gclid;
+    if (fbclid) next.fbclid = fbclid;
+    return next;
+  };
+
+  const extractAttributionFromSearch = (search: string): StorefrontAttribution => {
+    const params = new URLSearchParams(search || "");
+    return normalizeAttribution({
+      source: params.get("utm_source") || params.get("debby_source") || "",
+      medium: params.get("utm_medium") || params.get("debby_channel") || "",
+      campaign: params.get("utm_campaign") || "",
+      term: params.get("utm_term") || "",
+      content: params.get("utm_content") || "",
+      gclid: params.get("gclid") || "",
+      fbclid: params.get("fbclid") || ""
+    });
+  };
+
+  const trackStorefrontEvent = async (
+    eventName:
+      | "page_view"
+      | "view_product"
+      | "add_to_cart"
+      | "begin_checkout"
+      | "purchase"
+      | "search"
+      | "track_order"
+      | "open_cart"
+      | "return_request",
+    payload?: Record<string, any>
+  ) => {
+    if (!slug) return;
+    try {
+      await apiRequest(`/shops/${slug}/events`, {
+        method: "POST",
+        body: {
+          eventName,
+          sessionId: storefrontSessionId || undefined,
+          source: storefrontAttribution?.source,
+          medium: storefrontAttribution?.medium,
+          campaign: storefrontAttribution?.campaign,
+          term: storefrontAttribution?.term,
+          content: storefrontAttribution?.content,
+          gclid: storefrontAttribution?.gclid,
+          fbclid: storefrontAttribution?.fbclid,
+          url: typeof window !== "undefined" ? window.location.href : undefined,
+          referrer: typeof document !== "undefined" ? document.referrer : undefined,
+          ...(payload || {})
+        }
+      });
+    } catch {
+      // Telemetry is best-effort; checkout and browsing should not fail on analytics transport issues.
+    }
+  };
 
   const applyCustomerSession = (profile: ShopCustomerAccessResponse["customer"]) => {
     const nextSession: ShopCustomerSession = {
@@ -348,11 +495,82 @@ export const PublicShop = () => {
   }, [slug]);
 
   useEffect(() => {
+    const loadCheckoutOptions = async () => {
+      if (!slug || !shop) {
+        setCheckoutOptions(null);
+        return;
+      }
+      try {
+        const preferredCurrency =
+          cartItems[0]?.currency || shop.products?.[0]?.currency || "USD";
+        const data = await apiRequest<ShopCheckoutOptionsResponse>(
+          `/shops/${slug}/checkout/options?currency=${encodeURIComponent(preferredCurrency)}`
+        );
+        setCheckoutOptions(data);
+      } catch {
+        setCheckoutOptions(null);
+      }
+    };
+    loadCheckoutOptions();
+  }, [slug, shop?.id, cartItems]);
+
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      if (!slug || !shop?.id) {
+        setRecommendedProducts([]);
+        return;
+      }
+      try {
+        const params = new URLSearchParams();
+        if (selectedProduct?.id) {
+          params.set("productId", selectedProduct.id);
+        } else {
+          if (activeCategoryId !== "all") params.set("categoryId", activeCategoryId);
+          if (searchTerm.trim()) params.set("q", searchTerm.trim());
+        }
+        params.set("limit", "8");
+        const data = await apiRequest<ShopRecommendationsResponse>(
+          `/shops/${slug}/recommendations?${params.toString()}`
+        );
+        setRecommendedProducts(Array.isArray(data.products) ? data.products : []);
+      } catch {
+        setRecommendedProducts([]);
+      }
+    };
+    loadRecommendations();
+  }, [slug, shop?.id, activeCategoryId, searchTerm, selectedProduct?.id]);
+
+  useEffect(() => {
     if (!slug) return;
     try {
       const rawCart = localStorage.getItem(`public-shop-cart:${slug}`);
       const rawFavorites = localStorage.getItem(`public-shop-favorites:${slug}`);
       const rawSession = localStorage.getItem(`public-shop-session:${slug}`);
+      const sessionIdKey = `public-shop-session-id:${slug}`;
+      const attributionKey = `public-shop-attribution:${slug}`;
+      const currentSessionId = localStorage.getItem(sessionIdKey) || createStorefrontSessionId();
+      localStorage.setItem(sessionIdKey, currentSessionId);
+      setStorefrontSessionId(currentSessionId);
+      let persistedAttribution: StorefrontAttribution = {};
+      const rawAttribution = localStorage.getItem(attributionKey);
+      if (rawAttribution) {
+        try {
+          persistedAttribution = normalizeAttribution(JSON.parse(rawAttribution));
+        } catch {
+          persistedAttribution = {};
+        }
+      }
+      const queryAttribution = extractAttributionFromSearch(location.search);
+      const mergedAttribution = normalizeAttribution({
+        ...persistedAttribution,
+        ...queryAttribution
+      });
+      if (Object.keys(mergedAttribution).length > 0) {
+        setStorefrontAttribution(mergedAttribution);
+        localStorage.setItem(attributionKey, JSON.stringify(mergedAttribution));
+      } else {
+        setStorefrontAttribution(null);
+      }
       setCartItems(rawCart ? (JSON.parse(rawCart) as CartItem[]) : []);
       setFavoriteProductIds(rawFavorites ? (JSON.parse(rawFavorites) as string[]) : []);
       if (rawSession) {
@@ -383,8 +601,10 @@ export const PublicShop = () => {
       setFavoriteProductIds([]);
       setCustomerSession(null);
       setCustomerOrders([]);
+      setStorefrontSessionId("");
+      setStorefrontAttribution(null);
     }
-  }, [slug]);
+  }, [slug, location.search]);
 
   useEffect(() => {
     if (!slug) return;
@@ -404,6 +624,21 @@ export const PublicShop = () => {
     }
     localStorage.setItem(`public-shop-session:${slug}`, JSON.stringify(customerSession));
   }, [customerSession, slug]);
+
+  useEffect(() => {
+    if (!slug || !storefrontSessionId) return;
+    localStorage.setItem(`public-shop-session-id:${slug}`, storefrontSessionId);
+  }, [slug, storefrontSessionId]);
+
+  useEffect(() => {
+    if (!slug) return;
+    const key = `public-shop-attribution:${slug}`;
+    if (!storefrontAttribution || Object.keys(storefrontAttribution).length === 0) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify(storefrontAttribution));
+  }, [slug, storefrontAttribution]);
 
   useEffect(() => {
     if (!notice) return;
@@ -443,7 +678,7 @@ export const PublicShop = () => {
       window.removeEventListener("orientationchange", onResize);
       observer?.disconnect();
     };
-  }, [shop?.id, shop?.bannerUrl, shop?.themeColor]);
+  }, [shop?.id, shop?.bannerUrl, shop?.themeColor, heroVideoUrl, heroImageUrls.length]);
 
   useEffect(() => {
     let rafId: number | null = null;
@@ -467,6 +702,18 @@ export const PublicShop = () => {
       window.removeEventListener("scroll", onScroll);
     };
   }, [heroCollapseOffset]);
+
+  useEffect(() => {
+    setHeroSlideIndex(0);
+  }, [shop?.id, heroVideoUrl, heroImageUrls.length]);
+
+  useEffect(() => {
+    if (!hasHeroCarousel) return;
+    const timer = window.setTimeout(() => {
+      setHeroSlideIndex((prev) => (prev + 1) % heroImageUrls.length);
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [hasHeroCarousel, heroImageUrls.length, heroSlideIndex]);
 
   useEffect(() => {
     if (!showStoreMenu) return;
@@ -521,6 +768,102 @@ export const PublicShop = () => {
     setAccessForm({ email: "", phone: "" });
     setCheckoutEntryMode("choose");
     setAccessNotice({ tone: "success", message: "Logged out from order access." });
+  };
+
+  const openReturnRequestModal = () => {
+    if (!trackingOrder) return;
+    const initialQuantities = trackingOrder.order.items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.id] = Math.max(1, Number(item.quantity || 1));
+      return acc;
+    }, {});
+    setReturnItemQuantities(initialQuantities);
+    setReturnReason("");
+    setReturnNote("");
+    setShowReturnModal(true);
+  };
+
+  const submitReturnRequest = async () => {
+    if (!slug || !trackingOrder) return;
+    if (!returnReason.trim()) {
+      setNotice("Select or provide a return reason.");
+      return;
+    }
+
+    const selectedItems = trackingOrder.order.items
+      .map((item) => {
+        const requestedQuantity = Math.min(
+          Math.max(Number(returnItemQuantities[item.id] || 0), 0),
+          Math.max(1, Number(item.quantity || 1))
+        );
+        if (requestedQuantity <= 0) return null;
+        return {
+          orderItemId: item.id,
+          quantity: requestedQuantity
+        };
+      })
+      .filter((entry): entry is { orderItemId: string; quantity: number } => Boolean(entry));
+
+    if (selectedItems.length === 0) {
+      setNotice("Select at least one item quantity to return.");
+      return;
+    }
+
+    const accessEmail =
+      String(customerSession?.email || "").trim() ||
+      String(trackingOrder.order.customer?.email || "").trim();
+    const accessPhone =
+      String(customerSession?.phone || "").trim() ||
+      String(trackingOrder.order.customer?.phone || "").trim();
+    if (!accessEmail && !accessPhone) {
+      setNotice("Sign in with the email or phone used for this order before requesting a return.");
+      return;
+    }
+
+    try {
+      setSubmittingReturn(true);
+      const payload = {
+        email: accessEmail || undefined,
+        phone: accessPhone || undefined,
+        reason: returnReason.trim(),
+        note: returnNote.trim() || undefined,
+        items: selectedItems
+      };
+      const result = await apiRequest<ShopReturnRequestResponse>(
+        `/shops/${slug}/orders/${trackingOrder.order.id}/returns`,
+        { method: "POST", body: payload }
+      );
+
+      await trackStorefrontEvent("return_request", {
+        orderId: trackingOrder.order.id,
+        value: Number(trackingOrder.order.totalAmount || 0),
+        currency: trackingOrder.order.currency,
+        metadata: {
+          returnId: result.request.id,
+          reason: result.request.reason,
+          items: selectedItems.length
+        }
+      });
+
+      setShowReturnModal(false);
+      setNotice(`Return request submitted for order ${result.orderNumber}.`);
+      await fetchOrderPaymentStatus(
+        trackingOrder.order.id,
+        trackingOrder.payment?.gatewayPaymentId || undefined
+      );
+      if (accessEmail || accessPhone) {
+        await fetchCustomerAccess(
+          {
+            email: accessEmail,
+            phone: accessPhone
+          },
+          { silent: true }
+        );
+      }
+    } catch (err: any) {
+      setNotice(err?.response?.data?.error || err?.message || "Failed to submit return request.");
+    } finally {
+      setSubmittingReturn(false);
+    }
   };
 
   useEffect(() => {
@@ -584,10 +927,26 @@ export const PublicShop = () => {
     runPaymentResultFlow();
   }, [location.pathname, location.search, navigate, slug]);
 
+  useEffect(() => {
+    if (!slug || !shop?.id || !storefrontSessionId) return;
+    const key = `${slug}|${location.pathname}|${location.search}|${storefrontSessionId}|${
+      storefrontAttribution?.source || ""
+    }|${storefrontAttribution?.medium || ""}|${storefrontAttribution?.campaign || ""}`;
+    if (trackedPageViewRef.current === key) return;
+    trackedPageViewRef.current = key;
+    trackStorefrontEvent("page_view", {
+      metadata: {
+        shopId: shop.id
+      }
+    }).catch(() => undefined);
+  }, [slug, shop?.id, location.pathname, location.search, storefrontSessionId, storefrontAttribution]);
+
   const categories = shop?.categories || [];
   const products = shop?.products || [];
   const allowedCheckoutMethods =
-    shop?.allowedCheckoutMethods && shop.allowedCheckoutMethods.length > 0
+    checkoutOptions?.allowedCheckoutMethods && checkoutOptions.allowedCheckoutMethods.length > 0
+      ? checkoutOptions.allowedCheckoutMethods
+      : shop?.allowedCheckoutMethods && shop.allowedCheckoutMethods.length > 0
       ? shop.allowedCheckoutMethods
       : (["whatsapp", "card"] as Array<"whatsapp" | "card">);
   const canWhatsappCheckout = allowedCheckoutMethods.includes("whatsapp");
@@ -676,6 +1035,14 @@ export const PublicShop = () => {
     if (normalized === "supplier_sent") {
       return "bg-indigo-100 text-indigo-800 border-indigo-200";
     }
+    if (
+      normalized === "return_requested" ||
+      normalized === "return_in_progress" ||
+      normalized === "refunded" ||
+      normalized === "exchanged"
+    ) {
+      return "bg-violet-100 text-violet-800 border-violet-200";
+    }
     if (normalized === "paid" || normalized === "completed" || normalized === "verified") {
       return "bg-green-100 text-green-800 border-green-200";
     }
@@ -686,6 +1053,11 @@ export const PublicShop = () => {
       return "bg-amber-100 text-amber-800 border-amber-200";
     }
     return "bg-slate-100 text-slate-800 border-slate-200";
+  };
+
+  const canRequestReturn = (status?: string | null) => {
+    const normalized = String(status || "").toLowerCase();
+    return ["paid", "completed", "delivered", "in_transit", "supplier_sent"].includes(normalized);
   };
 
   const isFavorited = (productId: string) => favoriteProductIds.includes(productId);
@@ -744,6 +1116,15 @@ export const PublicShop = () => {
       ];
     });
     setNotice(`${product.name} added to cart`);
+    trackStorefrontEvent("add_to_cart", {
+      productId: product.id,
+      quantity: safeQuantity,
+      value: Number(product.price || 0) * safeQuantity,
+      currency: product.currency,
+      metadata: {
+        selections: selected
+      }
+    }).catch(() => undefined);
   };
 
   const openProductDetails = (product: ShopProduct) => {
@@ -755,6 +1136,11 @@ export const PublicShop = () => {
     setSelectedTexture("");
     setSelectedLength("");
     setSelectedQuantity(1);
+    trackStorefrontEvent("view_product", {
+      productId: product.id,
+      value: Number(product.price || 0),
+      currency: product.currency
+    }).catch(() => undefined);
   };
 
   const updateCartItemQuantity = (itemId: string, nextQuantity: number) => {
@@ -786,6 +1172,11 @@ export const PublicShop = () => {
       });
     }
     setShowCheckout(true);
+    trackStorefrontEvent("open_cart", {
+      value: cartSubtotal,
+      currency: cartCurrency,
+      quantity: cartCount
+    }).catch(() => undefined);
   };
 
   const closeCheckoutModal = () => {
@@ -941,6 +1332,16 @@ export const PublicShop = () => {
       const checkoutPayload: Record<string, any> = {
         note: checkoutForm.note.trim(),
         paymentMethod: method,
+        attribution: {
+          sessionId: storefrontSessionId || undefined,
+          source: storefrontAttribution?.source,
+          medium: storefrontAttribution?.medium,
+          campaign: storefrontAttribution?.campaign,
+          term: storefrontAttribution?.term,
+          content: storefrontAttribution?.content,
+          gclid: storefrontAttribution?.gclid,
+          fbclid: storefrontAttribution?.fbclid
+        },
         items: cartItems.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -1095,6 +1496,16 @@ export const PublicShop = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100">
+      <style>{`
+        @keyframes debbyHeroZoomOut {
+          0% { transform: scale(1.08); }
+          100% { transform: scale(1); }
+        }
+        @keyframes debbyHeroSingleZoom {
+          0% { transform: scale(1.04); }
+          100% { transform: scale(1); }
+        }
+      `}</style>
       <div
         className={`fixed left-0 right-0 top-0 z-50 transition-transform duration-200 ${
           isHeroCompact ? "translate-y-0" : "-translate-y-full"
@@ -1108,7 +1519,10 @@ export const PublicShop = () => {
         >
           <div className="h-full flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight truncate">
+              <h1
+                className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight truncate"
+                style={{ fontFamily: '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
+              >
                 {shop.name}
               </h1>
               <p className="text-[10px] sm:text-xs text-white/85 mt-0.5 truncate max-w-[14rem] sm:max-w-[24rem]">
@@ -1160,15 +1574,67 @@ export const PublicShop = () => {
               backgroundImage: `linear-gradient(120deg, ${shop.themeColor || "#2563eb"} 0%, rgba(15,23,42,0.94) 100%)`
             }}
           >
-            {shop.bannerUrl && (
-              <div
-                className="absolute inset-0 bg-cover bg-center lg:hidden"
-                style={{
-                  backgroundImage: `linear-gradient(120deg, rgba(2,6,23,0.74), rgba(2,6,23,0.52)), url(${shop.bannerUrl})`
-                }}
-              />
-            )}
-            {shop.bannerUrl && <div className="absolute inset-0 bg-slate-950/30 lg:hidden" />}
+            {heroVideoUrl ? (
+              <>
+                <video
+                  className="absolute inset-0 w-full h-full object-cover"
+                  src={heroVideoUrl}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                />
+                <div className="absolute inset-0 bg-slate-950/40" />
+              </>
+            ) : hasHeroCarousel ? (
+              <>
+                <div className="absolute inset-0 overflow-hidden">
+                  <div
+                    className="h-full flex transition-transform duration-700 ease-out"
+                    style={{
+                      width: `${heroImageUrls.length * 100}%`,
+                      transform: `translateX(-${(heroSlideIndex * 100) / heroImageUrls.length}%)`
+                    }}
+                  >
+                    {heroImageUrls.map((imageUrl, index) => (
+                      <div
+                        key={`hero-image-${index}`}
+                        className="h-full flex-shrink-0 overflow-hidden"
+                        style={{
+                          width: `${100 / heroImageUrls.length}%`
+                        }}
+                      >
+                        <div
+                          className="w-full h-full bg-cover bg-center"
+                          style={{
+                            backgroundImage: `url("${imageUrl}")`,
+                            transformOrigin: "center",
+                            animation:
+                              index === heroSlideIndex
+                                ? "debbyHeroZoomOut 1000ms ease-out both"
+                                : "none"
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="absolute inset-0 bg-slate-950/40" />
+              </>
+            ) : heroImageUrls.length > 0 ? (
+              <>
+                <div
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{
+                    backgroundImage: `url("${heroImageUrls[0]}")`,
+                    transformOrigin: "center",
+                    animation: "debbyHeroSingleZoom 3000ms ease-out both"
+                  }}
+                />
+                <div className="absolute inset-0 bg-slate-950/40" />
+              </>
+            ) : null}
             <div className="absolute inset-0 p-4 sm:p-6 md:p-8 lg:p-10">
               <div className="absolute top-4 right-4 sm:top-6 sm:right-6 md:top-8 md:right-8 z-10 flex items-center gap-2">
                 <button
@@ -1215,7 +1681,12 @@ export const PublicShop = () => {
                     </div>
                   )}
                   <div>
-                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight">{shop.name}</h1>
+                    <h1
+                      className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight"
+                      style={{ fontFamily: '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
+                    >
+                      {shop.name}
+                    </h1>
                     <p className="text-white/90 text-xs sm:text-sm md:text-base mt-1">
                       {shop.description || "Discover quality products curated for you."}
                     </p>
@@ -1481,6 +1952,65 @@ export const PublicShop = () => {
           </div>
 
         </div>
+
+        {recommendedProducts.length > 0 && (
+          <div className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 md:p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900">Recommended For You</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Personalized picks based on this storefront and your browsing.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+              {recommendedProducts.slice(0, 8).map((product) => {
+                const coverImage =
+                  (product.metadata?.imageUrls || []).find((url) => !!url) || product.imageUrl || null;
+                return (
+                  <button
+                    key={`recommended-${product.id}`}
+                    type="button"
+                    className="text-left border rounded-xl overflow-hidden hover:border-slate-400 transition-colors bg-white"
+                    onClick={() =>
+                      openProductDetails({
+                        id: product.id,
+                        name: product.name,
+                        description: product.description,
+                        price: product.price,
+                        currency: product.currency,
+                        imageUrl: product.imageUrl,
+                        inventory: product.inventory,
+                        categoryId: product.categoryId,
+                        metadata: product.metadata
+                      })
+                    }
+                  >
+                    {coverImage ? (
+                      <img
+                        src={coverImage}
+                        alt={product.name}
+                        className="w-full h-24 sm:h-28 object-contain bg-slate-50 p-1"
+                      />
+                    ) : (
+                      <div className="w-full h-24 sm:h-28 bg-slate-100 flex items-center justify-center text-[11px] text-slate-500">
+                        No image
+                      </div>
+                    )}
+                    <div className="px-2.5 py-2">
+                      <p className="text-[11px] sm:text-xs font-semibold text-slate-900 line-clamp-2">
+                        {product.name}
+                      </p>
+                      <p className="text-[11px] sm:text-xs text-slate-600 mt-1">
+                        {formatPrice(product.price, product.currency)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <div>
@@ -2084,6 +2614,18 @@ export const PublicShop = () => {
                   <p className="text-lg font-bold text-slate-900">{formatPrice(cartSubtotal, cartCurrency)}</p>
                 </div>
 
+                {checkoutOptions?.methods && checkoutOptions.methods.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Available Checkout Methods</p>
+                    <p className="text-sm text-slate-700 mt-1">
+                      {checkoutOptions.methods
+                        .filter((method) => method.enabled)
+                        .map((method) => method.label)
+                        .join(", ") || "No card methods currently available"}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <button className="btn btn-secondary" onClick={clearCart} disabled={submittingCheckout !== null}>
                     Clear Cart
@@ -2286,7 +2828,16 @@ export const PublicShop = () => {
               )}
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              {canRequestReturn(trackingOrder.order.status) && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={openReturnRequestModal}
+                  disabled={submittingReturn}
+                >
+                  Request Return
+                </button>
+              )}
               <button
                 className="btn btn-secondary flex items-center gap-2"
                 onClick={async () => {
@@ -2304,6 +2855,100 @@ export const PublicShop = () => {
               >
                 <FiRefreshCw className="w-4 h-4" />
                 {loadingOrderDetails ? "Refreshing..." : "Refresh Status"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReturnModal && trackingOrder && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+          onClick={() => setShowReturnModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] overflow-auto p-5 sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Return Request</p>
+                <h3 className="text-lg font-bold text-slate-900">{trackingOrder.order.orderNumber}</h3>
+              </div>
+              <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="label">Reason *</label>
+                <textarea
+                  className="input min-h-[90px] text-sm"
+                  placeholder="Why are you returning these items?"
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">Additional Note (optional)</label>
+                <textarea
+                  className="input min-h-[76px] text-sm"
+                  placeholder="Add any extra details for the seller"
+                  value={returnNote}
+                  onChange={(e) => setReturnNote(e.target.value)}
+                />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900 mb-2">Select Item Quantities</p>
+                <div className="space-y-2">
+                  {trackingOrder.order.items.map((item) => (
+                    <div key={`return-item-${item.id}`} className="rounded-xl border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                          <p className="text-xs text-slate-500">
+                            Ordered: {item.quantity} • {formatPrice(item.totalPrice, trackingOrder.order.currency)}
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.max(1, item.quantity)}
+                          className="input w-20 text-sm"
+                          value={String(returnItemQuantities[item.id] ?? item.quantity)}
+                          onChange={(e) => {
+                            const nextValue = Number(e.target.value || 0);
+                            setReturnItemQuantities((prev) => ({
+                              ...prev,
+                              [item.id]: Math.min(
+                                Math.max(Number.isFinite(nextValue) ? nextValue : 0, 0),
+                                Math.max(1, item.quantity)
+                              )
+                            }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowReturnModal(false)}
+                disabled={submittingReturn}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={submitReturnRequest}
+                disabled={submittingReturn}
+              >
+                {submittingReturn ? "Submitting..." : "Submit Return Request"}
               </button>
             </div>
           </div>

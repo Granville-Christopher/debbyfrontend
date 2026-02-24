@@ -46,7 +46,8 @@ import {
   FiCheckCircle,
   FiXCircle,
   FiInfo,
-  FiAlertCircle
+  FiAlertCircle,
+  FiX
 } from "react-icons/fi";
 
 type Payment = {
@@ -216,10 +217,89 @@ type ShopData = {
   themeColor?: string | null;
   metadata?: {
     businessType?: string | null;
+    businessMode?: "own" | "dropship" | "hybrid" | null;
+    heroImageUrls?: string[] | null;
+    heroVideoUrl?: string | null;
+    growthAutomation?: {
+      enabled?: boolean;
+      abandonedCheckoutDelayMinutes?: number;
+      maxAttemptsPerOrder?: number;
+      includeWhatsappFallback?: boolean;
+      notifyOnRecovery?: boolean;
+      allowAutoAdsLaunch?: boolean;
+      frequencyCapPerCustomerPer24h?: number;
+      requireMarketingConsent?: boolean;
+      maxAutoDailyAdBudgetMinor?: number;
+      allowAudienceSync?: boolean;
+      allowCatalogSync?: boolean;
+      defaultTrafficSource?: "meta_ads" | "google_ads";
+    } | null;
   } | null;
   isActive: boolean;
   categories: ShopCategory[];
   products: ShopProduct[];
+};
+
+type ShopGrowthSettings = {
+  enabled: boolean;
+  abandonedCheckoutDelayMinutes: number;
+  maxAttemptsPerOrder: number;
+  includeWhatsappFallback: boolean;
+  notifyOnRecovery: boolean;
+  allowAutoAdsLaunch: boolean;
+  frequencyCapPerCustomerPer24h: number;
+  requireMarketingConsent: boolean;
+  maxAutoDailyAdBudgetMinor: number;
+  allowAudienceSync: boolean;
+  allowCatalogSync: boolean;
+  defaultTrafficSource: "meta_ads" | "google_ads";
+};
+
+type ShopGrowthInsights = {
+  metrics: {
+    pageViews: number;
+    productViews: number;
+    addToCart: number;
+    beginCheckout: number;
+    purchases: number;
+    conversionRate: number;
+    cartAbandonmentRate: number;
+    recoveredAttempts: number;
+    recoveryFailures: number;
+    orders: number;
+    paidOrders: number;
+    revenue: number;
+  };
+};
+
+type ShopGrowthAudience = {
+  id: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  channels: Array<"email" | "sms" | "whatsapp" | "ads">;
+  rules: Array<{
+    field: string;
+    operator: "equals" | "not_equals" | "contains" | "greater_than" | "less_than" | "in";
+    value: string | number | boolean;
+  }>;
+  memberCount: number;
+  lastSyncedAt?: string | null;
+};
+
+type ShopCatalogPreviewItem = {
+  id: string;
+  title: string;
+  price: number;
+  currency: string;
+  availability: string;
+  category?: string | null;
+};
+
+type ShopGrowthSettingsResponse = {
+  shopId: string;
+  shopSlug: string;
+  settings: ShopGrowthSettings;
 };
 
 type ShopOrderSummary = {
@@ -331,6 +411,9 @@ type ShopSummary = {
   isActive: boolean;
   metadata?: {
     businessType?: string | null;
+    businessMode?: "own" | "dropship" | "hybrid" | null;
+    heroImageUrls?: string[] | null;
+    heroVideoUrl?: string | null;
   } | null;
   createdAt: string;
 };
@@ -423,6 +506,7 @@ const createEmptyProductForm = (): ShopProductForm => ({
 });
 
 type ShopType = "clothes" | "wigs" | "shoes" | "cosmetics" | "electronics" | "jewelry" | "beauty" | "other";
+type ShopBusinessMode = "own" | "dropship";
 
 const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
   { value: "clothes", label: "Clothes" },
@@ -434,6 +518,25 @@ const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
   { value: "beauty", label: "Beauty" },
   { value: "other", label: "Other" }
 ];
+
+const SHOP_BUSINESS_MODE_OPTIONS: Array<{ value: ShopBusinessMode; label: string; description: string }> = [
+  {
+    value: "own",
+    label: "Own Products",
+    description: "You handle product stock and fulfillment yourself."
+  },
+  {
+    value: "dropship",
+    label: "Dropshipping",
+    description: "Suppliers fulfill orders for your products."
+  }
+];
+
+const normalizeShopBusinessModeValue = (value: unknown): ShopBusinessMode =>
+  String(value || "").trim().toLowerCase() === "dropship" ||
+  String(value || "").trim().toLowerCase() === "hybrid"
+    ? "dropship"
+    : "own";
 
 const getShopTypeRules = (shopType?: string | null) => {
   const normalized = String(shopType || "other").toLowerCase();
@@ -508,8 +611,41 @@ const createEmptyShopForm = (shopType: ShopType = "other") => ({
   description: "",
   logoUrl: "",
   bannerUrl: "",
+  heroImageUrls: ["", "", "", ""],
+  heroVideoUrl: "",
   themeColor: "#4f46e5",
-  businessType: shopType
+  businessType: shopType,
+  businessMode: "own" as ShopBusinessMode
+});
+
+const normalizeHeroImageUrls = (value: unknown, fallbackBannerUrl?: unknown): string[] => {
+  const normalized = Array.isArray(value)
+    ? value
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
+  const seeded = normalized.length > 0 ? normalized : String(fallbackBannerUrl || "").trim() ? [String(fallbackBannerUrl).trim()] : [];
+  const padded = [...seeded];
+  while (padded.length < 4) {
+    padded.push("");
+  }
+  return padded.slice(0, 4);
+};
+
+const createDefaultShopGrowthSettings = (): ShopGrowthSettings => ({
+  enabled: false,
+  abandonedCheckoutDelayMinutes: 60,
+  maxAttemptsPerOrder: 3,
+  includeWhatsappFallback: true,
+  notifyOnRecovery: true,
+  allowAutoAdsLaunch: false,
+  frequencyCapPerCustomerPer24h: 3,
+  requireMarketingConsent: false,
+  maxAutoDailyAdBudgetMinor: 20000,
+  allowAudienceSync: true,
+  allowCatalogSync: true,
+  defaultTrafficSource: "meta_ads"
 });
 
 const formatDateForInput = (date: Date) => {
@@ -732,6 +868,16 @@ export const BusinessDashboard = () => {
   >({
     shopify: { shopDomain: "", accessToken: "" },
     woocommerce: { storeUrl: "", consumerKey: "", consumerSecret: "" },
+    meta_ads: { adAccountId: "", accessToken: "", pageId: "", pixelId: "" },
+    google_ads: {
+      customerId: "",
+      loginCustomerId: "",
+      developerToken: "",
+      clientId: "",
+      clientSecret: "",
+      refreshToken: "",
+      conversionActionId: ""
+    },
     zapier: { webhookUrl: "" },
     amazon: {
       sellerId: "",
@@ -745,7 +891,10 @@ export const BusinessDashboard = () => {
       signingRegion: "",
       inventoryEndpoint: "",
       inventoryFieldPath: "data.stock",
-      inventoryMethod: "GET"
+      inventoryMethod: "GET",
+      orderEndpoint: "",
+      orderMethod: "POST",
+      orderResponseIdPath: "id"
     },
     cjdropshipping: {
       apiBaseUrl: "https://developers.cjdropshipping.com/api2.0/v1",
@@ -753,7 +902,10 @@ export const BusinessDashboard = () => {
       testEndpoint: "/",
       inventoryEndpoint: "",
       inventoryFieldPath: "data.stock",
-      inventoryMethod: "GET"
+      inventoryMethod: "GET",
+      orderEndpoint: "",
+      orderMethod: "POST",
+      orderResponseIdPath: "id"
     },
     aliexpress: {
       apiBaseUrl: "https://api-sg.aliexpress.com",
@@ -763,7 +915,10 @@ export const BusinessDashboard = () => {
       testEndpoint: "/",
       inventoryEndpoint: "",
       inventoryFieldPath: "data.stock",
-      inventoryMethod: "GET"
+      inventoryMethod: "GET",
+      orderEndpoint: "",
+      orderMethod: "POST",
+      orderResponseIdPath: "id"
     },
     paypal: {
       clientId: "",
@@ -948,7 +1103,9 @@ export const BusinessDashboard = () => {
   const [productForm, setProductForm] = useState<ShopProductForm>(createProductFormForShopType("other"));
   const [uploadingProductImageSlot, setUploadingProductImageSlot] = useState<number | null>(null);
   const [uploadingProductVideo, setUploadingProductVideo] = useState(false);
-  const [uploadingShopImageField, setUploadingShopImageField] = useState<"logoUrl" | "bannerUrl" | null>(null);
+  const [uploadingShopImageField, setUploadingShopImageField] = useState<"logoUrl" | null>(null);
+  const [uploadingShopHeroImageSlot, setUploadingShopHeroImageSlot] = useState<number | null>(null);
+  const [uploadingShopHeroVideo, setUploadingShopHeroVideo] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editingProductShopId, setEditingProductShopId] = useState<string | null>(null);
   const [editingProductSlug, setEditingProductSlug] = useState<string | null>(null);
@@ -962,9 +1119,47 @@ export const BusinessDashboard = () => {
   });
   const [addingCategoryTemplateId, setAddingCategoryTemplateId] = useState<string | null>(null);
   const [isSeedingCategoryTemplates, setIsSeedingCategoryTemplates] = useState(false);
+  const [shopGrowthSettings, setShopGrowthSettings] = useState<ShopGrowthSettings>(
+    createDefaultShopGrowthSettings()
+  );
+  const [savingShopGrowthSettings, setSavingShopGrowthSettings] = useState(false);
+  const [runningShopGrowthAutomation, setRunningShopGrowthAutomation] = useState(false);
+  const [generatingCampaignLink, setGeneratingCampaignLink] = useState(false);
+  const [launchingShopAdsCampaign, setLaunchingShopAdsCampaign] = useState(false);
+  const [generatedCampaignLink, setGeneratedCampaignLink] = useState("");
+  const [shopGrowthInsights, setShopGrowthInsights] = useState<ShopGrowthInsights | null>(null);
+  const [shopGrowthAudiences, setShopGrowthAudiences] = useState<ShopGrowthAudience[]>([]);
+  const [creatingShopGrowthAudience, setCreatingShopGrowthAudience] = useState(false);
+  const [syncingShopCatalogFeed, setSyncingShopCatalogFeed] = useState(false);
+  const [shopCatalogPreview, setShopCatalogPreview] = useState<ShopCatalogPreviewItem[]>([]);
+  const [growthAudienceForm, setGrowthAudienceForm] = useState({
+    name: "",
+    description: "",
+    field: "totalSpend",
+    operator: "greater_than" as
+      | "equals"
+      | "not_equals"
+      | "contains"
+      | "greater_than"
+      | "less_than"
+      | "in",
+    value: "100",
+    channels: ["ads"] as Array<"email" | "sms" | "whatsapp" | "ads">
+  });
+  const [growthCampaignForm, setGrowthCampaignForm] = useState({
+    source: "meta_ads",
+    medium: "paid_social",
+    campaign: "storefront_growth",
+    term: "",
+    content: "",
+    provider: "meta_ads" as "meta_ads" | "google_ads",
+    name: "Debby Storefront Campaign",
+    dailyBudgetMinor: ""
+  });
   const [loadingOps, setLoadingOps] = useState(false);
   const [opsControlPlane, setOpsControlPlane] = useState<any>(null);
   const [opsPaymentHealth, setOpsPaymentHealth] = useState<any>(null);
+  const [opsAlerts, setOpsAlerts] = useState<any[]>([]);
   const [opsTraces, setOpsTraces] = useState<any[]>([]);
   const [opsSlo, setOpsSlo] = useState<any>(null);
   const [opsDeadLetters, setOpsDeadLetters] = useState<any[]>([]);
@@ -1100,6 +1295,7 @@ export const BusinessDashboard = () => {
       const [
         controlPlaneData,
         paymentHealthData,
+        opsAlertsData,
         tracesData,
         sloData,
         deadLettersData,
@@ -1112,6 +1308,7 @@ export const BusinessDashboard = () => {
       ] = await Promise.all([
         apiRequest<{ controlPlane: any }>("/business/ops/control-plane", { accessToken }).catch(() => ({ controlPlane: null })),
         apiRequest<{ health: any }>("/business/ops/payment-lifecycle/health", { accessToken }).catch(() => ({ health: null })),
+        apiRequest<{ alerts: any[] }>("/business/ops/alerts", { accessToken }).catch(() => ({ alerts: [] })),
         apiRequest<{ traces: any[] }>("/business/ops/observability/traces?limit=20", { accessToken }).catch(() => ({ traces: [] })),
         apiRequest<{ slo: any }>("/business/ops/observability/slo?windowHours=24", { accessToken }).catch(() => ({ slo: null })),
         apiRequest<{ deadLetters: any[] }>("/business/ops/reliability/dead-letters", { accessToken }).catch(() => ({ deadLetters: [] })),
@@ -1124,6 +1321,7 @@ export const BusinessDashboard = () => {
       ]);
       setOpsControlPlane(controlPlaneData.controlPlane || null);
       setOpsPaymentHealth(paymentHealthData.health || null);
+      setOpsAlerts(opsAlertsData.alerts || []);
       setOpsTraces(tracesData.traces || []);
       setOpsSlo(sloData.slo || null);
       setOpsDeadLetters(deadLettersData.deadLetters || []);
@@ -1533,6 +1731,25 @@ export const BusinessDashboard = () => {
         consumerSecret: String(config.consumerSecret || "").trim()
       };
     }
+    if (providerKey === "meta_ads") {
+      return {
+        adAccountId: String(config.adAccountId || "").trim(),
+        accessToken: String(config.accessToken || "").trim(),
+        pageId: String(config.pageId || "").trim(),
+        pixelId: String(config.pixelId || "").trim()
+      };
+    }
+    if (providerKey === "google_ads") {
+      return {
+        customerId: String(config.customerId || "").trim(),
+        loginCustomerId: String(config.loginCustomerId || "").trim(),
+        developerToken: String(config.developerToken || "").trim(),
+        clientId: String(config.clientId || "").trim(),
+        clientSecret: String(config.clientSecret || "").trim(),
+        refreshToken: String(config.refreshToken || "").trim(),
+        conversionActionId: String(config.conversionActionId || "").trim()
+      };
+    }
     if (providerKey === "zapier") {
       return {
         webhookUrl: String(config.webhookUrl || "").trim()
@@ -1551,7 +1768,10 @@ export const BusinessDashboard = () => {
         signingRegion: String(config.signingRegion || "").trim(),
         inventoryEndpoint: String(config.inventoryEndpoint || "").trim(),
         inventoryFieldPath: String(config.inventoryFieldPath || "data.stock").trim(),
-        inventoryMethod: String(config.inventoryMethod || "GET").trim()
+        inventoryMethod: String(config.inventoryMethod || "GET").trim(),
+        orderEndpoint: String(config.orderEndpoint || "").trim(),
+        orderMethod: String(config.orderMethod || "POST").trim(),
+        orderResponseIdPath: String(config.orderResponseIdPath || "id").trim()
       };
     }
     if (providerKey === "cjdropshipping" || providerKey === "aliexpress") {
@@ -1563,7 +1783,10 @@ export const BusinessDashboard = () => {
         testEndpoint: String(config.testEndpoint || "/").trim(),
         inventoryEndpoint: String(config.inventoryEndpoint || "").trim(),
         inventoryFieldPath: String(config.inventoryFieldPath || "data.stock").trim(),
-        inventoryMethod: String(config.inventoryMethod || "GET").trim()
+        inventoryMethod: String(config.inventoryMethod || "GET").trim(),
+        orderEndpoint: String(config.orderEndpoint || "").trim(),
+        orderMethod: String(config.orderMethod || "POST").trim(),
+        orderResponseIdPath: String(config.orderResponseIdPath || "id").trim()
       };
     }
     if (providerKey === "paypal") {
@@ -1667,6 +1890,19 @@ export const BusinessDashboard = () => {
       if (!payload.storeUrl) return "WooCommerce store URL is required";
       if (!payload.consumerKey) return "WooCommerce consumer key is required";
       if (!payload.consumerSecret) return "WooCommerce consumer secret is required";
+      return null;
+    }
+    if (providerKey === "meta_ads") {
+      if (!payload.adAccountId) return "Meta ad account ID is required";
+      if (!payload.accessToken) return "Meta access token is required";
+      return null;
+    }
+    if (providerKey === "google_ads") {
+      if (!payload.customerId) return "Google Ads customer ID is required";
+      if (!payload.developerToken) return "Google Ads developer token is required";
+      if (!payload.clientId) return "Google OAuth client ID is required";
+      if (!payload.clientSecret) return "Google OAuth client secret is required";
+      if (!payload.refreshToken) return "Google OAuth refresh token is required";
       return null;
     }
     if (providerKey === "zapier") {
@@ -1818,6 +2054,8 @@ export const BusinessDashboard = () => {
       if (
         provider === "shopify" ||
         provider === "woocommerce" ||
+        provider === "meta_ads" ||
+        provider === "google_ads" ||
         provider === "amazon" ||
         provider === "cjdropshipping" ||
         provider === "aliexpress" ||
@@ -1843,6 +2081,15 @@ export const BusinessDashboard = () => {
             next[provider] = { ...current, accessToken: "" };
           } else if (provider === "woocommerce") {
             next[provider] = { ...current, consumerSecret: "" };
+          } else if (provider === "meta_ads") {
+            next[provider] = { ...current, accessToken: "" };
+          } else if (provider === "google_ads") {
+            next[provider] = {
+              ...current,
+              developerToken: "",
+              clientSecret: "",
+              refreshToken: ""
+            };
           } else if (provider === "amazon") {
             next[provider] = {
               ...current,
@@ -2694,8 +2941,12 @@ export const BusinessDashboard = () => {
     showTexture: template?.showTexture ?? currentShopTypeRules.showTexture
   });
   const activeProductRules = getTemplateRules(selectedProductTemplate);
-  const canUseDropshipForShop = Boolean(shopCapabilities?.canDropship);
-  const useDropshipForProduct = canUseDropshipForShop && productForm.fulfillmentType === "dropship";
+  const activeShopBusinessMode = normalizeShopBusinessModeValue(
+    shopCapabilities?.businessMode || shopForm.businessMode
+  );
+  const isDropshipShopMode = activeShopBusinessMode === "dropship";
+  const canUseDropshipForShop = isDropshipShopMode && Boolean(shopCapabilities?.canDropship);
+  const useDropshipForProduct = canUseDropshipForShop;
   const selectedSupplier =
     shopSuppliers.find((supplier) => supplier.id === productForm.supplierId) || null;
   const isProductFormReady =
@@ -2846,17 +3097,86 @@ export const BusinessDashboard = () => {
     }
   };
 
-  const handleShopImageUpload = async (field: "logoUrl" | "bannerUrl", file?: File) => {
+  const setShopHeroImageAt = (slot: number, value: string) => {
+    if (slot < 0 || slot > 3) return;
+    setShopForm((prev) => {
+      const nextHeroImageUrls = [...prev.heroImageUrls];
+      nextHeroImageUrls[slot] = value;
+      const primaryImage = nextHeroImageUrls.map((entry) => entry.trim()).find(Boolean) || "";
+      return {
+        ...prev,
+        heroImageUrls: nextHeroImageUrls,
+        heroVideoUrl: "",
+        bannerUrl: primaryImage
+      };
+    });
+  };
+
+  const clearShopHeroImages = () => {
+    setShopForm((prev) => ({
+      ...prev,
+      heroImageUrls: ["", "", "", ""],
+      bannerUrl: ""
+    }));
+  };
+
+  const handleShopImageUpload = async (field: "logoUrl", file?: File) => {
     if (!file) return;
     try {
       setUploadingShopImageField(field);
       const dataUrl = await readImageFileAsDataUrl(file);
       setShopForm((prev) => ({ ...prev, [field]: dataUrl }));
-      setStatus(field === "logoUrl" ? "? Shop profile image uploaded" : "? Shop hero image uploaded");
+      setStatus("? Shop profile image uploaded");
     } catch (err: any) {
       setStatus(`? ${err?.message || "Failed to upload shop image"}`);
     } finally {
       setUploadingShopImageField(null);
+    }
+  };
+
+  const handleShopHeroImageUpload = async (slot: number, file?: File) => {
+    if (!file) return;
+    if (shopForm.heroVideoUrl.trim()) {
+      setStatus("? Remove hero video before uploading hero images");
+      return;
+    }
+    try {
+      setUploadingShopHeroImageSlot(slot);
+      const dataUrl = await readImageFileAsDataUrl(file);
+      setShopHeroImageAt(slot, dataUrl);
+      setStatus("? Hero image uploaded");
+    } catch (err: any) {
+      setStatus(`? ${err?.message || "Failed to upload hero image"}`);
+    } finally {
+      setUploadingShopHeroImageSlot(null);
+    }
+  };
+
+  const handleShopHeroVideoUpload = async (file?: File) => {
+    if (!file) return;
+    if (!String(file.type || "").startsWith("video/")) {
+      setStatus("? Please select a valid hero video file");
+      return;
+    }
+    const maxBytes = 40 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setStatus("? Hero video is too large. Maximum allowed size is 40MB.");
+      return;
+    }
+    try {
+      setUploadingShopHeroVideo(true);
+      const dataUrl = await readFileAsDataUrl(file);
+      setShopForm((prev) => ({
+        ...prev,
+        heroVideoUrl: dataUrl,
+        heroImageUrls: ["", "", "", ""],
+        bannerUrl: ""
+      }));
+      setStatus("? Hero video uploaded");
+    } catch (err: any) {
+      setStatus(`? ${err?.message || "Failed to upload hero video"}`);
+    } finally {
+      setUploadingShopHeroVideo(false);
     }
   };
 
@@ -3051,8 +3371,295 @@ export const BusinessDashboard = () => {
     return `${path}${joiner}shopId=${encodeURIComponent(shopId)}`;
   };
 
+  const loadGrowthContext = async (shopId: string) => {
+    if (!accessToken) return;
+    try {
+      const [insightsData, audiencesData, catalogData] = await Promise.all([
+        apiRequest<ShopGrowthInsights>(withShopIdQuery("/business/shop/growth/insights", shopId), {
+          accessToken
+        }).catch(() => null),
+        apiRequest<{ audiences: ShopGrowthAudience[] }>(
+          withShopIdQuery("/business/shop/growth/audiences", shopId),
+          { accessToken }
+        ).catch(() => ({ audiences: [] })),
+        apiRequest<{ preview?: ShopCatalogPreviewItem[] }>(
+          withShopIdQuery("/business/shop/growth/catalog/preview", shopId),
+          { accessToken }
+        ).catch(() => ({ preview: [] }))
+      ]);
+      setShopGrowthInsights(insightsData || null);
+      setShopGrowthAudiences(Array.isArray(audiencesData.audiences) ? audiencesData.audiences : []);
+      setShopCatalogPreview(Array.isArray(catalogData.preview) ? catalogData.preview : []);
+    } catch {
+      setShopGrowthInsights(null);
+      setShopGrowthAudiences([]);
+      setShopCatalogPreview([]);
+    }
+  };
+
+  const saveShopGrowthSettings = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    try {
+      setSavingShopGrowthSettings(true);
+      const response = await apiRequest<ShopGrowthSettingsResponse>(
+        withShopIdQuery("/business/shop/growth/settings", targetShopId),
+        {
+          method: "PATCH",
+          accessToken,
+          csrfToken,
+          body: shopGrowthSettings
+        }
+      );
+      setShopGrowthSettings(response.settings || createDefaultShopGrowthSettings());
+      setStatus("Growth automation settings saved");
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to save growth settings");
+    } finally {
+      setSavingShopGrowthSettings(false);
+    }
+  };
+
+  const generateTrackedCampaignLink = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    try {
+      setGeneratingCampaignLink(true);
+      const response = await apiRequest<{ link?: { url?: string } }>(
+        withShopIdQuery("/business/shop/growth/campaign-link", targetShopId),
+        {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: {
+            baseUrl: typeof window !== "undefined" ? window.location.origin : undefined,
+            source: growthCampaignForm.source,
+            medium: growthCampaignForm.medium,
+            campaign: growthCampaignForm.campaign,
+            term: growthCampaignForm.term || undefined,
+            content: growthCampaignForm.content || undefined
+          }
+        }
+      );
+      const link = String(response?.link?.url || "").trim();
+      if (!link) {
+        throw new Error("Campaign link was not generated");
+      }
+      setGeneratedCampaignLink(link);
+      setStatus("Tracked campaign link generated");
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch {
+        // best-effort
+      }
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to generate campaign link");
+    } finally {
+      setGeneratingCampaignLink(false);
+    }
+  };
+
+  const launchGrowthAdsCampaign = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    if (!growthCampaignForm.name.trim()) {
+      setStatus("Campaign name is required");
+      return;
+    }
+    try {
+      setLaunchingShopAdsCampaign(true);
+      const dailyBudgetMinor = Number(growthCampaignForm.dailyBudgetMinor);
+      const response = await apiRequest<{ result?: any }>(
+        withShopIdQuery("/business/shop/growth/ads/launch", targetShopId),
+        {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: {
+            provider: growthCampaignForm.provider,
+            name: growthCampaignForm.name.trim(),
+            baseUrl: typeof window !== "undefined" ? window.location.origin : undefined,
+            campaign: growthCampaignForm.campaign.trim() || undefined,
+            source: growthCampaignForm.source.trim() || undefined,
+            medium:
+              growthCampaignForm.medium.trim() ||
+              (growthCampaignForm.provider === "google_ads" ? "paid_search" : "paid_social"),
+            term: growthCampaignForm.term.trim() || undefined,
+            content: growthCampaignForm.content.trim() || undefined,
+            dailyBudgetMinor: Number.isFinite(dailyBudgetMinor) && dailyBudgetMinor > 0 ? dailyBudgetMinor : undefined
+          }
+        }
+      );
+      const launched = response?.result?.launched;
+      const link = String(response?.result?.link?.url || "").trim();
+      if (link) {
+        setGeneratedCampaignLink(link);
+      }
+      if (launched?.created) {
+        setStatus(`${growthCampaignForm.provider === "google_ads" ? "Google Ads" : "Meta Ads"} campaign created`);
+      } else {
+        setStatus(
+          launched?.reason
+            ? `Campaign launch did not complete: ${launched.reason}`
+            : "Campaign launch request submitted"
+        );
+      }
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to launch ads campaign");
+    } finally {
+      setLaunchingShopAdsCampaign(false);
+    }
+  };
+
+  const runGrowthAutomationNow = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    try {
+      setRunningShopGrowthAutomation(true);
+      const response = await apiRequest<{ result?: any }>(
+        withShopIdQuery("/business/shop/growth/automation/run", targetShopId),
+        {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: { limit: 120 }
+        }
+      );
+      const result = response?.result || {};
+      setStatus(
+        `Growth run complete: ${result.recoveredOrders || 0} recovered, ${result.skippedOrders || 0} skipped, ${
+          result.failedOrders || 0
+        } failed`
+      );
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to run growth automation");
+    } finally {
+      setRunningShopGrowthAutomation(false);
+    }
+  };
+
+  const createGrowthAudience = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    if (!growthAudienceForm.name.trim()) {
+      setStatus("Audience name is required");
+      return;
+    }
+    if (!growthAudienceForm.value.trim()) {
+      setStatus("Audience rule value is required");
+      return;
+    }
+    try {
+      setCreatingShopGrowthAudience(true);
+      const numericValue = Number(growthAudienceForm.value);
+      const ruleValue: string | number =
+        Number.isFinite(numericValue) && growthAudienceForm.operator !== "contains"
+          ? numericValue
+          : growthAudienceForm.value.trim();
+      await apiRequest(withShopIdQuery("/business/shop/growth/audiences", targetShopId), {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          name: growthAudienceForm.name.trim(),
+          description: growthAudienceForm.description.trim() || undefined,
+          enabled: true,
+          channels: growthAudienceForm.channels,
+          rules: [
+            {
+              field: growthAudienceForm.field,
+              operator: growthAudienceForm.operator,
+              value: ruleValue
+            }
+          ]
+        }
+      });
+      setGrowthAudienceForm((prev) => ({ ...prev, name: "", description: "", value: "100" }));
+      setStatus("Growth audience created");
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to create growth audience");
+    } finally {
+      setCreatingShopGrowthAudience(false);
+    }
+  };
+
+  const deleteGrowthAudience = async (audienceId: string) => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) return;
+    try {
+      await apiRequest(withShopIdQuery(`/business/shop/growth/audiences/${audienceId}`, targetShopId), {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setStatus("Growth audience deleted");
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to delete growth audience");
+    }
+  };
+
+  const syncGrowthCatalog = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    try {
+      setSyncingShopCatalogFeed(true);
+      await apiRequest(withShopIdQuery("/business/shop/growth/catalog/sync", targetShopId), {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          provider: growthCampaignForm.provider
+        }
+      });
+      setStatus("Catalog feed synced");
+      await loadGrowthContext(targetShopId);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to sync catalog feed");
+    } finally {
+      setSyncingShopCatalogFeed(false);
+    }
+  };
+
   const createShopSupplier = async () => {
     if (!accessToken) return;
+    if (!isDropshipShopMode) {
+      setStatus("Supplier directory is available only for dropshipping shops.");
+      return;
+    }
+    if (!canUseDropshipForShop) {
+      setStatus("Your current plan does not allow dropshipping suppliers for this shop.");
+      return;
+    }
     const targetShopId = selectedShopId || shopData?.id || null;
     if (!targetShopId) {
       setStatus("Select or create a shop first.");
@@ -3112,7 +3719,12 @@ export const BusinessDashboard = () => {
       setShopSuppliers((prev) => prev.filter((entry) => entry.id !== supplierId));
       setProductForm((prev) =>
         prev.supplierId === supplierId
-          ? { ...prev, supplierId: "", supplierSku: "", fulfillmentType: "self_fulfilled" }
+          ? {
+              ...prev,
+              supplierId: "",
+              supplierSku: "",
+              fulfillmentType: canUseDropshipForShop ? "dropship" : "self_fulfilled"
+            }
           : prev
       );
       setStatus("Supplier removed");
@@ -3299,6 +3911,11 @@ export const BusinessDashboard = () => {
         setShopOrders([]);
         setShopCapabilities(null);
         setShopSuppliers([]);
+        setShopGrowthSettings(createDefaultShopGrowthSettings());
+        setGeneratedCampaignLink("");
+        setShopGrowthInsights(null);
+        setShopGrowthAudiences([]);
+        setShopCatalogPreview([]);
         return;
       }
 
@@ -3346,12 +3963,18 @@ export const BusinessDashboard = () => {
           description: normalizedShop.description || "",
           logoUrl: normalizedShop.logoUrl || "",
           bannerUrl: normalizedShop.bannerUrl || "",
+          heroImageUrls: String(normalizedShop.metadata?.heroVideoUrl || "").trim()
+            ? ["", "", "", ""]
+            : normalizeHeroImageUrls(normalizedShop.metadata?.heroImageUrls, normalizedShop.bannerUrl),
+          heroVideoUrl: String(normalizedShop.metadata?.heroVideoUrl || "").trim(),
           themeColor: normalizedShop.themeColor || "#4f46e5",
-          businessType: (normalizedShop.metadata?.businessType as ShopType) || "other"
+          businessType: (normalizedShop.metadata?.businessType as ShopType) || "other",
+          businessMode: normalizeShopBusinessModeValue(normalizedShop.metadata?.businessMode)
         });
         setSelectedProductTemplateId(null);
         try {
-          const [productTemplateData, categoryTemplateData, shopOrdersData, supplierData] = await Promise.all([
+          const [productTemplateData, categoryTemplateData, shopOrdersData, supplierData, growthSettingsData] =
+            await Promise.all([
             apiRequest<{
               shopType: ShopType;
               rules: { showSize: boolean; showLength: boolean; showTexture: boolean; defaultSizeType?: string };
@@ -3368,7 +3991,11 @@ export const BusinessDashboard = () => {
             apiRequest<{ suppliers: ShopSupplier[] }>(
               withShopIdQuery("/business/shop/suppliers", normalizedShop.id),
               { accessToken }
-            ).catch(() => ({ suppliers: [] }))
+            ).catch(() => ({ suppliers: [] })),
+            apiRequest<ShopGrowthSettingsResponse>(
+              withShopIdQuery("/business/shop/growth/settings", normalizedShop.id),
+              { accessToken }
+            ).catch(() => null)
           ]);
           setProductTemplates(
             Array.isArray(productTemplateData.templates)
@@ -3400,11 +4027,21 @@ export const BusinessDashboard = () => {
                 )
               : []
           );
+          setShopGrowthSettings(
+            growthSettingsData?.settings ? growthSettingsData.settings : createDefaultShopGrowthSettings()
+          );
+          setGeneratedCampaignLink("");
+          await loadGrowthContext(normalizedShop.id);
         } catch {
           setProductTemplates([]);
           setCategoryTemplates([]);
           setShopOrders([]);
           setShopSuppliers([]);
+          setShopGrowthSettings(createDefaultShopGrowthSettings());
+          setGeneratedCampaignLink("");
+          setShopGrowthInsights(null);
+          setShopGrowthAudiences([]);
+          setShopCatalogPreview([]);
         }
       } else {
         setShopData(null);
@@ -3414,6 +4051,11 @@ export const BusinessDashboard = () => {
         setCategoryTemplates([]);
         setShopOrders([]);
         setShopSuppliers([]);
+        setShopGrowthSettings(createDefaultShopGrowthSettings());
+        setGeneratedCampaignLink("");
+        setShopGrowthInsights(null);
+        setShopGrowthAudiences([]);
+        setShopCatalogPreview([]);
       }
     } catch (err: any) {
       setStatus(` ${err?.response?.data?.error || err?.message || "Failed to load shop"}`);
@@ -3424,6 +4066,11 @@ export const BusinessDashboard = () => {
       setCategoryTemplates([]);
       setShopOrders([]);
       setShopSuppliers([]);
+      setShopGrowthSettings(createDefaultShopGrowthSettings());
+      setGeneratedCampaignLink("");
+      setShopGrowthInsights(null);
+      setShopGrowthAudiences([]);
+      setShopCatalogPreview([]);
     }
   };
 
@@ -3550,6 +4197,36 @@ export const BusinessDashboard = () => {
       colorOptionsInput: prev.colorOptionsInput || rules.defaultColorOptions
     }));
   }, [shopForm.businessType]);
+
+  useEffect(() => {
+    setProductForm((prev) => {
+      if (canUseDropshipForShop) {
+        if (prev.fulfillmentType === "dropship") return prev;
+        return {
+          ...prev,
+          fulfillmentType: "dropship"
+        };
+      }
+
+      const shouldResetToSelfFulfilled =
+        prev.fulfillmentType !== "self_fulfilled" ||
+        prev.supplierId.length > 0 ||
+        prev.supplierSku.length > 0 ||
+        prev.costPrice !== "" ||
+        prev.trackInventory !== true;
+
+      if (!shouldResetToSelfFulfilled) return prev;
+
+      return {
+        ...prev,
+        fulfillmentType: "self_fulfilled",
+        supplierId: "",
+        supplierSku: "",
+        costPrice: "",
+        trackInventory: true
+      };
+    });
+  }, [canUseDropshipForShop, activeShopBusinessMode]);
 
   useEffect(() => {
     if (!productForm.categoryId) return;
@@ -5495,7 +6172,12 @@ export const BusinessDashboard = () => {
                               </div>
                               <p className="text-sm text-gray-600">{template.description}</p>
                               {!connected && (
-                                <div className="space-y-2">
+                                <details className="rounded-lg border border-gray-200 bg-white/70">
+                                  <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-gray-700 flex items-center justify-between [&::-webkit-details-marker]:hidden">
+                                    <span>Setup fields</span>
+                                    <span className="text-[11px] text-gray-500 capitalize">{provider.replace(/_/g, " ")}</span>
+                                  </summary>
+                                  <div className="p-3 border-t border-gray-200 space-y-2">
                                   {provider === "shopify" && (
                                     <>
                                       <input
@@ -5545,6 +6227,106 @@ export const BusinessDashboard = () => {
                                         value={providerConfig.consumerSecret || ""}
                                         onChange={(e) =>
                                           updateMarketplaceConfig(provider, "consumerSecret", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "meta_ads" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Ad Account ID (e.g. 1234567890 or act_1234567890)"
+                                        value={providerConfig.adAccountId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "adAccountId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Meta Access Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Meta Page ID (optional)"
+                                        value={providerConfig.pageId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "pageId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Meta Pixel ID (optional, needed for conversion events)"
+                                        value={providerConfig.pixelId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "pixelId", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "google_ads" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Customer ID (e.g. 1234567890)"
+                                        value={providerConfig.customerId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "customerId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Login Customer ID (optional manager account)"
+                                        value={providerConfig.loginCustomerId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "loginCustomerId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Developer Token"
+                                        value={providerConfig.developerToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "developerToken", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="OAuth Client ID"
+                                        value={providerConfig.clientId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "clientId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="OAuth Client Secret"
+                                        value={providerConfig.clientSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "clientSecret", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="OAuth Refresh Token"
+                                        value={providerConfig.refreshToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "refreshToken", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Conversion Action ID (optional, for conversion uploads)"
+                                        value={providerConfig.conversionActionId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "conversionActionId", e.target.value)
                                         }
                                       />
                                     </>
@@ -5647,6 +6429,33 @@ export const BusinessDashboard = () => {
                                           updateMarketplaceConfig(provider, "inventoryEndpoint", e.target.value)
                                         }
                                       />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Order endpoint (optional, e.g. /orders/v0/orders)"
+                                        value={providerConfig.orderEndpoint || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderEndpoint", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.orderMethod || "POST"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderMethod", e.target.value)
+                                        }
+                                      >
+                                        <option value="POST">Order Method: POST</option>
+                                        <option value="PUT">Order Method: PUT</option>
+                                        <option value="PATCH">Order Method: PATCH</option>
+                                      </select>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Order response ID path (default id)"
+                                        value={providerConfig.orderResponseIdPath || "id"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderResponseIdPath", e.target.value)
+                                        }
+                                      />
                                     </>
                                   )}
                                   {(provider === "cjdropshipping" || provider === "aliexpress") && (
@@ -5723,6 +6532,33 @@ export const BusinessDashboard = () => {
                                         <option value="GET">Inventory Method: GET</option>
                                         <option value="POST">Inventory Method: POST</option>
                                       </select>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Order Endpoint (e.g. /orders or /fulfillment/order)"
+                                        value={providerConfig.orderEndpoint || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderEndpoint", e.target.value)
+                                        }
+                                      />
+                                      <select
+                                        className="input text-sm"
+                                        value={providerConfig.orderMethod || "POST"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderMethod", e.target.value)
+                                        }
+                                      >
+                                        <option value="POST">Order Method: POST</option>
+                                        <option value="PUT">Order Method: PUT</option>
+                                        <option value="PATCH">Order Method: PATCH</option>
+                                      </select>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Order response ID path (default id)"
+                                        value={providerConfig.orderResponseIdPath || "id"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "orderResponseIdPath", e.target.value)
+                                        }
+                                      />
                                     </>
                                   )}
                                   {provider === "paypal" && (
@@ -6021,7 +6857,8 @@ export const BusinessDashboard = () => {
                                       />
                                     </>
                                   )}
-                                </div>
+                                  </div>
+                                </details>
                               )}
                               {connected && (
                                 <div className="text-xs text-gray-600 bg-white rounded border border-gray-200 p-2 space-y-1">
@@ -6054,6 +6891,12 @@ export const BusinessDashboard = () => {
                                   ) : null}
                                   {connectionSummary.accountId ? (
                                     <p><span className="font-semibold text-gray-700">Account ID:</span> {connectionSummary.accountId}</p>
+                                  ) : null}
+                                  {connectionSummary.adAccountId ? (
+                                    <p><span className="font-semibold text-gray-700">Ad Account:</span> {connectionSummary.adAccountId}</p>
+                                  ) : null}
+                                  {connectionSummary.customerId ? (
+                                    <p><span className="font-semibold text-gray-700">Customer ID:</span> {connectionSummary.customerId}</p>
                                   ) : null}
                                   {connectionSummary.realmId ? (
                                     <p><span className="font-semibold text-gray-700">Realm ID:</span> {connectionSummary.realmId}</p>
@@ -6718,6 +7561,445 @@ export const BusinessDashboard = () => {
                     </li>
                   </ol>
                 </div>
+              </div>
+            </Collapsible>
+            )}
+
+            {settingsSectionTab === "growth" && (
+            <Collapsible title="Store Growth Automation" defaultOpen={false}>
+              <div className="space-y-4">
+                {!selectedShopId ? (
+                  <p className="text-sm text-gray-500">Select a shop in the Shop section to configure growth automation.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.enabled}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                          }
+                        />
+                        Enable abandoned-checkout recovery
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.includeWhatsappFallback}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              includeWhatsappFallback: e.target.checked
+                            }))
+                          }
+                        />
+                        Include WhatsApp fallback channel
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.notifyOnRecovery}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({ ...prev, notifyOnRecovery: e.target.checked }))
+                          }
+                        />
+                        Notify on successful recovery
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.allowAutoAdsLaunch}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({ ...prev, allowAutoAdsLaunch: e.target.checked }))
+                          }
+                        />
+                        Allow automatic paid ads launch
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.requireMarketingConsent}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              requireMarketingConsent: e.target.checked
+                            }))
+                          }
+                        />
+                        Require marketing consent before recovery
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.allowAudienceSync}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              allowAudienceSync: e.target.checked
+                            }))
+                          }
+                        />
+                        Allow audience sync
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopGrowthSettings.allowCatalogSync}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              allowCatalogSync: e.target.checked
+                            }))
+                          }
+                        />
+                        Allow catalog sync
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="label">Delay Before Recovery (minutes)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={5}
+                          max={10080}
+                          value={shopGrowthSettings.abandonedCheckoutDelayMinutes}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              abandonedCheckoutDelayMinutes: Math.max(5, Number(e.target.value) || 5)
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Max Attempts Per Order</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          max={15}
+                          value={shopGrowthSettings.maxAttemptsPerOrder}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              maxAttemptsPerOrder: Math.max(1, Number(e.target.value) || 1)
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Default Traffic Source</label>
+                        <select
+                          className="input"
+                          value={shopGrowthSettings.defaultTrafficSource}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              defaultTrafficSource: e.target.value === "google_ads" ? "google_ads" : "meta_ads"
+                            }))
+                          }
+                        >
+                          <option value="meta_ads">Meta Ads</option>
+                          <option value="google_ads">Google Ads</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">Frequency Cap (24h)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={shopGrowthSettings.frequencyCapPerCustomerPer24h}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              frequencyCapPerCustomerPer24h: Math.max(1, Number(e.target.value) || 1)
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Max Daily Ads Budget (minor)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={100}
+                          value={shopGrowthSettings.maxAutoDailyAdBudgetMinor}
+                          onChange={(e) =>
+                            setShopGrowthSettings((prev) => ({
+                              ...prev,
+                              maxAutoDailyAdBudgetMinor: Math.max(100, Number(e.target.value) || 100)
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={saveShopGrowthSettings}
+                        disabled={savingShopGrowthSettings}
+                      >
+                        {savingShopGrowthSettings ? "Saving..." : "Save Settings"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={runGrowthAutomationNow}
+                        disabled={runningShopGrowthAutomation}
+                      >
+                        {runningShopGrowthAutomation ? "Running..." : "Run Recovery Sweep"}
+                      </button>
+                    </div>
+
+                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-3">
+                      <p className="text-sm font-semibold text-gray-800 m-0">Campaign Link + Ad Launch</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          className="input"
+                          placeholder="Campaign Name"
+                          value={growthCampaignForm.name}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, name: e.target.value }))
+                          }
+                        />
+                        <select
+                          className="input"
+                          value={growthCampaignForm.provider}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({
+                              ...prev,
+                              provider: e.target.value === "google_ads" ? "google_ads" : "meta_ads",
+                              medium: e.target.value === "google_ads" ? "paid_search" : "paid_social",
+                              source: e.target.value === "google_ads" ? "google_ads" : "meta_ads"
+                            }))
+                          }
+                        >
+                          <option value="meta_ads">Meta Ads</option>
+                          <option value="google_ads">Google Ads</option>
+                        </select>
+                        <input
+                          className="input"
+                          placeholder="UTM Source"
+                          value={growthCampaignForm.source}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, source: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="UTM Medium"
+                          value={growthCampaignForm.medium}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, medium: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="UTM Campaign"
+                          value={growthCampaignForm.campaign}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, campaign: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="Daily Budget (minor units, optional)"
+                          value={growthCampaignForm.dailyBudgetMinor}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, dailyBudgetMinor: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="UTM Term (optional)"
+                          value={growthCampaignForm.term}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, term: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="UTM Content (optional)"
+                          value={growthCampaignForm.content}
+                          onChange={(e) =>
+                            setGrowthCampaignForm((prev) => ({ ...prev, content: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={generateTrackedCampaignLink}
+                          disabled={generatingCampaignLink}
+                        >
+                          {generatingCampaignLink ? "Generating..." : "Generate Tracked Link"}
+                        </button>
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={launchGrowthAdsCampaign}
+                          disabled={launchingShopAdsCampaign}
+                        >
+                          {launchingShopAdsCampaign ? "Launching..." : "Launch Campaign"}
+                        </button>
+                      </div>
+                      {generatedCampaignLink ? (
+                        <div className="p-2 rounded border border-gray-200 bg-white text-xs text-gray-700 break-all">
+                          {generatedCampaignLink}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="card">
+                        <p className="text-xs text-gray-500">Page Views</p>
+                        <p className="text-xl font-semibold text-gray-900">
+                          {shopGrowthInsights?.metrics?.pageViews || 0}
+                        </p>
+                      </div>
+                      <div className="card">
+                        <p className="text-xs text-gray-500">Add To Cart</p>
+                        <p className="text-xl font-semibold text-gray-900">
+                          {shopGrowthInsights?.metrics?.addToCart || 0}
+                        </p>
+                      </div>
+                      <div className="card">
+                        <p className="text-xs text-gray-500">Conversion Rate</p>
+                        <p className="text-xl font-semibold text-gray-900">
+                          {(shopGrowthInsights?.metrics?.conversionRate || 0).toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-800 m-0">Audience Manager</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                        <input
+                          className="input md:col-span-1"
+                          placeholder="Audience Name"
+                          value={growthAudienceForm.name}
+                          onChange={(e) =>
+                            setGrowthAudienceForm((prev) => ({ ...prev, name: e.target.value }))
+                          }
+                        />
+                        <select
+                          className="input md:col-span-1"
+                          value={growthAudienceForm.field}
+                          onChange={(e) =>
+                            setGrowthAudienceForm((prev) => ({ ...prev, field: e.target.value }))
+                          }
+                        >
+                          <option value="totalSpend">Total Spend</option>
+                          <option value="totalOrders">Total Orders</option>
+                          <option value="country">Country</option>
+                          <option value="segment">Segment</option>
+                          <option value="email">Email</option>
+                        </select>
+                        <select
+                          className="input md:col-span-1"
+                          value={growthAudienceForm.operator}
+                          onChange={(e) =>
+                            setGrowthAudienceForm((prev) => ({
+                              ...prev,
+                              operator: e.target.value as
+                                | "equals"
+                                | "not_equals"
+                                | "contains"
+                                | "greater_than"
+                                | "less_than"
+                                | "in"
+                            }))
+                          }
+                        >
+                          <option value="greater_than">Greater than</option>
+                          <option value="less_than">Less than</option>
+                          <option value="equals">Equals</option>
+                          <option value="contains">Contains</option>
+                          <option value="in">In list</option>
+                        </select>
+                        <input
+                          className="input md:col-span-1"
+                          placeholder="Rule Value"
+                          value={growthAudienceForm.value}
+                          onChange={(e) =>
+                            setGrowthAudienceForm((prev) => ({ ...prev, value: e.target.value }))
+                          }
+                        />
+                        <button
+                          className="btn btn-sm btn-primary md:col-span-1"
+                          onClick={createGrowthAudience}
+                          disabled={creatingShopGrowthAudience}
+                        >
+                          {creatingShopGrowthAudience ? "Creating..." : "Create Audience"}
+                        </button>
+                      </div>
+                      {shopGrowthAudiences.length === 0 ? (
+                        <p className="text-xs text-gray-500">No growth audiences yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {shopGrowthAudiences.map((audience) => (
+                            <div
+                              key={audience.id}
+                              className="p-2 border border-gray-200 rounded bg-white flex items-center justify-between gap-2"
+                            >
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{audience.name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {audience.memberCount} members
+                                  {audience.lastSyncedAt
+                                    ? ` · Synced ${new Date(audience.lastSyncedAt).toLocaleString()}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <button
+                                className="btn btn-xs btn-danger"
+                                onClick={() => deleteGrowthAudience(audience.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-800 m-0">Catalog Feed Sync</p>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={syncGrowthCatalog}
+                          disabled={syncingShopCatalogFeed}
+                        >
+                          {syncingShopCatalogFeed ? "Syncing..." : "Sync Catalog"}
+                        </button>
+                      </div>
+                      {shopCatalogPreview.length === 0 ? (
+                        <p className="text-xs text-gray-500">No catalog preview available yet.</p>
+                      ) : (
+                        <div className="max-h-52 overflow-auto space-y-1">
+                          {shopCatalogPreview.slice(0, 8).map((item) => (
+                            <div
+                              key={item.id}
+                              className="text-xs text-gray-700 bg-white border border-gray-200 rounded px-2 py-1 flex items-center justify-between gap-2"
+                            >
+                              <span className="truncate">{item.title}</span>
+                              <span className="font-medium text-gray-900">
+                                {item.currency} {Number(item.price || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </Collapsible>
             )}
@@ -8039,6 +9321,44 @@ export const BusinessDashboard = () => {
             </div>
 
             <div className="card">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Operational Alerts</h3>
+                <span className="text-xs text-gray-500">{opsAlerts.length} active</span>
+              </div>
+              {opsAlerts.length === 0 ? (
+                <p className="text-sm text-gray-500">No active operational alerts.</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {opsAlerts.map((alert: any) => (
+                    <div
+                      key={alert.id}
+                      className={`p-3 rounded-lg border ${
+                        alert.severity === "critical"
+                          ? "bg-red-50 border-red-200"
+                          : "bg-yellow-50 border-yellow-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{alert.title || "Alert"}</p>
+                        <span
+                          className={`badge ${
+                            alert.severity === "critical" ? "badge-danger" : "badge-warning"
+                          }`}
+                        >
+                          {alert.severity || "warning"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-700 mt-1">{alert.message || "No details provided."}</p>
+                      {alert.recommendedAction && (
+                        <p className="text-xs text-gray-600 mt-2">Action: {alert.recommendedAction}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h3 className="text-lg font-semibold text-gray-900">Incident Mode & Backfills</h3>
                 <div className="flex flex-wrap items-center gap-2">
@@ -8433,53 +9753,135 @@ export const BusinessDashboard = () => {
                     </button>
                   </div>
                 </div>
-                <div className="p-3 border rounded-lg bg-gray-50 space-y-2">
-                  <p className="text-sm font-medium text-gray-800">Shop Hero Image (Mobile/Tablet)</p>
-                  {shopForm.bannerUrl ? (
-                    <img
-                      src={shopForm.bannerUrl}
-                      alt="Shop hero preview"
-                      className="w-full h-24 rounded-xl border object-cover bg-white"
-                    />
-                  ) : (
-                    <div className="w-full h-24 rounded-xl border bg-white flex items-center justify-center text-sm font-medium text-gray-500">
-                      Hero image preview
-                    </div>
-                  )}
-                  <input
-                    className="input"
-                    placeholder="Hero image URL (optional)"
-                    value={shopForm.bannerUrl}
-                    onChange={(e) => setShopForm({ ...shopForm, bannerUrl: e.target.value })}
-                  />
-                  <div className="flex gap-2">
-                    <label className="btn btn-secondary flex-1 cursor-pointer flex items-center justify-center gap-2">
-                      <FiUpload className="w-4 h-4" />
-                      {uploadingShopImageField === "bannerUrl" ? "Uploading..." : "Upload Hero Image"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => handleShopImageUpload("bannerUrl", e.target.files?.[0])}
-                      />
-                    </label>
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={() => setShopForm({ ...shopForm, bannerUrl: "" })}
-                    >
-                      Clear
-                    </button>
+                <div className="p-3 border rounded-lg bg-gray-50 space-y-3">
+                  <p className="text-sm font-medium text-gray-800">Shop Hero Media</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {shopForm.heroImageUrls.map((imageUrl, slot) => (
+                      <div key={`hero-slot-${slot}`} className="relative">
+                        <label
+                          className={`block cursor-pointer rounded-lg border bg-white overflow-hidden h-16 ${
+                            shopForm.heroVideoUrl.trim() ? "opacity-50 cursor-not-allowed" : ""
+                          }`}
+                        >
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt={`Hero slot ${slot + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">
+                              Hero {slot + 1}
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={Boolean(shopForm.heroVideoUrl.trim())}
+                            onChange={(e) => handleShopHeroImageUpload(slot, e.target.files?.[0])}
+                          />
+                        </label>
+                        {imageUrl && !shopForm.heroVideoUrl.trim() && (
+                          <button
+                            type="button"
+                            className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-white border text-[10px] leading-none text-gray-600"
+                            onClick={() => setShopHeroImageAt(slot, "")}
+                            aria-label={`Clear hero image ${slot + 1}`}
+                          >
+                            <FiX className="w-3 h-3 mx-auto" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-xs text-gray-500">
-                    This image appears over your color on small and medium screens.
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-secondary btn-xs"
+                      type="button"
+                      onClick={clearShopHeroImages}
+                      disabled={shopForm.heroImageUrls.every((entry) => !entry.trim())}
+                    >
+                      Clear Images
+                    </button>
+                    <p className="text-[11px] text-gray-500">Max 4 images. More than 1 becomes auto-slide carousel.</p>
+                  </div>
+                  <div className="border-t pt-2 space-y-2">
+                    <p className="text-[11px] text-gray-600">Hero video (optional, replaces images/carousel)</p>
+                    <input
+                      className="input text-xs h-9"
+                      placeholder="Hero video URL"
+                      value={shopForm.heroVideoUrl}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setShopForm((prev) => ({
+                          ...prev,
+                          heroVideoUrl: nextValue,
+                          heroImageUrls: nextValue.trim() ? ["", "", "", ""] : prev.heroImageUrls,
+                          bannerUrl: nextValue.trim() ? "" : prev.bannerUrl
+                        }));
+                      }}
+                      disabled={shopForm.heroImageUrls.some((entry) => entry.trim().length > 0)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <label
+                        className={`btn btn-secondary btn-xs cursor-pointer flex items-center gap-1 ${
+                          shopForm.heroImageUrls.some((entry) => entry.trim().length > 0)
+                            ? "opacity-50 pointer-events-none"
+                            : ""
+                        }`}
+                      >
+                        <FiUpload className="w-3 h-3" />
+                        {uploadingShopHeroVideo ? "Uploading..." : "Upload Video"}
+                        <input
+                          type="file"
+                          accept="video/*"
+                          className="hidden"
+                          disabled={shopForm.heroImageUrls.some((entry) => entry.trim().length > 0)}
+                          onChange={(e) => handleShopHeroVideoUpload(e.target.files?.[0])}
+                        />
+                      </label>
+                      <button
+                        className="btn btn-secondary btn-xs"
+                        type="button"
+                        onClick={() => setShopForm((prev) => ({ ...prev, heroVideoUrl: "" }))}
+                        disabled={!shopForm.heroVideoUrl.trim()}
+                      >
+                        Remove Video
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="label">Theme Color</label>
                   <input type="color" className="input" value={shopForm.themeColor} onChange={(e) => setShopForm({ ...shopForm, themeColor: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Business Model</label>
+                  <select
+                    className="input"
+                    value={shopForm.businessMode}
+                    onChange={(e) =>
+                      setShopForm({ ...shopForm, businessMode: e.target.value as ShopBusinessMode })
+                    }
+                    disabled={!isCreatingAnotherShop && !!selectedShopId}
+                  >
+                    {SHOP_BUSINESS_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {SHOP_BUSINESS_MODE_OPTIONS.find((option) => option.value === shopForm.businessMode)?.description}
+                  </p>
+                  {!isCreatingAnotherShop && !!selectedShopId && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Business model is locked after creation.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Shop Type</label>
@@ -8506,6 +9908,12 @@ export const BusinessDashboard = () => {
                 className="btn btn-primary"
                 onClick={async () => {
                   try {
+                    const normalizedHeroImageUrls = shopForm.heroImageUrls
+                      .map((entry) => entry.trim())
+                      .filter(Boolean)
+                      .slice(0, 4);
+                    const heroVideoUrl = shopForm.heroVideoUrl.trim();
+                    const primaryHeroImage = heroVideoUrl ? "" : normalizedHeroImageUrls[0] || "";
                     if (isCreatingAnotherShop || !selectedShopId) {
                       const response = await apiRequest<{ shop: ShopData }>("/business/shop", {
                         method: "POST",
@@ -8516,9 +9924,12 @@ export const BusinessDashboard = () => {
                           slug: shopForm.slug,
                           description: shopForm.description || undefined,
                           logoUrl: shopForm.logoUrl || undefined,
-                          bannerUrl: shopForm.bannerUrl || undefined,
+                          bannerUrl: primaryHeroImage || undefined,
+                          heroImageUrls: normalizedHeroImageUrls,
+                          heroVideoUrl: heroVideoUrl || undefined,
                           themeColor: shopForm.themeColor,
-                          businessType: shopForm.businessType
+                          businessType: shopForm.businessType,
+                          businessMode: shopForm.businessMode
                         }
                       });
                       setStatus(" Shop created");
@@ -8537,7 +9948,9 @@ export const BusinessDashboard = () => {
                           slug: shopForm.slug,
                           description: shopForm.description,
                           logoUrl: shopForm.logoUrl || "",
-                          bannerUrl: shopForm.bannerUrl || "",
+                          bannerUrl: primaryHeroImage,
+                          heroImageUrls: normalizedHeroImageUrls,
+                          heroVideoUrl: heroVideoUrl,
                           themeColor: shopForm.themeColor
                         }
                       });
@@ -8700,91 +10113,111 @@ export const BusinessDashboard = () => {
                     <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-slate-900">Plan: {shopCapabilities.planId}</span>
-                        <span className={`badge ${shopCapabilities.canDropship ? "badge-success" : "badge-warning"}`}>
-                          {shopCapabilities.canDropship ? "Dropship enabled" : "Dropship disabled"}
+                        <span
+                          className={`badge ${
+                            isDropshipShopMode
+                              ? canUseDropshipForShop
+                                ? "badge-success"
+                                : "badge-warning"
+                              : "badge"
+                          }`}
+                        >
+                          {isDropshipShopMode
+                            ? canUseDropshipForShop
+                              ? "Dropship mode active"
+                              : "Dropship mode blocked by plan"
+                            : "Own-products mode"}
                         </span>
                         <span className="badge">
                           Checkout: {shopCapabilities.allowedCheckoutMethods.join(" + ") || "none"}
                         </span>
                       </div>
-                      {!shopCapabilities.canDropship && (
+                      {isDropshipShopMode && !canUseDropshipForShop && (
                         <p className="text-amber-700">
                           Upgrade to Professional to unlock dropship fulfillment and supplier routing.
                         </p>
                       )}
                     </div>
                   )}
-                  {shopSectionTab === "upload" && (
+                  {shopSectionTab === "upload" && isDropshipShopMode && (
                     <div className="space-y-3 rounded-lg border p-3">
                       <p className="text-sm font-semibold text-gray-900">Supplier Directory (Dropship)</p>
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                        <input
-                          className="input md:col-span-2"
-                          placeholder="Supplier name"
-                          value={supplierForm.name}
-                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
-                        />
-                        <select
-                          className="input"
-                          value={supplierForm.type}
-                          onChange={(e) =>
-                            setSupplierForm((prev) => ({
-                              ...prev,
-                              type: e.target.value as "manual" | "api" | "csv"
-                            }))
-                          }
-                        >
-                          <option value="manual">Manual</option>
-                          <option value="api">API</option>
-                          <option value="csv">CSV</option>
-                        </select>
-                        <select
-                          className="input"
-                          value={supplierForm.provider}
-                          onChange={(e) =>
-                            setSupplierForm((prev) => ({
-                              ...prev,
-                              provider: e.target.value as "" | "amazon" | "cjdropshipping" | "aliexpress"
-                            }))
-                          }
-                        >
-                          <option value="">No provider</option>
-                          <option value="amazon">Amazon</option>
-                          <option value="cjdropshipping">CJ Dropshipping</option>
-                          <option value="aliexpress">AliExpress</option>
-                        </select>
-                        <select
-                          className="input"
-                          value={supplierForm.channel}
-                          onChange={(e) =>
-                            setSupplierForm((prev) => ({
-                              ...prev,
-                              channel: e.target.value as "whatsapp" | "email" | "sms"
-                            }))
-                          }
-                        >
-                          <option value="whatsapp">WhatsApp</option>
-                          <option value="email">Email</option>
-                          <option value="sms">SMS</option>
-                        </select>
-                        <input
-                          className="input"
-                          placeholder="Recipient (phone/email)"
-                          value={supplierForm.recipient}
-                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, recipient: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          className="input flex-1 min-w-[220px]"
-                          placeholder="Notes (optional)"
-                          value={supplierForm.notes}
-                          onChange={(e) => setSupplierForm((prev) => ({ ...prev, notes: e.target.value }))}
-                        />
-                        <button className="btn btn-secondary" onClick={createShopSupplier}>
-                          Add Supplier
-                        </button>
-                      </div>
+                      {canUseDropshipForShop ? (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                            <input
+                              className="input md:col-span-2"
+                              placeholder="Supplier name"
+                              value={supplierForm.name}
+                              onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                            />
+                            <select
+                              className="input"
+                              value={supplierForm.type}
+                              onChange={(e) =>
+                                setSupplierForm((prev) => ({
+                                  ...prev,
+                                  type: e.target.value as "manual" | "api" | "csv"
+                                }))
+                              }
+                            >
+                              <option value="manual">Manual</option>
+                              <option value="api">API</option>
+                              <option value="csv">CSV</option>
+                            </select>
+                            <select
+                              className="input"
+                              value={supplierForm.provider}
+                              onChange={(e) =>
+                                setSupplierForm((prev) => ({
+                                  ...prev,
+                                  provider: e.target.value as "" | "amazon" | "cjdropshipping" | "aliexpress"
+                                }))
+                              }
+                            >
+                              <option value="">No provider</option>
+                              <option value="amazon">Amazon</option>
+                              <option value="cjdropshipping">CJ Dropshipping</option>
+                              <option value="aliexpress">AliExpress</option>
+                            </select>
+                            <select
+                              className="input"
+                              value={supplierForm.channel}
+                              onChange={(e) =>
+                                setSupplierForm((prev) => ({
+                                  ...prev,
+                                  channel: e.target.value as "whatsapp" | "email" | "sms"
+                                }))
+                              }
+                            >
+                              <option value="whatsapp">WhatsApp</option>
+                              <option value="email">Email</option>
+                              <option value="sms">SMS</option>
+                            </select>
+                            <input
+                              className="input"
+                              placeholder="Recipient (phone/email)"
+                              value={supplierForm.recipient}
+                              onChange={(e) => setSupplierForm((prev) => ({ ...prev, recipient: e.target.value }))}
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              className="input flex-1 min-w-[220px]"
+                              placeholder="Notes (optional)"
+                              value={supplierForm.notes}
+                              onChange={(e) => setSupplierForm((prev) => ({ ...prev, notes: e.target.value }))}
+                            />
+                            <button className="btn btn-secondary" onClick={createShopSupplier}>
+                              Add Supplier
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-amber-700">
+                          Dropshipping is selected for this shop, but your current plan does not allow supplier routing.
+                        </p>
+                      )}
                       {shopSuppliers.length > 0 ? (
                         <div className="space-y-2">
                           {shopSuppliers.map((supplier) => (
@@ -8810,6 +10243,12 @@ export const BusinessDashboard = () => {
                       ) : (
                         <p className="text-xs text-gray-500">No suppliers yet.</p>
                       )}
+                    </div>
+                  )}
+                  {shopSectionTab === "upload" && !isDropshipShopMode && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                      Supplier directory is disabled for <span className="font-semibold">Own Products</span> shops.
+                      Switch business model during shop creation if you want dropship supplier routing.
                     </div>
                   )}
                   {shopSectionTab === "upload" && productTemplates.length > 0 && (
@@ -8902,18 +10341,9 @@ export const BusinessDashboard = () => {
                       onChange={(e) => setProductForm({ ...productForm, inventory: Number(e.target.value) })}
                     />
                     <select
-                      className="input"
+                      className="input bg-gray-50"
                       value={useDropshipForProduct ? "dropship" : "self_fulfilled"}
-                      onChange={(e) =>
-                        setProductForm((prev) => ({
-                          ...prev,
-                          fulfillmentType:
-                            e.target.value === "dropship" && canUseDropshipForShop
-                              ? "dropship"
-                              : "self_fulfilled"
-                        }))
-                      }
-                      disabled={!canUseDropshipForShop}
+                      disabled
                     >
                       <option value="self_fulfilled">Own fulfillment</option>
                       <option value="dropship">Dropship supplier</option>
@@ -9159,6 +10589,10 @@ export const BusinessDashboard = () => {
                         }
                         if (!Number.isFinite(payload.inventory) || payload.inventory < 0) {
                           setStatus("? Enter a valid product inventory");
+                          return;
+                        }
+                        if (useDropshipForProduct && !payload.supplierId) {
+                          setStatus("? Select an active supplier for dropship products");
                           return;
                         }
                         payload.inventory = Math.trunc(payload.inventory);
