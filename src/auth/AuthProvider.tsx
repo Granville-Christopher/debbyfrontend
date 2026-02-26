@@ -2,6 +2,15 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { apiRequest } from "../api/client";
 
 export type Role = "developer" | "business" | "creator";
+export type BusinessSignupProfile = {
+  fullName: string;
+  businessName: string;
+  country: string;
+  phone: string;
+  industry: string;
+  teamSize: string;
+  website?: string;
+};
 
 type User = {
   id: string;
@@ -18,7 +27,12 @@ type AuthContextValue = {
   loading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, role: Role) => Promise<void>;
+  signup: (
+    email: string,
+    password: string,
+    role: Role,
+    options?: { businessProfile?: BusinessSignupProfile }
+  ) => Promise<void>;
   updateRole: (newRole: Role) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -280,10 +294,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [updateAccessToken, updateRoleState, updateCsrfToken, updateUser]);
 
-  const signup = useCallback(async (email: string, password: string, selectedRole: Role) => {
+  const signup = useCallback(
+    async (
+      email: string,
+      password: string,
+      selectedRole: Role,
+      options?: { businessProfile?: BusinessSignupProfile }
+    ) => {
     const data = await apiRequest<AuthResponse>(
       "/auth/signup",
-      { method: "POST", body: { email, password, role: selectedRole } }
+      {
+        method: "POST",
+        body: {
+          email,
+          password,
+          role: selectedRole,
+          ...(options?.businessProfile ? { businessProfile: options.businessProfile } : {})
+        }
+      }
     );
     updateAccessToken(data.accessToken);
     updateRoleState(data.role);
@@ -293,7 +321,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.setItem("refreshToken", data.refreshToken);
       console.log("Auth: Stored refresh token in localStorage");
     }
-  }, [updateAccessToken, updateRoleState, updateCsrfToken, updateUser]);
+    },
+    [updateAccessToken, updateRoleState, updateCsrfToken, updateUser]
+  );
 
   const updateRole = useCallback(async (newRole: Role) => {
     const data = await apiRequest<AuthResponse>(

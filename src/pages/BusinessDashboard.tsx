@@ -79,6 +79,69 @@ type Notification = {
 type Integration = {
   provider: "stripe" | "paystack" | "github" | "email" | "sms" | "whatsapp";
   connectedAt: string;
+  hasToken?: boolean;
+  hasConfig?: boolean;
+  config?: Record<string, any>;
+};
+
+type NativeAutomationTemplate = {
+  key: string;
+  name: string;
+  description: string;
+  triggerEvent: string;
+  stepsCount?: number;
+};
+
+type NativeWorkflow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  triggerEvent: string;
+  enabled: boolean;
+  currentVersion: number;
+  updatedAt: string;
+};
+
+type NativeWorkflowRun = {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  triggerType: string;
+  status: "completed" | "failed";
+  startedAt: string;
+  completedAt: string;
+  steps: Array<{
+    id: string;
+    stepId: string;
+    action: string;
+    status: "completed" | "failed" | "skipped";
+    startedAt: string;
+    completedAt: string;
+    error?: string;
+  }>;
+  input?: any;
+  config: any;
+};
+
+interface EmailTemplate {
+  id: string;
+  triggerEvent: "order_receipt" | "order_shipped" | "order_delivered" | "abandoned_cart";
+  subject: string;
+  htmlBody: string;
+  textBody?: string;
+  updatedAt: string;
+}
+
+type NativeSupportTicket = {
+  id: string;
+  subject: string;
+  description: string;
+  category: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  status: "open" | "in_progress" | "resolved" | "closed";
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type PaymentStats = {
@@ -239,6 +302,22 @@ type ShopData = {
   categories: ShopCategory[];
   products: ShopProduct[];
 };
+
+const NATIVE_REPLACED_MARKETPLACE_PROVIDERS = new Set([
+  "shopify",
+  "zapier",
+  "hubspot",
+  "klaviyo",
+  "zendesk",
+  "gorgias",
+  "quickbooks",
+  "ga4",
+  "shippo",
+  "easypost",
+  "loopreturns",
+  "sift",
+  "xero"
+]);
 
 type ShopGrowthSettings = {
   enabled: boolean;
@@ -878,7 +957,8 @@ export const BusinessDashboard = () => {
       refreshToken: "",
       conversionActionId: ""
     },
-    zapier: { webhookUrl: "" },
+    zapier: { webhookUrl: "", actionWebhookUrl: "", signingSecret: "", retryAttempts: "3" },
+    hubspot: { accessToken: "", portalId: "", defaultLifecycleStage: "customer" },
     amazon: {
       sellerId: "",
       marketplaceId: "",
@@ -1067,6 +1147,12 @@ export const BusinessDashboard = () => {
   const [whatsappAuthToken, setWhatsappAuthToken] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
 
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [defaultTemplates, setDefaultTemplates] = useState<Record<string, { subject: string; htmlBody: string }>>({});
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [loadingEmailTemplates, setLoadingEmailTemplates] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Partial<EmailTemplate> | null>(null);
+
   const [automationSettings, setAutomationSettings] = useState({
     remindersEnabled: true,
     recoveryEnabled: true,
@@ -1076,6 +1162,24 @@ export const BusinessDashboard = () => {
   const [availableGateways, setAvailableGateways] = useState<{ stripe: boolean; paystack: boolean }>({ stripe: false, paystack: false });
   const [automationTemplates, setAutomationTemplates] = useState<any[]>([]);
   const [isSavingAutomation, setIsSavingAutomation] = useState(false);
+  const [automationSectionTab, setAutomationSectionTab] = useState<"native" | "support" | "legacy">("native");
+  const [loadingNativeAutomation, setLoadingNativeAutomation] = useState(false);
+  const [nativeCapabilities, setNativeCapabilities] = useState<any>(null);
+  const [nativeAutomationTemplates, setNativeAutomationTemplates] = useState<NativeAutomationTemplate[]>([]);
+  const [nativeWorkflows, setNativeWorkflows] = useState<NativeWorkflow[]>([]);
+  const [nativeWorkflowRuns, setNativeWorkflowRuns] = useState<NativeWorkflowRun[]>([]);
+  const [installingNativeTemplateKey, setInstallingNativeTemplateKey] = useState<string | null>(null);
+  const [runningNativeWorkflowId, setRunningNativeWorkflowId] = useState<string | null>(null);
+  const [retryingNativeRunId, setRetryingNativeRunId] = useState<string | null>(null);
+  const [nativeMigrationPreview, setNativeMigrationPreview] = useState<any>(null);
+  const [runningNativeMigration, setRunningNativeMigration] = useState(false);
+  const [nativeSupportOverview, setNativeSupportOverview] = useState<any>(null);
+  const [nativeSupportTickets, setNativeSupportTickets] = useState<NativeSupportTicket[]>([]);
+  const [selectedNativeSupportTicket, setSelectedNativeSupportTicket] = useState<any>(null);
+  const [showNativeSupportTicketModal, setShowNativeSupportTicketModal] = useState(false);
+  const [nativeSupportReply, setNativeSupportReply] = useState("");
+  const [sendingNativeSupportReply, setSendingNativeSupportReply] = useState(false);
+  const [updatingNativeSupportStatus, setUpdatingNativeSupportStatus] = useState(false);
   const [paymentPlans, setPaymentPlans] = useState<any[]>([]);
   const [showPaymentPlanModal, setShowPaymentPlanModal] = useState(false);
   const [paymentPlanDetails, setPaymentPlanDetails] = useState<any>(null);
@@ -1446,10 +1550,65 @@ export const BusinessDashboard = () => {
     return () => clearInterval(interval);
   }, [accessToken]);
 
+  // Read saved integration configs into state
+  useEffect(() => {
+    if (integrationSectionTab !== "calls") return;
+    
+    const emailInt = integrations.find(i => i.provider === "email");
+    if (emailInt) {
+      if (emailInt.hasToken && !emailApiKey) setEmailApiKey("********");
+      const config: any = emailInt.config || {};
+      if (config.email && !emailFrom) setEmailFrom(config.email);
+    }
+
+    const smsInt = integrations.find(i => i.provider === "sms");
+    if (smsInt) {
+      if (smsInt.hasToken && !smsAccountSid) setSmsAccountSid("********");
+      const config: any = smsInt.config || {};
+      if (config.authToken && !smsAuthToken) setSmsAuthToken("********");
+      if (config.phoneNumber && !smsPhoneNumber) setSmsPhoneNumber(config.phoneNumber);
+    }
+
+    const waInt = integrations.find(i => i.provider === "whatsapp");
+    if (waInt) {
+      if (waInt.hasToken && !whatsappAccountSid) setWhatsappAccountSid("********");
+      const config: any = waInt.config || {};
+      if (config.authToken && !whatsappAuthToken) setWhatsappAuthToken("********");
+      if (config.whatsappNumber && !whatsappNumber) setWhatsappNumber(waInt?.config?.whatsappNumber || "");
+    }
+  }, [integrationSectionTab, integrations]);
+
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      if (!accessToken || activeTab !== "integrations") return;
+      try {
+        setLoadingEmailTemplates(true);
+        const [tplData, defData] = await Promise.all([
+          apiRequest<{ templates: EmailTemplate[] }>("/business/email-templates", { accessToken }),
+          apiRequest<{ defaults: any }>("/business/email-templates/defaults", { accessToken })
+        ]);
+        setEmailTemplates(tplData.templates);
+        setDefaultTemplates(defData.defaults);
+      } catch (err) {
+        console.error("Failed to fetch email templates", err);
+      } finally {
+        setLoadingEmailTemplates(false);
+      }
+    };
+    fetchTemplates();
+  }, [accessToken, activeTab]);
+
   useEffect(() => {
     if (activeTab !== "ops" || !accessToken) return;
     loadOpsData();
     const interval = setInterval(loadOpsData, 10000);
+    return () => clearInterval(interval);
+  }, [activeTab, accessToken]);
+
+  useEffect(() => {
+    if (activeTab !== "automation" || !accessToken) return;
+    loadNativeAutomationData();
+    const interval = setInterval(loadNativeAutomationData, 15000);
     return () => clearInterval(interval);
   }, [activeTab, accessToken]);
 
@@ -1715,7 +1874,7 @@ export const BusinessDashboard = () => {
     }));
   };
 
-  const getMarketplacePayload = (provider: string) => {
+  const getMarketplacePayload = (provider: string): Record<string, string> => {
     const providerKey = String(provider || "").trim().toLowerCase();
     const config = marketplaceConfigByProvider[providerKey] || {};
     if (providerKey === "shopify") {
@@ -1752,7 +1911,17 @@ export const BusinessDashboard = () => {
     }
     if (providerKey === "zapier") {
       return {
-        webhookUrl: String(config.webhookUrl || "").trim()
+        webhookUrl: String(config.webhookUrl || "").trim(),
+        actionWebhookUrl: String(config.actionWebhookUrl || "").trim(),
+        signingSecret: String(config.signingSecret || "").trim(),
+        retryAttempts: String(config.retryAttempts || "3").trim()
+      };
+    }
+    if (providerKey === "hubspot") {
+      return {
+        accessToken: String(config.accessToken || "").trim(),
+        portalId: String(config.portalId || "").trim(),
+        defaultLifecycleStage: String(config.defaultLifecycleStage || "").trim()
       };
     }
     if (providerKey === "amazon") {
@@ -1877,6 +2046,244 @@ export const BusinessDashboard = () => {
     return {};
   };
 
+  const loadNativeAutomationData = async () => {
+    if (!accessToken) return;
+    try {
+      setLoadingNativeAutomation(true);
+      const [
+        capabilitiesData,
+        templatesData,
+        workflowsData,
+        runsData,
+        supportOverviewData,
+        supportTicketsData,
+        migrationPreviewData
+      ] = await Promise.all([
+        apiRequest<{ native: any; externalRails: any }>("/business/native/capabilities", { accessToken }).catch(
+          () => ({ native: null, externalRails: null })
+        ),
+        apiRequest<{ templates: NativeAutomationTemplate[] }>("/business/native/automation/templates", {
+          accessToken
+        }).catch(() => ({ templates: [] })),
+        apiRequest<{ workflows: NativeWorkflow[] }>("/business/native/automation/workflows", {
+          accessToken
+        }).catch(() => ({ workflows: [] })),
+        apiRequest<{ runs: NativeWorkflowRun[] }>("/business/native/automation/runs?limit=40", {
+          accessToken
+        }).catch(() => ({ runs: [] })),
+        apiRequest<{ summary: any; queue: any[] }>("/business/support/inbox/overview", { accessToken }).catch(
+          () => ({ summary: null, queue: [] })
+        ),
+        apiRequest<{ tickets: NativeSupportTicket[] }>("/business/support/workspace/tickets", { accessToken }).catch(
+          () => ({ tickets: [] })
+        ),
+        apiRequest<{
+          connectedProviders: string[];
+          templates: NativeAutomationTemplate[];
+          installedTemplateKeys: string[];
+          pendingTemplateKeys: string[];
+        }>("/business/native/migrations/preview", { accessToken }).catch(() => ({
+          connectedProviders: [],
+          templates: [],
+          installedTemplateKeys: [],
+          pendingTemplateKeys: []
+        }))
+      ]);
+
+      setNativeCapabilities(capabilitiesData || null);
+      setNativeAutomationTemplates(Array.isArray(templatesData.templates) ? templatesData.templates : []);
+      setNativeWorkflows(Array.isArray(workflowsData.workflows) ? workflowsData.workflows : []);
+      setNativeWorkflowRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
+      setNativeSupportOverview({
+        summary: supportOverviewData.summary || null,
+        queue: Array.isArray(supportOverviewData.queue) ? supportOverviewData.queue : []
+      });
+      setNativeSupportTickets(Array.isArray(supportTicketsData.tickets) ? supportTicketsData.tickets : []);
+      setNativeMigrationPreview(migrationPreviewData || null);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to load native automation data");
+    } finally {
+      setLoadingNativeAutomation(false);
+    }
+  };
+
+  const installNativeAutomationTemplate = async (templateKey: string) => {
+    if (!accessToken) return;
+    try {
+      setInstallingNativeTemplateKey(templateKey);
+      await apiRequest(`/business/native/automation/templates/${encodeURIComponent(templateKey)}/install`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {}
+      });
+      setStatus("Native automation template installed");
+      await loadNativeAutomationData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to install native template");
+    } finally {
+      setInstallingNativeTemplateKey(null);
+    }
+  };
+
+  const runNativeWorkflow = async (workflowId: string, input?: Record<string, any>) => {
+    if (!accessToken) return;
+    try {
+      setRunningNativeWorkflowId(workflowId);
+      
+      let finalInput = input;
+      if (!finalInput) {
+        // Provide mock data for manual test runs
+        const workflow = nativeWorkflows.find(w => w.id === workflowId);
+        const name = String(workflow?.name || "").toLowerCase();
+        
+        finalInput = {
+          customer: {
+            email: "test-customer@example.com",
+            phone: "+1234567890",
+            firstName: "Test",
+            lastName: "User"
+          },
+          order: {
+            orderNumber: "ORD-9999",
+            totalAmount: 1200,
+            currency: "USD"
+          },
+          shop: {
+            name: "My Debby Shop"
+          },
+          checkoutUrl: "https://debby.store/checkout/test",
+          retryUrl: "https://debby.store/checkout/retry/test"
+        };
+      }
+
+      await apiRequest(`/business/native/automation/workflows/${workflowId}/run`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { input: finalInput }
+      });
+      setStatus("Native workflow run started");
+      await loadNativeAutomationData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to run native workflow");
+    } finally {
+      setRunningNativeWorkflowId(null);
+    }
+  };
+
+  const retryNativeWorkflowRun = async (run: NativeWorkflowRun) => {
+    if (!accessToken) return;
+    try {
+      setRetryingNativeRunId(run.id);
+      const runInput =
+        run?.input && typeof run.input === "object"
+          ? Object.fromEntries(
+              Object.entries(run.input as Record<string, unknown>).filter(([key]) => key !== "workflowVersion")
+            )
+          : {};
+      await apiRequest(`/business/native/automation/workflows/${run.workflowId}/run`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { input: runInput }
+      });
+      setStatus("Retry queued for native workflow run");
+      await loadNativeAutomationData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to retry run");
+    } finally {
+      setRetryingNativeRunId(null);
+    }
+  };
+
+  const loadNativeSupportTicketDetails = async (ticketId: string) => {
+    if (!accessToken) return;
+    try {
+      const response = await apiRequest<{ ticket: any }>(
+        `/business/support/inbox/tickets/${encodeURIComponent(ticketId)}`,
+        { accessToken }
+      );
+      setSelectedNativeSupportTicket(response.ticket || null);
+      setShowNativeSupportTicketModal(true);
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to load support ticket");
+    }
+  };
+
+  const sendNativeSupportReply = async () => {
+    if (!accessToken || !selectedNativeSupportTicket?.id || !nativeSupportReply.trim()) return;
+    try {
+      setSendingNativeSupportReply(true);
+      await apiRequest(`/business/support/inbox/tickets/${selectedNativeSupportTicket.id}/reply`, {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { message: nativeSupportReply.trim(), senderType: "support" }
+      });
+      setNativeSupportReply("");
+      await loadNativeSupportTicketDetails(selectedNativeSupportTicket.id);
+      await loadNativeAutomationData();
+      setStatus("Reply sent");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to send reply");
+    } finally {
+      setSendingNativeSupportReply(false);
+    }
+  };
+
+  const updateNativeSupportTicketStatus = async (
+    ticketId: string,
+    status: "open" | "in_progress" | "resolved" | "closed"
+  ) => {
+    if (!accessToken) return;
+    try {
+      setUpdatingNativeSupportStatus(true);
+      await apiRequest(`/business/support/workspace/tickets/${ticketId}/status`, {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: { status }
+      });
+      if (selectedNativeSupportTicket?.id === ticketId) {
+        await loadNativeSupportTicketDetails(ticketId);
+      }
+      await loadNativeAutomationData();
+      setStatus("Ticket status updated");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to update ticket status");
+    } finally {
+      setUpdatingNativeSupportStatus(false);
+    }
+  };
+
+  const runNativeMigration = async () => {
+    if (!accessToken) return;
+    try {
+      setRunningNativeMigration(true);
+      const candidateKeys = Array.isArray(nativeMigrationPreview?.pendingTemplateKeys)
+        ? nativeMigrationPreview.pendingTemplateKeys
+        : [];
+      const response = await apiRequest<{ installed: Array<{ key: string }>; skipped: Array<{ key: string }> }>(
+        "/business/native/migrations/run",
+        {
+          method: "POST",
+          accessToken,
+          csrfToken,
+          body: { templateKeys: candidateKeys }
+        }
+      );
+      const installedCount = Array.isArray(response.installed) ? response.installed.length : 0;
+      const skippedCount = Array.isArray(response.skipped) ? response.skipped.length : 0;
+      setStatus(`Migration complete: ${installedCount} installed, ${skippedCount} skipped`);
+      await loadNativeAutomationData();
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to run native migration");
+    } finally {
+      setRunningNativeMigration(false);
+    }
+  };
+
   const getMarketplacePayloadError = (
     provider: string,
     payload: Record<string, string | undefined>
@@ -1907,6 +2314,16 @@ export const BusinessDashboard = () => {
     }
     if (providerKey === "zapier") {
       if (!payload.webhookUrl) return "Zapier webhook URL is required";
+      if (payload.retryAttempts) {
+        const retry = Number(payload.retryAttempts);
+        if (!Number.isFinite(retry) || retry < 1 || retry > 10) {
+          return "Zapier retry attempts must be between 1 and 10";
+        }
+      }
+      return null;
+    }
+    if (providerKey === "hubspot") {
+      if (!payload.accessToken) return "HubSpot private app token is required";
       return null;
     }
     if (providerKey === "amazon") {
@@ -2052,6 +2469,8 @@ export const BusinessDashboard = () => {
         setStatus(`${name} setup completed`);
       }
       if (
+        provider === "zapier" ||
+        provider === "hubspot" ||
         provider === "shopify" ||
         provider === "woocommerce" ||
         provider === "meta_ads" ||
@@ -2077,7 +2496,17 @@ export const BusinessDashboard = () => {
         setMarketplaceConfigByProvider((prev) => {
           const current = prev[provider] || {};
           const next = { ...prev };
-          if (provider === "shopify") {
+          if (provider === "zapier") {
+            next[provider] = {
+              ...current,
+              signingSecret: ""
+            };
+          } else if (provider === "hubspot") {
+            next[provider] = {
+              ...current,
+              accessToken: ""
+            };
+          } else if (provider === "shopify") {
             next[provider] = { ...current, accessToken: "" };
           } else if (provider === "woocommerce") {
             next[provider] = { ...current, consumerSecret: "" };
@@ -2410,6 +2839,49 @@ export const BusinessDashboard = () => {
       setDeletionScheduledAt(null);
     } catch (err: any) {
       setStatus(` ${err?.response?.data?.error || err?.message || "Failed to cancel deletion"}`);
+    }
+  };
+
+  const saveEmailTemplate = async () => {
+    if (!accessToken || !editingTemplate?.triggerEvent) return;
+    try {
+      setIsSavingTemplate(true);
+      const data = await apiRequest<{ template: EmailTemplate }>("/business/email-templates", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: editingTemplate
+      });
+      setEmailTemplates(prev => {
+        const index = prev.findIndex(t => t.triggerEvent === data.template.triggerEvent);
+        if (index >= 0) {
+          const updated = [...prev];
+          updated[index] = data.template;
+          return updated;
+        }
+        return [...prev, data.template];
+      });
+      setEditingTemplate(null);
+      setStatus(" Email template saved successfully");
+    } catch (err: any) {
+      setStatus(` Failed to save template: ${err?.response?.data?.error || err.message}`);
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const deleteEmailTemplate = async (id: string) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest(`/business/email-templates/${id}`, {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setEmailTemplates(prev => prev.filter(t => t.id !== id));
+      setStatus(" Email template deleted");
+    } catch (err: any) {
+      setStatus(` Failed to delete template: ${err?.response?.data?.error || err.message}`);
     }
   };
 
@@ -2970,29 +3442,33 @@ export const BusinessDashboard = () => {
     () => new Set((integrations || []).map((entry) => String(entry?.provider || "").trim().toLowerCase()).filter(Boolean)),
     [integrations]
   );
-  const marketplaceTemplatesForDisplay = useMemo(() => {
-    const byProvider = new Map<string, any>();
-    for (const template of integrationTemplates || []) {
-      const provider = String(template?.provider || "").trim().toLowerCase();
-      if (!provider) continue;
-      const normalized = { ...template, provider };
-      const existing = byProvider.get(provider);
-      if (!existing) {
-        byProvider.set(provider, normalized);
-        continue;
+  const marketplaceTemplatesForDisplay = useMemo(
+    () => {
+      const byProvider = new Map<string, any>();
+      for (const template of integrationTemplates || []) {
+        const provider = String(template?.provider || "").trim().toLowerCase();
+        if (!provider) continue;
+        if (NATIVE_REPLACED_MARKETPLACE_PROVIDERS.has(provider)) continue;
+        const normalized = { ...template, provider };
+        const existing = byProvider.get(provider);
+        if (!existing) {
+          byProvider.set(provider, normalized);
+          continue;
+        }
+        byProvider.set(provider, {
+          ...existing,
+          ...normalized,
+          name: existing?.name || normalized?.name || provider,
+          description: existing?.description || normalized?.description || "",
+          requested: Boolean(existing?.requested || normalized?.requested)
+        });
       }
-      byProvider.set(provider, {
-        ...existing,
-        ...normalized,
-        name: existing?.name || normalized?.name || provider,
-        description: existing?.description || normalized?.description || "",
-        requested: Boolean(existing?.requested || normalized?.requested)
-      });
-    }
-    return Array.from(byProvider.values()).sort((a, b) =>
-      String(a?.name || "").localeCompare(String(b?.name || ""))
-    );
-  }, [integrationTemplates]);
+      return Array.from(byProvider.values()).sort((a, b) =>
+        String(a?.name || "").localeCompare(String(b?.name || ""))
+      );
+    },
+    [integrationTemplates]
+  );
   const isShopifyMarketplaceConnected = useMemo(
     () =>
       marketplaceTemplatesForDisplay.some((template) => {
@@ -5351,6 +5827,7 @@ export const BusinessDashboard = () => {
                                     body: automationSettings
                                 });
                                 setStatus(" Automation settings saved");
+                                await loadNativeAutomationData();
                             } catch (err) {
                                 setStatus(" Failed to save settings");
                             } finally {
@@ -5364,6 +5841,289 @@ export const BusinessDashboard = () => {
                     </button>
                 </div>
 
+                <div className="bg-white border border-gray-200 rounded-xl p-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { key: "native", label: "Native Automation" },
+                      { key: "support", label: "Support Inbox" },
+                      { key: "legacy", label: "Legacy Templates" }
+                    ].map((tab) => {
+                      const isActive = automationSectionTab === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                          onClick={() => setAutomationSectionTab(tab.key as "native" | "support" | "legacy")}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {automationSectionTab === "native" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Native Workflows</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeWorkflows.length}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Templates</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeAutomationTemplates.length}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Runs (Recent)</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeWorkflowRuns.length}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">External Rails</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {(
+                            (nativeCapabilities?.externalRails?.payments?.length || 0) +
+                            (nativeCapabilities?.externalRails?.ads?.length || 0)
+                          ) || 0}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="card">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <h3 className="text-lg font-semibold text-gray-900">Migration Helper</h3>
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={runNativeMigration}
+                          disabled={runningNativeMigration || loadingNativeAutomation}
+                        >
+                          {runningNativeMigration ? "Migrating..." : "Run Migration"}
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Converts supported external automation/support setups into native Debby workflows.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div className="p-3 bg-gray-50 rounded border border-gray-200">
+                          <p className="font-semibold text-gray-800 mb-1">Connected Providers</p>
+                          <p className="text-gray-600">
+                            {(nativeMigrationPreview?.connectedProviders || []).length > 0
+                              ? nativeMigrationPreview.connectedProviders.join(", ")
+                              : "None detected"}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-gray-50 rounded border border-gray-200">
+                          <p className="font-semibold text-gray-800 mb-1">Pending Template Installs</p>
+                          <p className="text-gray-600">
+                            {(nativeMigrationPreview?.pendingTemplateKeys || []).length > 0
+                              ? nativeMigrationPreview.pendingTemplateKeys.join(", ")
+                              : "No pending migrations"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Native Templates</h3>
+                      {loadingNativeAutomation ? (
+                        <p className="text-sm text-gray-500">Loading native templates...</p>
+                      ) : nativeAutomationTemplates.length === 0 ? (
+                        <p className="text-sm text-gray-500">No templates available.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {nativeAutomationTemplates.map((template) => {
+                            const isInstalled = nativeWorkflows.some((workflow) =>
+                              String(workflow.description || "").toLowerCase().includes(template.key.toLowerCase()) ||
+                              String(workflow.name || "").toLowerCase() === template.name.toLowerCase()
+                            );
+                            return (
+                              <div key={template.key} className="p-3 bg-gray-50 rounded border border-gray-200">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="font-semibold text-gray-900">{template.name}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Trigger: {template.triggerEvent}</p>
+                                  </div>
+                                  <span className={`badge ${isInstalled ? "badge-success" : "badge-secondary"}`}>
+                                    {isInstalled ? "Installed" : "Available"}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-600 mt-2">{template.description}</p>
+                                <button
+                                  className="btn btn-sm btn-primary mt-3"
+                                  disabled={isInstalled || installingNativeTemplateKey === template.key}
+                                  onClick={() => installNativeAutomationTemplate(template.key)}
+                                >
+                                  {installingNativeTemplateKey === template.key ? "Installing..." : isInstalled ? "Installed" : "Install Template"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Native Workflows</h3>
+                      {nativeWorkflows.length === 0 ? (
+                        <p className="text-sm text-gray-500">No native workflows yet. Install a template to start.</p>
+                      ) : (
+                        <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[420px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                          <table className="table w-full min-w-[840px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap sm:[&_th]:text-xs sm:[&_td]:text-sm">
+                            <thead>
+                              <tr>
+                                <th>Name</th>
+                                <th>Trigger</th>
+                                <th>Version</th>
+                                <th>Status</th>
+                                <th>Updated</th>
+                                <th>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {nativeWorkflows.map((workflow) => (
+                                <tr key={workflow.id}>
+                                  <td className="font-medium text-gray-900">{workflow.name}</td>
+                                  <td className="text-gray-700">{workflow.triggerEvent}</td>
+                                  <td className="text-gray-700">v{workflow.currentVersion || 1}</td>
+                                  <td>
+                                    <span className={`badge ${workflow.enabled ? "badge-success" : "badge-warning"}`}>
+                                      {workflow.enabled ? "enabled" : "disabled"}
+                                    </span>
+                                  </td>
+                                  <td className="text-gray-600">{new Date(workflow.updatedAt).toLocaleString()}</td>
+                                  <td>
+                                    <button
+                                      className="btn btn-xs btn-primary"
+                                      onClick={() => runNativeWorkflow(workflow.id)}
+                                      disabled={runningNativeWorkflowId === workflow.id}
+                                    >
+                                      {runningNativeWorkflowId === workflow.id ? "Running..." : "Run"}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Execution Logs</h3>
+                      {nativeWorkflowRuns.length === 0 ? (
+                        <p className="text-sm text-gray-500">No runs yet.</p>
+                      ) : (
+                        <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[420px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                          <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap sm:[&_th]:text-xs sm:[&_td]:text-sm">
+                            <thead>
+                              <tr>
+                                <th>Workflow</th>
+                                <th>Trigger</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                                <th>Retry</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {nativeWorkflowRuns.map((run) => {
+                                const started = new Date(run.startedAt).getTime();
+                                const ended = new Date(run.completedAt).getTime();
+                                const durationSeconds =
+                                  Number.isFinite(started) && Number.isFinite(ended) && ended >= started
+                                    ? Math.round((ended - started) / 1000)
+                                    : 0;
+                                return (
+                                  <tr key={run.id}>
+                                    <td className="font-medium text-gray-900">{run.workflowName}</td>
+                                    <td className="text-gray-700">{run.triggerType}</td>
+                                    <td>
+                                      <span className={`badge ${run.status === "completed" ? "badge-success" : "badge-danger"}`}>
+                                        {run.status}
+                                      </span>
+                                    </td>
+                                    <td className="text-gray-600">{new Date(run.startedAt).toLocaleString()}</td>
+                                    <td className="text-gray-700">{durationSeconds}s</td>
+                                    <td>
+                                      {run.status === "failed" ? (
+                                        <button
+                                          className="btn btn-xs btn-warning"
+                                          onClick={() => retryNativeWorkflowRun(run)}
+                                          disabled={retryingNativeRunId === run.id}
+                                        >
+                                          {retryingNativeRunId === run.id ? "Retrying..." : "Retry"}
+                                        </button>
+                                      ) : (
+                                        <span className="text-xs text-gray-400">-</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {automationSectionTab === "support" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Total Tickets</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeSupportOverview?.summary?.total || 0}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Unresolved</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeSupportOverview?.summary?.unresolved || 0}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Avg First Response</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {nativeSupportOverview?.summary?.avgFirstResponseMinutes ?? "-"}m
+                        </p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p className="text-xs text-gray-500">Open Queue</p>
+                        <p className="text-2xl font-bold text-gray-900">{nativeSupportOverview?.queue?.length || 0}</p>
+                      </div>
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Support Inbox Tickets</h3>
+                      {nativeSupportTickets.length === 0 ? (
+                        <p className="text-sm text-gray-500">No support tickets yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {nativeSupportTickets.slice(0, 50).map((ticket) => (
+                            <div key={ticket.id} className="p-3 rounded border border-gray-200 bg-gray-50 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-900 truncate">{ticket.subject}</p>
+                                <p className="text-xs text-gray-600">
+                                  {ticket.category} • {ticket.priority} • {new Date(ticket.updatedAt).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={getStatusBadge(ticket.status)}>{ticket.status}</span>
+                                <button
+                                  className="btn btn-xs btn-primary"
+                                  onClick={() => loadNativeSupportTicketDetails(ticket.id)}
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {automationSectionTab === "legacy" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
                     {/* Feature Toggles */}
                     <div className="card lg:col-span-1">
@@ -5565,6 +6325,7 @@ export const BusinessDashboard = () => {
                         </div>
                     </div>
                 </div>
+                )}
               </div>
             )}
 
@@ -5896,6 +6657,130 @@ export const BusinessDashboard = () => {
                     <button className="btn btn-primary w-full" onClick={saveNotificationSettings}>
                       Save {notificationProvider.charAt(0).toUpperCase() + notificationProvider.slice(1)} Settings
                     </button>
+                  </div>
+                </Collapsible>
+
+                <Collapsible title="Storefront Email Automation Templates" defaultOpen={false}>
+                  <div className="space-y-6">
+                    <p className="text-gray-600 text-sm">
+                      Customize the automated emails sent to your customers. You can use variables like <code>{`{{customer_name}}`}</code>, <code>{`{{shop_name}}`}</code>, <code>{`{{order_id}}`}</code>, <code>{`{{total_amount}}`}</code>, and <code>{`{{rating_link}}`}</code>.
+                    </p>
+
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                      <h4 className="text-sm font-bold text-gray-800 mb-4">
+                        {editingTemplate?.id ? "Edit Custom Template" : "Add Custom Template Override"}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="label">Trigger Event</label>
+                            <div className="flex gap-2">
+                              <select 
+                                className="input flex-1" 
+                                value={editingTemplate?.triggerEvent || ""} 
+                                onChange={e => setEditingTemplate({...editingTemplate, triggerEvent: e.target.value as any})}
+                              >
+                                <option value="">Select Trigger...</option>
+                                <option value="order_receipt">Order Receipt (Confirmed Payment)</option>
+                                <option value="order_shipped">Order In-Transit / Shipped</option>
+                                <option value="order_delivered">Order Delivered (Confirmation)</option>
+                                <option value="abandoned_cart">Abandoned Cart Reminder</option>
+                              </select>
+                              {editingTemplate?.triggerEvent && defaultTemplates[editingTemplate.triggerEvent] && (
+                                <button 
+                                  className="btn btn-secondary btn-sm" 
+                                  title="Load default Debby template for this event"
+                                  onClick={() => {
+                                    const def = defaultTemplates[editingTemplate.triggerEvent!];
+                                    setEditingTemplate({
+                                      ...editingTemplate,
+                                      subject: def.subject,
+                                      htmlBody: def.htmlBody
+                                    });
+                                    setStatus(` Loaded default template for ${editingTemplate.triggerEvent}`);
+                                  }}
+                                >
+                                  Use Default
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        <div>
+                          <label className="label">Email Subject</label>
+                          <input 
+                            className="input" 
+                            placeholder="e.g. Your order from {{shop_name}} is ready!"
+                            value={editingTemplate?.subject || ""}
+                            onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="label">HTML Body</label>
+                          <textarea 
+                            className="input min-h-[150px] font-mono text-xs" 
+                            placeholder="<h1>Hello {{customer_name}}!</h1><p>Your order #{{order_id}} has been received...</p>"
+                            value={editingTemplate?.htmlBody || ""}
+                            onChange={e => setEditingTemplate({...editingTemplate, htmlBody: e.target.value})}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 mt-4">
+                        {editingTemplate && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingTemplate(null)}>Cancel</button>
+                        )}
+                        <button 
+                          className="btn btn-primary btn-sm" 
+                          disabled={isSavingTemplate || !editingTemplate?.triggerEvent || !editingTemplate?.subject || !editingTemplate?.htmlBody}
+                          onClick={saveEmailTemplate}
+                        >
+                          {isSavingTemplate ? "Saving..." : editingTemplate?.id ? "Update Template" : "Save Template"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-hidden">
+                      <h4 className="text-sm font-bold text-gray-800 mb-2">Email Automations & Status</h4>
+                      {loadingEmailTemplates ? (
+                        <p className="text-xs text-gray-500">Loading templates...</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {["order_receipt", "order_shipped", "order_delivered", "abandoned_cart"].map(event => {
+                            const customTpl = emailTemplates.find(t => t.triggerEvent === event);
+                            return (
+                              <div key={event} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg shadow-sm">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-bold text-gray-900">{event.replace("_", " ").toUpperCase()}</span>
+                                    {customTpl ? (
+                                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase">Custom Override</span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded uppercase">Debby Default</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {customTpl ? customTpl.subject : (defaultTemplates[event]?.subject || "Standard notification")}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  {customTpl ? (
+                                    <>
+                                      <button className="btn btn-xs btn-secondary" onClick={() => setEditingTemplate(customTpl)}>Edit</button>
+                                      <button className="btn btn-xs btn-danger" onClick={() => deleteEmailTemplate(customTpl.id)}>Delete</button>
+                                    </>
+                                  ) : (
+                                    <button 
+                                      className="btn btn-xs btn-primary" 
+                                      onClick={() => setEditingTemplate({ triggerEvent: event as any, ...defaultTemplates[event] })}
+                                    >
+                                      Customize
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </Collapsible>
 
@@ -6332,14 +7217,73 @@ export const BusinessDashboard = () => {
                                     </>
                                   )}
                                   {provider === "zapier" && (
-                                    <input
-                                      className="input text-sm"
-                                      placeholder="Zapier Catch Hook URL"
-                                      value={providerConfig.webhookUrl || ""}
-                                      onChange={(e) =>
-                                        updateMarketplaceConfig(provider, "webhookUrl", e.target.value)
-                                      }
-                                    />
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Zapier Catch Hook URL"
+                                        value={providerConfig.webhookUrl || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "webhookUrl", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Zapier Action Webhook URL (optional)"
+                                        value={providerConfig.actionWebhookUrl || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "actionWebhookUrl", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="Signing Secret (optional)"
+                                        value={providerConfig.signingSecret || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "signingSecret", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        placeholder="Retry attempts (1-10)"
+                                        value={providerConfig.retryAttempts || "3"}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "retryAttempts", e.target.value)
+                                        }
+                                      />
+                                    </>
+                                  )}
+                                  {provider === "hubspot" && (
+                                    <>
+                                      <input
+                                        className="input text-sm"
+                                        type="password"
+                                        placeholder="HubSpot Private App Token"
+                                        value={providerConfig.accessToken || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "accessToken", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Portal ID (optional)"
+                                        value={providerConfig.portalId || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "portalId", e.target.value)
+                                        }
+                                      />
+                                      <input
+                                        className="input text-sm"
+                                        placeholder="Default lifecycle stage (optional, e.g. customer)"
+                                        value={providerConfig.defaultLifecycleStage || ""}
+                                        onChange={(e) =>
+                                          updateMarketplaceConfig(provider, "defaultLifecycleStage", e.target.value)
+                                        }
+                                      />
+                                    </>
                                   )}
                                   {provider === "amazon" && (
                                     <>
@@ -6898,6 +7842,12 @@ export const BusinessDashboard = () => {
                                   {connectionSummary.customerId ? (
                                     <p><span className="font-semibold text-gray-700">Customer ID:</span> {connectionSummary.customerId}</p>
                                   ) : null}
+                                  {connectionSummary.portalId ? (
+                                    <p><span className="font-semibold text-gray-700">Portal ID:</span> {connectionSummary.portalId}</p>
+                                  ) : null}
+                                  {connectionSummary.defaultLifecycleStage ? (
+                                    <p><span className="font-semibold text-gray-700">Lifecycle:</span> {connectionSummary.defaultLifecycleStage}</p>
+                                  ) : null}
                                   {connectionSummary.realmId ? (
                                     <p><span className="font-semibold text-gray-700">Realm ID:</span> {connectionSummary.realmId}</p>
                                   ) : null}
@@ -6918,6 +7868,12 @@ export const BusinessDashboard = () => {
                                   ) : null}
                                   {connectionSummary.webhookUrl ? (
                                     <p className="truncate"><span className="font-semibold text-gray-700">Webhook:</span> {connectionSummary.webhookUrl}</p>
+                                  ) : null}
+                                  {connectionSummary.actionWebhookUrl ? (
+                                    <p className="truncate"><span className="font-semibold text-gray-700">Action Hook:</span> {connectionSummary.actionWebhookUrl}</p>
+                                  ) : null}
+                                  {connectionSummary.retryAttempts ? (
+                                    <p><span className="font-semibold text-gray-700">Retries:</span> {connectionSummary.retryAttempts}</p>
                                   ) : null}
                                   {template?.connectedAt ? (
                                     <p><span className="font-semibold text-gray-700">Connected:</span> {new Date(template.connectedAt).toLocaleString()}</p>
@@ -6986,6 +7942,7 @@ export const BusinessDashboard = () => {
                   </div>
                 </Collapsible>
 
+                {!NATIVE_REPLACED_MARKETPLACE_PROVIDERS.has("shopify") && (
                 <Collapsible title="Shopify Commerce Insights" defaultOpen={false}>
                   {!isShopifyMarketplaceConnected ? (
                     <p className="text-sm text-gray-500">
@@ -7087,6 +8044,7 @@ export const BusinessDashboard = () => {
                     </div>
                   )}
                 </Collapsible>
+                )}
                   </>
                 )}
 
@@ -12574,6 +13532,90 @@ export const BusinessDashboard = () => {
         </div>
       </Modal>
 
+      <Modal
+        isOpen={showNativeSupportTicketModal}
+        onClose={() => {
+          setShowNativeSupportTicketModal(false);
+          setSelectedNativeSupportTicket(null);
+          setNativeSupportReply("");
+        }}
+        title={selectedNativeSupportTicket?.subject || "Support Ticket"}
+        size="lg"
+      >
+        {selectedNativeSupportTicket ? (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={getStatusBadge(selectedNativeSupportTicket.status)}>
+                    {selectedNativeSupportTicket.status}
+                  </span>
+                  <span className="badge badge-secondary">{selectedNativeSupportTicket.priority}</span>
+                  <span className="badge badge-secondary">{selectedNativeSupportTicket.category}</span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Updated {new Date(selectedNativeSupportTicket.updatedAt).toLocaleString()}
+                </p>
+              </div>
+              <p className="text-sm text-gray-700 mt-2">{selectedNativeSupportTicket.description}</p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(["open", "in_progress", "resolved", "closed"] as Array<
+                "open" | "in_progress" | "resolved" | "closed"
+              >).map((statusKey) => (
+                <button
+                  key={statusKey}
+                  className={`btn btn-sm ${
+                    selectedNativeSupportTicket.status === statusKey ? "btn-primary" : "btn-secondary"
+                  }`}
+                  onClick={() => updateNativeSupportTicketStatus(selectedNativeSupportTicket.id, statusKey)}
+                  disabled={updatingNativeSupportStatus}
+                >
+                  {statusKey}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2 max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-white">
+              {(selectedNativeSupportTicket.messages || []).length === 0 ? (
+                <p className="text-sm text-gray-500">No messages yet.</p>
+              ) : (
+                (selectedNativeSupportTicket.messages || []).map((message: any) => (
+                  <div key={message.id} className="p-2 rounded bg-gray-50 border border-gray-100">
+                    <p className="text-xs text-gray-500">
+                      {String(message.senderType || "support")} • {new Date(message.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{message.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="label">Reply</label>
+              <textarea
+                className="input min-h-[96px]"
+                value={nativeSupportReply}
+                onChange={(e) => setNativeSupportReply(e.target.value)}
+                placeholder="Type your reply to the customer..."
+              />
+              <div className="flex justify-end">
+                <button
+                  className="btn btn-primary"
+                  onClick={sendNativeSupportReply}
+                  disabled={sendingNativeSupportReply || !nativeSupportReply.trim()}
+                >
+                  {sendingNativeSupportReply ? "Sending..." : "Send Reply"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Loading ticket...</p>
+        )}
+      </Modal>
+
       {/* Confirm Modal (replaces all confirm() calls) */}
       <ConfirmModal
         isOpen={showConfirmModal}
@@ -12586,7 +13628,6 @@ export const BusinessDashboard = () => {
     </div>
   );
 };
-
 
 
 
