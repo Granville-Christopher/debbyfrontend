@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FiChevronLeft, FiChevronRight, FiLogOut, FiMenu, FiX } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiMenu, FiX } from "react-icons/fi";
 
 interface SidebarProps {
   tabs: Array<{ id: string; label: string; icon: React.ReactNode }>;
@@ -12,6 +12,9 @@ interface SidebarProps {
   mobileMenuOpen?: boolean;
   onMobileMenuOpenChange?: (open: boolean) => void;
   showMobileToggleButton?: boolean;
+  showLogout?: boolean;
+  compactOpenWidthOnMobileMd?: boolean;
+  compactLinkDensity?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,15 +28,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileMenuOpen: mobileMenuOpenProp,
   onMobileMenuOpenChange,
   showMobileToggleButton = true,
+  showLogout = true,
+  compactOpenWidthOnMobileMd = false,
+  compactLinkDensity = false,
 }) => {
   const [isSmall, setIsSmall] = useState(window.innerWidth < 640);
+  const [isBelowLg, setIsBelowLg] = useState(window.innerWidth < 1024);
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false);
   const isMobileHiddenMode = hideOnSmallScreens && isSmall;
   const isMobileMenuOpen = mobileMenuOpenProp ?? internalMobileMenuOpen;
+  const isCompactOpenWidth = compactOpenWidthOnMobileMd && isBelowLg;
+  const expandedSidebarWidth = isCompactOpenWidth ? 180 : 180;
+  const expandedToggleLeft = isCompactOpenWidth ? "168px" : "168px";
 
   useEffect(() => {
     const handleResize = () => {
       setIsSmall(window.innerWidth < 640);
+      setIsBelowLg(window.innerWidth < 1024);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -45,8 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       root.style.setProperty("--sidebar-width", "0px");
       return;
     }
-    root.style.setProperty("--sidebar-width", isCollapsed ? (isSmall ? "40px" : "80px") : "280px");
-  }, [isCollapsed, isSmall, isMobileHiddenMode]);
+    root.style.setProperty(
+      "--sidebar-width",
+      isCollapsed ? (isSmall ? "40px" : "80px") : `${expandedSidebarWidth}px`
+    );
+  }, [isCollapsed, isSmall, isMobileHiddenMode, expandedSidebarWidth]);
 
   useEffect(() => {
     if (!isSmall) {
@@ -88,8 +102,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={handleToggle}
           className="fixed z-30 p-2.5 bg-white/80 backdrop-blur-xl shadow-lg shadow-gray-200/50 rounded-full transition-all duration-300 hover:bg-white hover:shadow-xl hover:scale-105"
           style={{
-            left: isMobileHiddenMode ? "12px" : isCollapsed ? (isSmall ? "28px" : "68px") : "268px",
-            top: "88px",
+            left: isMobileHiddenMode ? "12px" : isCollapsed ? (isSmall ? "28px" : "68px") : expandedToggleLeft,
+            top: "76px",
           }}
           aria-label={
             isMobileHiddenMode
@@ -119,22 +133,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           aria-label="Close sidebar overlay"
           onClick={closeMobileMenu}
-          className="fixed inset-0 top-16 z-30 bg-black/30"
+          className="fixed inset-0 top-16 z-30 bg-black/30 transition-opacity duration-500"
         />
       )}
 
       <div
-        className={`bg-white/70 backdrop-blur-2xl fixed left-0 transition-all duration-300 shadow-2xl shadow-gray-300/30 ${
+        className={`bg-white/70 backdrop-blur-2xl fixed left-0 transition-all duration-500 ease-out shadow-2xl shadow-gray-300/30 ${
           isMobileHiddenMode
-            ? `z-40 w-72 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`
-            : `${isCollapsed ? "w-10 sm:w-20" : "w-72"} z-10`
+            ? `z-40 ${isCompactOpenWidth ? "w-[180px]" : "w-72"} ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`
+            : `${isCollapsed ? "w-10 sm:w-20" : isCompactOpenWidth ? "w-[180px] lg:w-72" : "w-[180px]"} z-10`
         }`}
         style={{ top: "64px", height: "calc(100vh - 64px)" }}
       >
         <div className="flex flex-col h-full">
           {/* Tabs */}
           <nav className="flex-1 p-1 overflow-y-auto">
-            <div className="space-y-2">
+            <div className={compactLinkDensity ? "space-y-1" : "space-y-2"}>
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -142,7 +156,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onTabChange(tab.id);
                     closeMobileMenu();
                   }}
-                  className={`w-full flex items-center ${isCollapsed && !isMobileHiddenMode ? "justify-center" : "gap-3"} px-4 py-3 rounded-xl transition-all duration-300 ${
+                  className={`w-full flex items-center ${isCollapsed && !isMobileHiddenMode ? "justify-center" : "gap-3"} px-4 ${compactLinkDensity ? "py-2.5" : "py-3"} rounded-xl transition-all duration-300 ${
                     activeTab === tab.id
                       ? "bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-600 font-semibold shadow-lg shadow-blue-200/30"
                       : "text-gray-600 hover:bg-white/80 hover:shadow-md"
@@ -153,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {tab.icon}
                   </span>
                   {(!isCollapsed || isMobileHiddenMode) && (
-                    <span className="capitalize truncate">
+                    <span className={`capitalize truncate ${compactLinkDensity ? "text-sm" : ""}`}>
                       {tab.label.replace("-", " ")}
                     </span>
                   )}
@@ -162,23 +176,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </nav>
 
-          {/* Footer with Logout */}
-          <div className="p-1">
-            <button
-              type="button"
-              onClick={() => {
-                closeMobileMenu();
-                onLogout();
-              }}
-              className={`w-full flex items-center ${isCollapsed && !isMobileHiddenMode ? "justify-center" : "gap-3"} px-4 py-3 rounded-xl transition-all duration-300 bg-gradient-to-r from-red-500 to-rose-500 text-white hover:from-red-600 hover:to-rose-600 shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 hover:-translate-y-0.5`}
-              title={isCollapsed && !isMobileHiddenMode ? "Logout" : undefined}
-            >
-              <span className="text-lg flex-shrink-0 flex items-center justify-center">
-                <FiLogOut />
-              </span>
-              {(!isCollapsed || isMobileHiddenMode) && <span className="font-semibold">Logout</span>}
-            </button>
-          </div>
+          {showLogout && (
+            <div className="p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  closeMobileMenu();
+                  onLogout();
+                }}
+                className={`w-full flex items-center ${isCollapsed && !isMobileHiddenMode ? "justify-center" : "gap-3"} px-4 py-3 rounded-xl transition-all duration-300 bg-gradient-to-r from-red-500 to-rose-500 text-white hover:from-red-600 hover:to-rose-600 shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 hover:-translate-y-0.5`}
+                title={isCollapsed && !isMobileHiddenMode ? "Logout" : undefined}
+              >
+                <span className="text-sm font-semibold">Logout</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>

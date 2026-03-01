@@ -46,6 +46,9 @@ const PublicShop = lazy(() =>
 const PitchDeck = lazy(() =>
   import("./pages/PitchDeck").then((module) => ({ default: module.PitchDeck }))
 );
+const BusinessHome = lazy(() =>
+  import("./pages/BusinessHome").then((module) => ({ default: module.BusinessHome }))
+);
 
 const HomeRedirect = () => {
   const { role, isAuthenticated, loading } = useAuth();
@@ -95,6 +98,7 @@ export const App = () => {
         <Route path="/solutions" element={<Solutions />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/pitch-deck" element={<PitchDeck />} />
+        <Route path="/business-home" element={<BusinessHome />} />
         <Route path="/shop/:slug" element={<PublicShop />} />
         <Route path="/api/oauth/:provider/callback" element={<OAuthCallback />} />
         <Route

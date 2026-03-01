@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import {
+  FiArrowUp,
   FiCreditCard,
   FiHeart,
   FiLogOut,
@@ -10,7 +11,9 @@ import {
   FiMinus,
   FiPlus,
   FiRefreshCw,
+  FiCopy,
   FiSearch,
+  FiSliders,
   FiShoppingCart,
   FiTrash2,
   FiUser,
@@ -56,6 +59,7 @@ type ShopResponse = {
     heroImageUrls?: string[] | null;
     heroVideoUrl?: string | null;
     themeColor?: string | null;
+    metadata?: { titleFont?: string | null } | null;
     sellerWhatsApp?: string | null;
     businessMode?: "own" | "dropship" | "hybrid";
     checkoutMode?: "whatsapp_only" | "card_only" | "hybrid";
@@ -139,6 +143,15 @@ type OrderPaymentStatusResponse = {
       email?: string | null;
       phone?: string | null;
     } | null;
+    returns?: Array<{
+      id: string;
+      status: string;
+      reason: string;
+      note?: string | null;
+      requestedAt?: string | null;
+      updatedAt?: string | null;
+      resolutionNote?: string | null;
+    }>;
   };
   payment: {
     id: string;
@@ -190,6 +203,15 @@ type ShopCustomerAccessResponse = {
       unitPrice: number;
       totalPrice: number;
       metadata?: any;
+    }>;
+    returns?: Array<{
+      id: string;
+      status: string;
+      reason: string;
+      note?: string | null;
+      requestedAt?: string | null;
+      updatedAt?: string | null;
+      resolutionNote?: string | null;
     }>;
   }>;
 };
@@ -248,6 +270,24 @@ type ShopReturnRequestResponse = {
   orderNumber: string;
 };
 
+const deterministicHash = (value: string) => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+};
+
+const getDeterministicSubset = <T,>(items: T[], count: number, seed: string) => {
+  if (!Array.isArray(items) || items.length === 0 || count <= 0) return [] as T[];
+  const keyed = items.map((item, index) => {
+    const score = deterministicHash(`${seed}:${index}`);
+    return { item, score };
+  });
+  keyed.sort((a, b) => a.score - b.score);
+  return keyed.slice(0, count).map((entry) => entry.item);
+};
+
 export const PublicShop = () => {
   const { slug } = useParams();
   const location = useLocation();
@@ -259,6 +299,7 @@ export const PublicShop = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "name">("featured");
   const [selectedProduct, setSelectedProduct] = useState<ShopProduct | null>(null);
+  const [showProductPanel, setShowProductPanel] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedColor, setSelectedColor] = useState("");
@@ -269,6 +310,8 @@ export const PublicShop = () => {
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [isHeroCompact, setIsHeroCompact] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [showStoreMenu, setShowStoreMenu] = useState(false);
   const [storeMenuTab, setStoreMenuTab] = useState<"orders" | "account">("orders");
@@ -314,6 +357,8 @@ export const PublicShop = () => {
   const [storefrontSessionId, setStorefrontSessionId] = useState("");
   const [storefrontAttribution, setStorefrontAttribution] = useState<StorefrontAttribution | null>(null);
   const trackedPageViewRef = useRef<string>("");
+  const productPanelCloseTimerRef = useRef<number | null>(null);
+  const productPanelAnimationFrameRef = useRef<number | null>(null);
   const heroVideoUrl = String(shop?.heroVideoUrl || "").trim();
   const heroImageUrls = useMemo(() => {
     const direct = Array.isArray(shop?.heroImageUrls)
@@ -324,6 +369,7 @@ export const PublicShop = () => {
     return fallbackBanner ? [fallbackBanner] : [];
   }, [shop?.heroImageUrls, shop?.bannerUrl]);
   const hasHeroCarousel = !heroVideoUrl && heroImageUrls.length > 1;
+  const storefrontThemeColor = String(shop?.themeColor || "").trim();
 
   const createStorefrontSessionId = () =>
     `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -688,7 +734,9 @@ export const PublicShop = () => {
         const y = window.scrollY || 0;
         const threshold = Math.max(0, heroCollapseOffset - 2);
         const shouldCompact = y >= threshold;
+        const shouldShowBackToTop = y >= 180;
         setIsHeroCompact((prev) => (prev === shouldCompact ? prev : shouldCompact));
+        setShowBackToTop((prev) => (prev === shouldShowBackToTop ? prev : shouldShowBackToTop));
         rafId = null;
       });
     };
@@ -747,7 +795,8 @@ export const PublicShop = () => {
         currency: order.currency,
         createdAt: order.createdAt,
         paidAt: order.paidAt,
-        items: order.items
+        items: order.items,
+        returns: order.returns || []
       },
       payment: order.payment
     });
@@ -768,6 +817,32 @@ export const PublicShop = () => {
     setAccessForm({ email: "", phone: "" });
     setCheckoutEntryMode("choose");
     setAccessNotice({ tone: "success", message: "Logged out from order access." });
+  };
+
+  const copyTrackingId = async (trackingId: string) => {
+    const value = String(trackingId || "").trim();
+    if (!value) {
+      setNotice("Tracking ID is not available yet.");
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const tempInput = document.createElement("textarea");
+        tempInput.value = value;
+        tempInput.style.position = "fixed";
+        tempInput.style.left = "-9999px";
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand("copy");
+        document.body.removeChild(tempInput);
+      }
+      setNotice(`Tracking ID copied: ${value}`);
+    } catch {
+      setNotice("Failed to copy tracking ID. Please copy manually.");
+    }
   };
 
   const openReturnRequestModal = () => {
@@ -943,6 +1018,10 @@ export const PublicShop = () => {
 
   const categories = shop?.categories || [];
   const products = shop?.products || [];
+  const inStockProducts = useMemo(
+    () => products.filter((product) => Number(product.inventory || 0) > 0),
+    [products]
+  );
   const allowedCheckoutMethods =
     checkoutOptions?.allowedCheckoutMethods && checkoutOptions.allowedCheckoutMethods.length > 0
       ? checkoutOptions.allowedCheckoutMethods
@@ -965,17 +1044,17 @@ export const PublicShop = () => {
     for (const category of categories) {
       counts[category.id] = 0;
     }
-    for (const product of products) {
+    for (const product of inStockProducts) {
       if (product.categoryId && counts[product.categoryId] !== undefined) {
         counts[product.categoryId] += 1;
       }
     }
     return counts;
-  }, [categories, products]);
+  }, [categories, inStockProducts]);
 
   const filteredProducts = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-    let result = [...products];
+    let result = [...inStockProducts];
 
     if (activeCategoryId !== "all") {
       result = result.filter((product) => product.categoryId === activeCategoryId);
@@ -1009,7 +1088,56 @@ export const PublicShop = () => {
     }
 
     return result;
-  }, [products, activeCategoryId, searchTerm, sortBy, categoryNameById, showFavoritesOnly, favoriteProductIds]);
+  }, [inStockProducts, activeCategoryId, searchTerm, sortBy, categoryNameById, showFavoritesOnly, favoriteProductIds]);
+
+  const recommendedDisplayProducts = useMemo(() => {
+    const maxItems = 4;
+    const recommendedInStock = recommendedProducts
+      .filter((product) => Number(product.inventory || 0) > 0)
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+    const popularRanked = recommendedInStock.filter((product) =>
+      Array.isArray(product.reasons)
+        ? product.reasons.some((reason) => String(reason).toLowerCase().includes("popular"))
+        : false
+    );
+
+    const selected: ShopRecommendationProduct[] = [];
+    const usedIds = new Set<string>();
+    const pushUnique = (product: ShopRecommendationProduct) => {
+      if (!product?.id || usedIds.has(product.id)) return;
+      selected.push(product);
+      usedIds.add(product.id);
+    };
+
+    for (const product of popularRanked) {
+      if (selected.length >= maxItems) break;
+      pushUnique(product);
+    }
+
+    if (selected.length < maxItems) {
+      const fallbackPool =
+        selected.length > 0
+          ? inStockProducts.filter((product) => !usedIds.has(product.id))
+          : inStockProducts;
+      const daySeed = new Date().toISOString().slice(0, 10);
+      const seed = `${shop?.id || slug || "store"}:${daySeed}`;
+      const fallback = getDeterministicSubset(
+        fallbackPool,
+        maxItems - selected.length,
+        seed
+      ).map((product) => ({
+        ...product,
+        score: 0,
+        reasons: ["fallback"]
+      }));
+      for (const product of fallback) {
+        if (selected.length >= maxItems) break;
+        pushUnique(product);
+      }
+    }
+
+    return selected.slice(0, maxItems);
+  }, [recommendedProducts, inStockProducts, shop?.id, slug]);
 
   const activeCategoryName =
     activeCategoryId === "all"
@@ -1038,6 +1166,9 @@ export const PublicShop = () => {
     if (
       normalized === "return_requested" ||
       normalized === "return_in_progress" ||
+      normalized === "requested" ||
+      normalized === "approved" ||
+      normalized === "received" ||
       normalized === "refunded" ||
       normalized === "exchanged"
     ) {
@@ -1058,6 +1189,21 @@ export const PublicShop = () => {
   const canRequestReturn = (status?: string | null) => {
     const normalized = String(status || "").toLowerCase();
     return ["paid", "completed", "delivered", "in_transit", "supplier_sent"].includes(normalized);
+  };
+
+  const getLatestReturnRequest = (
+    returns: Array<{
+      id: string;
+      status: string;
+      updatedAt?: string | null;
+      requestedAt?: string | null;
+    }> = []
+  ) => {
+    if (!Array.isArray(returns) || returns.length === 0) return null;
+    const sorted = [...returns].sort((a, b) =>
+      String(b.updatedAt || b.requestedAt || "").localeCompare(String(a.updatedAt || a.requestedAt || ""))
+    );
+    return sorted[0] || null;
   };
 
   const isFavorited = (productId: string) => favoriteProductIds.includes(productId);
@@ -1127,7 +1273,31 @@ export const PublicShop = () => {
     }).catch(() => undefined);
   };
 
+  const closeProductDetails = () => {
+    setShowProductPanel(false);
+    if (productPanelAnimationFrameRef.current) {
+      window.cancelAnimationFrame(productPanelAnimationFrameRef.current);
+      productPanelAnimationFrameRef.current = null;
+    }
+    if (productPanelCloseTimerRef.current) {
+      window.clearTimeout(productPanelCloseTimerRef.current);
+    }
+    productPanelCloseTimerRef.current = window.setTimeout(() => {
+      setSelectedProduct(null);
+      productPanelCloseTimerRef.current = null;
+    }, 260);
+  };
+
   const openProductDetails = (product: ShopProduct) => {
+    if (productPanelCloseTimerRef.current) {
+      window.clearTimeout(productPanelCloseTimerRef.current);
+      productPanelCloseTimerRef.current = null;
+    }
+    if (productPanelAnimationFrameRef.current) {
+      window.cancelAnimationFrame(productPanelAnimationFrameRef.current);
+      productPanelAnimationFrameRef.current = null;
+    }
+    setShowProductPanel(false);
     setSelectedProduct(product);
     const images = (product.metadata?.imageUrls || []).filter(Boolean);
     setSelectedImage(images[0] || product.imageUrl || null);
@@ -1136,12 +1306,38 @@ export const PublicShop = () => {
     setSelectedTexture("");
     setSelectedLength("");
     setSelectedQuantity(1);
+    productPanelAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      setShowProductPanel(true);
+      productPanelAnimationFrameRef.current = null;
+    });
     trackStorefrontEvent("view_product", {
       productId: product.id,
       value: Number(product.price || 0),
       currency: product.currency
     }).catch(() => undefined);
   };
+
+  useEffect(() => {
+    return () => {
+      if (productPanelCloseTimerRef.current) {
+        window.clearTimeout(productPanelCloseTimerRef.current);
+      }
+      if (productPanelAnimationFrameRef.current) {
+        window.cancelAnimationFrame(productPanelAnimationFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeProductDetails();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedProduct]);
 
   const updateCartItemQuantity = (itemId: string, nextQuantity: number) => {
     if (nextQuantity <= 0) {
@@ -1188,6 +1384,7 @@ export const PublicShop = () => {
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCurrency = cartItems[0]?.currency || "USD";
+  const favoriteCount = favoriteProductIds.length;
 
   const getSelectionText = (selections: CartItem["selections"]) => {
     const parts: string[] = [];
@@ -1483,7 +1680,7 @@ export const PublicShop = () => {
       texture: selectedTexture || undefined,
       length: selectedLength || undefined
     }, selectedQuantity);
-    setSelectedProduct(null);
+    closeProductDetails();
   };
 
   if (loading) {
@@ -1521,7 +1718,7 @@ export const PublicShop = () => {
             <div className="min-w-0">
               <h1
                 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight truncate"
-                style={{ fontFamily: '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
+                style={{ fontFamily: shop.metadata?.titleFont || '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
               >
                 {shop.name}
               </h1>
@@ -1531,7 +1728,7 @@ export const PublicShop = () => {
             </div>
             <div className="flex items-center gap-2">
               <button
-                className={`h-8 w-8 sm:h-9 sm:w-9 rounded-lg border text-[11px] sm:text-xs font-semibold flex items-center justify-center bg-white/95 backdrop-blur ${
+                className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg border text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 bg-white/95 backdrop-blur ${
                   showFavoritesOnly
                     ? "border-rose-300 text-rose-700"
                     : "border-slate-200 text-slate-700"
@@ -1540,6 +1737,7 @@ export const PublicShop = () => {
                 aria-label="Favorites"
               >
                 <FiHeart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${showFavoritesOnly ? "fill-current" : ""}`} />
+                <span>{favoriteCount}</span>
               </button>
               <button
                 className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg border border-slate-200 text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 bg-white/95 backdrop-blur text-slate-700"
@@ -1646,7 +1844,7 @@ export const PublicShop = () => {
                   onClick={() => setShowFavoritesOnly((prev) => !prev)}
                 >
                   <FiHeart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${showFavoritesOnly ? "fill-current" : ""}`} />
-                  <span className="hidden sm:inline">{showFavoritesOnly ? "Favorites On" : "Favorites"}</span>
+                  <span>Favorites ({favoriteCount})</span>
                 </button>
                 <button
                   className="h-9 sm:h-10 px-3 sm:px-3.5 rounded-lg border border-slate-200 text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur text-slate-700"
@@ -1683,7 +1881,7 @@ export const PublicShop = () => {
                   <div>
                     <h1
                       className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight"
-                      style={{ fontFamily: '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
+                      style={{ fontFamily: shop.metadata?.titleFont || '"Playfair Display","Bodoni Moda","Times New Roman",serif' }}
                     >
                       {shop.name}
                     </h1>
@@ -1816,7 +2014,8 @@ export const PublicShop = () => {
                               currency: order.currency,
                               createdAt: order.createdAt,
                               paidAt: order.paidAt,
-                              items: order.items
+                              items: order.items,
+                              returns: order.returns || []
                             },
                             payment: order.payment
                           });
@@ -1850,6 +2049,7 @@ export const PublicShop = () => {
                             {formatPrice(order.totalAmount, order.currency)}
                           </span>
                         </p>
+                        <p className="text-xs text-slate-500 mt-1">Tracking ID: {order.orderNumber}</p>
                       </button>
                     ))}
                   </div>
@@ -1893,8 +2093,70 @@ export const PublicShop = () => {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 md:p-5 space-y-3 md:space-y-4">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-2xl border shadow-sm p-2 sm:p-4 md:p-5 space-y-2 sm:space-y-3 md:space-y-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_220px] gap-2 sm:gap-3">
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none text-slate-400 w-4 h-4" />
+              <input
+                className="input pl-10 text-[11px] sm:text-sm h-9 sm:h-10"
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              className={`sm:hidden h-9 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center gap-1.5 ${
+                showMobileFilters
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-700"
+              }`}
+              onClick={() => setShowMobileFilters((prev) => !prev)}
+              aria-label="Toggle filters"
+            >
+              <FiSliders className="w-3.5 h-3.5" />
+              Filters
+            </button>
+            <select
+              className="hidden sm:block input text-[11px] sm:text-sm h-9 sm:h-10"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "featured" | "price-asc" | "price-desc" | "name")}
+              aria-label="Sort products"
+            >
+              <option value="featured">Featured</option>
+              <option value="price-asc">Price: Low-High</option>
+              <option value="price-desc">Price: High-Low</option>
+              <option value="name">Name: A-Z</option>
+            </select>
+          </div>
+
+          <div className={`${showMobileFilters ? "grid" : "hidden"} sm:hidden grid-cols-2 gap-2`}>
+            <select
+              className="input text-[11px] h-9"
+              value={activeCategoryId}
+              onChange={(e) => setActiveCategoryId(e.target.value)}
+              aria-label="Filter by category"
+            >
+              <option value="all">All Categories ({inStockProducts.length})</option>
+              {shop.categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name} ({productsByCategory[category.id] || 0})
+                </option>
+              ))}
+            </select>
+            <select
+              className="input text-[11px] h-9"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "featured" | "price-asc" | "price-desc" | "name")}
+              aria-label="Sort products"
+            >
+              <option value="featured">Featured</option>
+              <option value="price-asc">Low-High</option>
+              <option value="price-desc">High-Low</option>
+              <option value="name">A-Z</option>
+            </select>
+          </div>
+
+          <div className="hidden sm:block overflow-x-auto pb-1">
             <div className="inline-flex min-w-full gap-2">
               <button
                 className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold border transition-all whitespace-nowrap ${
@@ -1905,19 +2167,21 @@ export const PublicShop = () => {
                 onClick={() => setActiveCategoryId("all")}
               >
                 All Products
-                <span className="ml-1.5 text-[10px] sm:text-[11px] opacity-80">{shop.products.length}</span>
+                <span className="ml-1.5 text-[10px] sm:text-[11px] opacity-80">{inStockProducts.length}</span>
               </button>
               {shop.categories.map((category) => (
                 <button
                   key={category.id}
                   className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold border transition-all whitespace-nowrap ${
                     activeCategoryId === category.id
-                      ? "text-white border-transparent"
+                      ? storefrontThemeColor
+                        ? "text-white border-transparent"
+                        : "bg-slate-900 text-white border-slate-900"
                       : "bg-white text-slate-700 border-slate-200 hover:border-slate-400"
                   }`}
                   style={
-                    activeCategoryId === category.id
-                      ? { backgroundColor: shop.themeColor || "#1f2937" }
+                    activeCategoryId === category.id && storefrontThemeColor
+                      ? { backgroundColor: storefrontThemeColor }
                       : undefined
                   }
                   onClick={() => setActiveCategoryId(category.id)}
@@ -1928,50 +2192,27 @@ export const PublicShop = () => {
               ))}
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-3">
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                className="input pl-10 text-sm h-10"
-                placeholder="Search products, type, or category..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <select
-              className="input text-sm h-10"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as "featured" | "price-asc" | "price-desc" | "name")}
-            >
-              <option value="featured">Sort: Featured</option>
-              <option value="price-asc">Price: Low to High</option>
-              <option value="price-desc">Price: High to Low</option>
-              <option value="name">Name: A to Z</option>
-            </select>
-          </div>
-
         </div>
 
-        {recommendedProducts.length > 0 && (
+        {recommendedDisplayProducts.length > 0 && (
           <div className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 md:p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-slate-900">Recommended For You</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Personalized picks based on this storefront and your browsing.
+                  Top picks based on what shoppers buy most.
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-              {recommendedProducts.slice(0, 8).map((product) => {
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5">
+              {recommendedDisplayProducts.map((product) => {
                 const coverImage =
                   (product.metadata?.imageUrls || []).find((url) => !!url) || product.imageUrl || null;
                 return (
                   <button
                     key={`recommended-${product.id}`}
                     type="button"
-                    className="text-left border rounded-xl overflow-hidden hover:border-slate-400 transition-colors bg-white"
+                    className="text-left border rounded-lg overflow-hidden hover:border-slate-400 transition-colors bg-white"
                     onClick={() =>
                       openProductDetails({
                         id: product.id,
@@ -1986,22 +2227,26 @@ export const PublicShop = () => {
                       })
                     }
                   >
-                    {coverImage ? (
-                      <img
-                        src={coverImage}
-                        alt={product.name}
-                        className="w-full h-24 sm:h-28 object-contain bg-slate-50 p-1"
-                      />
-                    ) : (
-                      <div className="w-full h-24 sm:h-28 bg-slate-100 flex items-center justify-center text-[11px] text-slate-500">
-                        No image
-                      </div>
-                    )}
-                    <div className="px-2.5 py-2">
-                      <p className="text-[11px] sm:text-xs font-semibold text-slate-900 line-clamp-2">
+                    <div className="p-1.5 pb-0">
+                      {coverImage ? (
+                        <div className="w-full h-16 sm:h-20 rounded-md overflow-hidden border border-slate-100 bg-slate-50">
+                          <img
+                            src={coverImage}
+                            alt={product.name}
+                            className="w-full h-full object-contain p-1 rounded-md"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-full h-16 sm:h-20 bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 rounded-md border border-slate-200 overflow-hidden">
+                          No image
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+                      <p className="text-[10px] sm:text-xs font-semibold text-slate-900 line-clamp-2">
                         {product.name}
                       </p>
-                      <p className="text-[11px] sm:text-xs text-slate-600 mt-1">
+                      <p className="text-[10px] sm:text-xs text-slate-600 mt-0.5">
                         {formatPrice(product.price, product.currency)}
                       </p>
                     </div>
@@ -2041,49 +2286,39 @@ export const PublicShop = () => {
             {filteredProducts.map((product) => {
               const coverImage =
                 (product.metadata?.imageUrls || []).find((url) => !!url) || product.imageUrl || null;
-              const productCategory = categoryNameById.get(product.categoryId || "");
               return (
                 <div
                   key={product.id}
                   className="bg-white rounded-2xl overflow-hidden border shadow-sm hover:shadow-lg transition-all"
                 >
-                  {coverImage ? (
-                    <img
-                      src={coverImage}
-                      alt={product.name}
-                      className="w-full h-32 sm:h-36 md:h-40 object-contain bg-slate-50 p-1"
-                    />
-                  ) : (
-                    <div className="w-full h-32 sm:h-36 md:h-40 bg-slate-100 flex items-center justify-center text-slate-400 text-xs sm:text-sm text-center px-2">
-                      No product image
+                  <div className="relative">
+                    <div className="px-2 pt-2">
+                      {coverImage ? (
+                        <div className="w-full h-32 sm:h-36 md:h-40 rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                          <img
+                            src={coverImage}
+                            alt={product.name}
+                            className="w-full h-full object-contain p-1 rounded-xl"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-full h-32 sm:h-36 md:h-40 bg-slate-100 flex items-center justify-center text-slate-400 text-xs sm:text-sm text-center px-2 rounded-xl border border-slate-200 overflow-hidden">
+                          No product image
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <span
+                      className={`absolute top-2 right-2 text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full shadow-sm ${
+                        product.inventory > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                      }`}
+                    >
+                      {product.inventory > 0 ? `${product.inventory} in stock` : "Out of stock"}
+                    </span>
+                  </div>
                   <div className="p-2.5 sm:p-3 md:p-4">
-                    <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-2">
-                      {productCategory && (
-                        <span className="text-[10px] sm:text-xs px-2 py-1 bg-slate-100 rounded-full text-slate-600">
-                          {productCategory}
-                        </span>
-                      )}
-                      {product.metadata?.productType && (
-                        <span className="text-[10px] sm:text-xs px-2 py-1 bg-blue-50 rounded-full text-blue-700">
-                          {product.metadata.productType}
-                        </span>
-                      )}
-                    </div>
                     <h3 className="font-semibold text-slate-900 text-xs sm:text-sm md:text-base line-clamp-2">{product.name}</h3>
-                    {product.description && (
-                      <p className="text-[11px] sm:text-xs md:text-sm text-slate-600 mt-1 line-clamp-2">{product.description}</p>
-                    )}
-                    <div className="mt-3 sm:mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="mt-3 sm:mt-4 flex items-center justify-between gap-2">
                       <span className="font-bold text-xs sm:text-sm md:text-base text-slate-900">{formatPrice(product.price, product.currency)}</span>
-                      <span
-                        className={`text-[10px] sm:text-xs font-semibold px-2 py-1 rounded-full w-fit ${
-                          product.inventory > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                        }`}
-                      >
-                        {product.inventory > 0 ? `${product.inventory} in stock` : "Out of stock"}
-                      </span>
                     </div>
                     <div className="mt-3 sm:mt-4 grid grid-cols-[1fr_auto] gap-2">
                       <button
@@ -2113,14 +2348,37 @@ export const PublicShop = () => {
         )}
       </div>
 
-      {showStoreMenu && (
-        <div className="fixed inset-0 z-50">
+      {storefrontThemeColor && (
+        <button
+          className={`fixed bottom-4 right-3 sm:bottom-6 sm:right-5 z-[120] h-10 w-10 sm:h-11 sm:w-11 rounded-full text-white shadow-lg border border-white/20 flex items-center justify-center transition-all duration-200 ${
+            showBackToTop ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"
+          }`}
+          style={{ backgroundColor: storefrontThemeColor }}
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label="Back to top"
+          title="Back to top"
+        >
+          <FiArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+      )}
+
+      <div
+        className={`fixed inset-0 z-[130] isolate ${
+          showStoreMenu ? "pointer-events-auto" : "pointer-events-none"
+        }`}
+      >
           <button
-            className="absolute inset-0 bg-black/45"
+            className={`absolute inset-0 bg-black/55 ${
+              showStoreMenu ? "opacity-100" : "opacity-0"
+            }`}
             onClick={() => setShowStoreMenu(false)}
             aria-label="Close menu overlay"
           />
-          <aside className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col">
+          <aside
+            className={`absolute right-0 top-0 z-10 h-full w-full max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform duration-500 ease-out will-change-transform ${
+              showStoreMenu ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
             <div className="px-4 sm:px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-slate-500">Store Menu</p>
@@ -2250,6 +2508,7 @@ export const PublicShop = () => {
                                     {formatPrice(order.totalAmount, order.currency)}
                                   </span>
                                 </p>
+                                <p className="text-xs text-slate-500 mt-1">Tracking ID: {order.orderNumber}</p>
                               </button>
                             ))}
                           </div>
@@ -2293,7 +2552,16 @@ export const PublicShop = () => {
                   {trackingOrder && (
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <p className="text-xs uppercase tracking-wide text-slate-500">Latest Tracking</p>
-                      <p className="text-sm font-semibold text-slate-900 mt-1">{trackingOrder.order.orderNumber}</p>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{trackingOrder.order.orderNumber}</p>
+                        <button
+                          className="btn btn-secondary text-xs px-2 py-1 h-auto"
+                          onClick={() => copyTrackingId(trackingOrder.order.orderNumber)}
+                        >
+                          <FiCopy className="inline w-3.5 h-3.5 mr-1" />
+                          Copy ID
+                        </button>
+                      </div>
                       <p className="text-xs text-slate-600 mt-1">
                         Status:{" "}
                         <span
@@ -2304,6 +2572,20 @@ export const PublicShop = () => {
                           {getOrderStatusLabel(trackingOrder.order.status)}
                         </span>
                       </p>
+                      {getLatestReturnRequest(trackingOrder.order.returns || []) && (
+                        <p className="text-xs text-slate-600 mt-1">
+                          Return:{" "}
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold capitalize ${getOrderStatusBadgeClass(
+                              getLatestReturnRequest(trackingOrder.order.returns || [])?.status
+                            )}`}
+                          >
+                            {getOrderStatusLabel(
+                              getLatestReturnRequest(trackingOrder.order.returns || [])?.status || "requested"
+                            )}
+                          </span>
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           className="btn btn-secondary text-xs"
@@ -2395,18 +2677,22 @@ export const PublicShop = () => {
               )}
             </div>
           </aside>
-        </div>
-      )}
+      </div>
 
       {showCheckout && (
-        <div className="fixed inset-0 bg-black/45 z-50 flex items-center justify-center p-4" onClick={closeCheckoutModal}>
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-auto p-5 sm:p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Checkout</h2>
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/45" onClick={closeCheckoutModal} />
+          <aside
+            className="absolute right-0 top-0 h-full w-full sm:w-[36rem] lg:w-[42rem] bg-white border-l border-slate-200 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-5 py-4">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Cart & Checkout</h2>
               <button className="h-9 w-9 rounded-lg border border-slate-200 flex items-center justify-center" onClick={closeCheckoutModal}>
                 <FiX className="w-4 h-4 text-slate-600" />
               </button>
             </div>
+            <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
             {checkoutNotice && (
               <div
                 className={`mb-4 rounded-xl border px-3 py-2 text-xs sm:text-sm ${
@@ -2681,7 +2967,8 @@ export const PublicShop = () => {
                 </p>
               </div>
             )}
-          </div>
+            </div>
+          </aside>
         </div>
       )}
 
@@ -2764,6 +3051,18 @@ export const PublicShop = () => {
                       Payment: {getOrderStatusLabel(trackingOrder.payment.status)}
                     </span>
                   )}
+                  {getLatestReturnRequest(trackingOrder.order.returns || []) && (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold capitalize ${getOrderStatusBadgeClass(
+                        getLatestReturnRequest(trackingOrder.order.returns || [])?.status
+                      )}`}
+                    >
+                      Return:{" "}
+                      {getOrderStatusLabel(
+                        getLatestReturnRequest(trackingOrder.order.returns || [])?.status || "requested"
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
               <button className="btn btn-secondary" onClick={() => setShowOrderDetailsModal(false)}>
@@ -2783,6 +3082,23 @@ export const PublicShop = () => {
                 <p className="text-sm font-semibold text-slate-900 mt-1">
                   {formatPrice(trackingOrder.order.totalAmount, trackingOrder.order.currency)}
                 </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Tracking ID</p>
+                    <p className="text-sm font-semibold text-slate-900 mt-1">
+                      {trackingOrder.order.orderNumber}
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-secondary text-xs"
+                    onClick={() => copyTrackingId(trackingOrder.order.orderNumber)}
+                  >
+                    <FiCopy className="w-3.5 h-3.5 mr-1" />
+                    Copy Tracking ID
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2824,6 +3140,37 @@ export const PublicShop = () => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <h4 className="text-sm font-bold text-slate-900">Return Requests</h4>
+              {!Array.isArray(trackingOrder.order.returns) || trackingOrder.order.returns.length === 0 ? (
+                <p className="text-sm text-slate-500">No return request submitted for this order.</p>
+              ) : (
+                <div className="space-y-2">
+                  {trackingOrder.order.returns.map((request) => (
+                    <div key={request.id} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-slate-700">Request ID: {request.id}</p>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold capitalize ${getOrderStatusBadgeClass(
+                            request.status
+                          )}`}
+                        >
+                          {getOrderStatusLabel(request.status)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">Reason: {request.reason}</p>
+                      {request.resolutionNote && (
+                        <p className="text-xs text-slate-600 mt-1">Update: {request.resolutionNote}</p>
+                      )}
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Updated: {new Date(request.updatedAt || request.requestedAt || "").toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -2956,158 +3303,224 @@ export const PublicShop = () => {
       )}
 
       {selectedProduct && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedProduct(null)}>
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">{selectedProduct.name}</h2>
-              <button className="btn btn-secondary" onClick={() => setSelectedProduct(null)}>Close</button>
+        <div className={`fixed inset-0 z-[140] isolate ${showProductPanel ? "pointer-events-auto" : "pointer-events-none"}`}>
+          <button
+            className={`absolute inset-0 bg-slate-950/55 backdrop-blur-[1px] transition-opacity duration-300 ${
+              showProductPanel ? "opacity-100" : "opacity-0"
+            }`}
+            onClick={closeProductDetails}
+            aria-label="Close product details"
+          />
+          <aside
+            className={`absolute right-0 top-0 h-full w-full sm:w-[36rem] lg:w-[42rem] bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform duration-300 ease-out will-change-transform ${
+              showProductPanel ? "translate-x-0" : "translate-x-full"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-20 bg-white flex items-center justify-between gap-3 border-b border-slate-200 px-4 sm:px-6 py-4">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Product Details</p>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 truncate">{selectedProduct.name}</h2>
+              </div>
+              <button
+                className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-600 flex items-center justify-center"
+                onClick={closeProductDetails}
+                aria-label="Close details"
+              >
+                <FiX className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                {selectedImage && (
-                  <img
-                    src={selectedImage}
-                    alt={selectedProduct.name}
-                    className="w-full h-80 object-contain rounded-xl border bg-slate-50 p-2"
-                  />
-                )}
-                {!selectedImage && selectedProduct.metadata?.videoUrl && (
-                  <video
-                    src={selectedProduct.metadata.videoUrl}
-                    controls
-                    className="w-full h-80 object-cover rounded-xl border bg-black"
-                  />
-                )}
-                <div className="mt-3 grid grid-cols-4 gap-2">
-                  {((selectedProduct.metadata?.imageUrls || []).slice(0, 4).length > 0
-                    ? (selectedProduct.metadata?.imageUrls || []).slice(0, 4)
-                    : [selectedProduct.imageUrl].filter(Boolean) as string[]
-                  ).map((img, idx) => (
-                    <button key={`${img}-${idx}`} className={`border rounded-lg overflow-hidden ${selectedImage === img ? "ring-2 ring-blue-500" : ""}`} onClick={() => setSelectedImage(img)}>
-                      <img src={img} alt={`preview-${idx}`} className="w-full h-16 object-contain bg-slate-50 p-1" />
-                    </button>
-                  ))}
-                </div>
-                {selectedProduct.metadata?.videoUrl && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Product Video</p>
-                    <video
-                      src={selectedProduct.metadata.videoUrl}
-                      controls
-                      className="w-full max-h-64 rounded-xl border bg-black"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                {selectedProduct.description && <p className="text-gray-700">{selectedProduct.description}</p>}
-                <p className="text-3xl font-bold text-gray-900">{selectedProduct.currency} {selectedProduct.price.toFixed(2)}</p>
-                <p className="text-sm text-gray-500">Stock: {selectedProduct.inventory}</p>
-
-                {(selectedProduct.metadata?.colorOptions || []).length > 0 && (
-                  <div>
-                    <label className="label">Color</label>
-                    <select className="input" value={selectedColor} onChange={(e) => setSelectedColor(e.target.value)}>
-                      <option value="">Select color</option>
-                      {(selectedProduct.metadata?.colorOptions || []).map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {(selectedProduct.metadata?.sizeOptions || []).length > 0 && (
-                  <div>
-                    <label className="label">{selectedProduct.metadata?.sizeType || "Size"}</label>
-                    <select className="input" value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)}>
-                      <option value="">Select size</option>
-                      {(selectedProduct.metadata?.sizeOptions || []).map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                    {selectedProduct.metadata?.sizeGuideHint && (
-                      <p className="text-xs text-blue-700 mt-1">{selectedProduct.metadata.sizeGuideHint}</p>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                <div className="bg-slate-50 border-b xl:border-b-0 xl:border-r border-slate-200 px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-2.5">
+                    {selectedImage ? (
+                      <img
+                        src={selectedImage}
+                        alt={selectedProduct.name}
+                        className="w-full h-[40vh] min-h-[18rem] max-h-[32rem] object-contain rounded-xl bg-slate-50"
+                      />
+                    ) : selectedProduct.metadata?.videoUrl ? (
+                      <video
+                        src={selectedProduct.metadata.videoUrl}
+                        controls
+                        className="w-full h-[40vh] min-h-[18rem] max-h-[32rem] object-cover rounded-xl bg-black"
+                      />
+                    ) : (
+                      <div className="w-full h-[40vh] min-h-[18rem] max-h-[32rem] rounded-xl bg-slate-100" />
                     )}
                   </div>
-                )}
 
-                {(selectedProduct.metadata?.textureOptions || []).length > 0 && (
-                  <div>
-                    <label className="label">Texture</label>
-                    <select className="input" value={selectedTexture} onChange={(e) => setSelectedTexture(e.target.value)}>
-                      <option value="">Select texture</option>
-                      {(selectedProduct.metadata?.textureOptions || []).map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                  <div className="mt-3 grid grid-cols-4 sm:grid-cols-5 gap-2">
+                    {((selectedProduct.metadata?.imageUrls || []).slice(0, 5).length > 0
+                      ? (selectedProduct.metadata?.imageUrls || []).slice(0, 5)
+                      : ([selectedProduct.imageUrl].filter(Boolean) as string[])
+                    ).map((img, idx) => (
+                      <button
+                        key={`${img}-${idx}`}
+                        className={`border rounded-lg overflow-hidden bg-white ${
+                          selectedImage === img ? "ring-2 ring-blue-500 border-blue-300" : "border-slate-200"
+                        }`}
+                        onClick={() => setSelectedImage(img)}
+                      >
+                        <img
+                          src={img}
+                          alt={`preview-${idx}`}
+                          className="w-full h-14 sm:h-16 object-contain bg-slate-50 p-1 rounded-md"
+                        />
+                      </button>
+                    ))}
                   </div>
-                )}
 
-                {(selectedProduct.metadata?.lengthOptions || []).length > 0 && (
-                  <div>
-                    <label className="label">Length</label>
-                    <select className="input" value={selectedLength} onChange={(e) => setSelectedLength(e.target.value)}>
-                      <option value="">Select length</option>
-                      {(selectedProduct.metadata?.lengthOptions || []).map((l) => (
-                        <option key={l} value={l}>{l}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="label">Quantity</label>
-                  <div className="inline-flex items-center rounded-xl border border-slate-300 bg-slate-50 overflow-hidden">
-                    <button
-                      className="h-11 w-11 text-slate-700 font-bold text-lg border-r border-slate-300 hover:bg-slate-100"
-                      onClick={() => setSelectedQuantity((prev) => Math.max(1, prev - 1))}
-                      aria-label="Decrease quantity"
-                    >
-                      -
-                    </button>
-                    <div className="h-11 min-w-[3.5rem] px-4 flex items-center justify-center text-base font-bold text-slate-900 bg-white">
-                      {selectedQuantity}
+                  {selectedProduct.metadata?.videoUrl && (
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-2">
+                      <p className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">Product Video</p>
+                      <video
+                        src={selectedProduct.metadata.videoUrl}
+                        controls
+                        className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
+                      />
                     </div>
-                    <button
-                      className="h-11 w-11 text-slate-700 font-bold text-lg border-l border-slate-300 hover:bg-slate-100"
-                      onClick={() =>
-                        setSelectedQuantity((prev) => Math.min(selectedProduct.inventory || 1, prev + 1))
-                      }
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">Available: {selectedProduct.inventory}</p>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <button
-                    className="btn btn-primary w-full"
-                    disabled={selectedProduct.inventory <= 0}
-                    onClick={addSelectedProductToCart}
-                  >
-                    {selectedProduct.inventory > 0
-                      ? `Add ${selectedQuantity} to Cart`
-                      : "Out of Stock"}
-                  </button>
-                  <button
-                    className={`h-11 w-11 rounded-lg border flex items-center justify-center ${
-                      isFavorited(selectedProduct.id)
-                        ? "bg-rose-50 border-rose-300 text-rose-600"
-                        : "bg-white border-slate-200 text-slate-600"
-                    }`}
-                    onClick={() => toggleFavorite(selectedProduct.id)}
-                    aria-label={isFavorited(selectedProduct.id) ? "Remove from favorites" : "Add to favorites"}
-                  >
-                    <FiHeart className={`w-4 h-4 ${isFavorited(selectedProduct.id) ? "fill-current" : ""}`} />
-                  </button>
+                <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                        selectedProduct.inventory > 0
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                      }`}
+                    >
+                      {selectedProduct.inventory > 0 ? "In Stock" : "Out of Stock"}
+                    </span>
+                    {categoryNameById.get(selectedProduct.categoryId || "") && (
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                        {categoryNameById.get(selectedProduct.categoryId || "")}
+                      </span>
+                    )}
+                    {selectedProduct.metadata?.productType && (
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">
+                        {selectedProduct.metadata.productType}
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedProduct.description && (
+                    <p className="text-sm text-slate-700 leading-relaxed">{selectedProduct.description}</p>
+                  )}
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                    <p className="text-sm uppercase tracking-wide text-slate-500">Price</p>
+                    <p className="text-xl sm:text-3xl font-bold text-slate-900 mt-1">
+                      {selectedProduct.currency} {selectedProduct.price.toFixed(2)}
+                    </p>
+                    <p className="text-sm text-slate-600 mt-1">Available stock: {selectedProduct.inventory}</p>
+                  </div>
+
+                  {(selectedProduct.metadata?.colorOptions || []).length > 0 && (
+                    <div>
+                      <label className="label text-sm">Color</label>
+                      <select className="input" value={selectedColor} onChange={(e) => setSelectedColor(e.target.value)}>
+                        <option value="">Select color</option>
+                        {(selectedProduct.metadata?.colorOptions || []).map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {(selectedProduct.metadata?.sizeOptions || []).length > 0 && (
+                    <div>
+                      <label className="label text-sm">{selectedProduct.metadata?.sizeType || "Size"}</label>
+                      <select className="input" value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)}>
+                        <option value="">Select size</option>
+                        {(selectedProduct.metadata?.sizeOptions || []).map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      {selectedProduct.metadata?.sizeGuideHint && (
+                        <p className="text-sm text-blue-700 mt-1">{selectedProduct.metadata.sizeGuideHint}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {(selectedProduct.metadata?.textureOptions || []).length > 0 && (
+                    <div>
+                      <label className="label text-sm">Texture</label>
+                      <select className="input" value={selectedTexture} onChange={(e) => setSelectedTexture(e.target.value)}>
+                        <option value="">Select texture</option>
+                        {(selectedProduct.metadata?.textureOptions || []).map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {(selectedProduct.metadata?.lengthOptions || []).length > 0 && (
+                    <div>
+                      <label className="label text-sm">Length</label>
+                      <select className="input" value={selectedLength} onChange={(e) => setSelectedLength(e.target.value)}>
+                        <option value="">Select length</option>
+                        {(selectedProduct.metadata?.lengthOptions || []).map((l) => (
+                          <option key={l} value={l}>{l}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="label text-sm">Quantity</label>
+                    <div className="inline-flex items-center rounded-xl border border-slate-300 bg-white overflow-hidden shadow-sm">
+                      <button
+                        className="h-10 w-10 text-slate-700 border-r border-slate-300 hover:bg-slate-50 flex items-center justify-center"
+                        onClick={() => setSelectedQuantity((prev) => Math.max(1, prev - 1))}
+                        aria-label="Decrease quantity"
+                      >
+                        <FiMinus className="w-4 h-4" />
+                      </button>
+                      <div className="h-10 min-w-[3.2rem] px-3 flex items-center justify-center text-sm font-bold text-slate-900">
+                        {selectedQuantity}
+                      </div>
+                      <button
+                        className="h-10 w-10 text-slate-700 border-l border-slate-300 hover:bg-slate-50 flex items-center justify-center"
+                        onClick={() =>
+                          setSelectedQuantity((prev) => Math.min(selectedProduct.inventory || 1, prev + 1))
+                        }
+                        aria-label="Increase quantity"
+                      >
+                        <FiPlus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+            <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5 shadow-[0_-6px_16px_rgba(15,23,42,0.08)]">
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <button
+                  className="btn btn-primary w-full h-11 text-sm"
+                  disabled={selectedProduct.inventory <= 0}
+                  onClick={addSelectedProductToCart}
+                >
+                  {selectedProduct.inventory > 0 ? `Add ${selectedQuantity} to Cart` : "Out of Stock"}
+                </button>
+                <button
+                  className={`h-11 w-11 rounded-lg border flex items-center justify-center ${
+                    isFavorited(selectedProduct.id)
+                      ? "bg-rose-50 border-rose-300 text-rose-600"
+                      : "bg-white border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => toggleFavorite(selectedProduct.id)}
+                  aria-label={isFavorited(selectedProduct.id) ? "Remove from favorites" : "Add to favorites"}
+                >
+                  <FiHeart className={`w-4 h-4 ${isFavorited(selectedProduct.id) ? "fill-current" : ""}`} />
+                </button>
+              </div>
+            </div>
+          </aside>
         </div>
       )}
     </div>

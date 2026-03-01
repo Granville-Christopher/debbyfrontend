@@ -1,4 +1,5 @@
-const API_BASE = "https://debby-backend-production.up.railway.app";
+export const API_BASE_URL = "https://debby-backend-production.up.railway.app";
+const API_BASE = API_BASE_URL;
 console.log("API_BASE URL:", API_BASE); // Debug log
 
 type RequestOptions = {

@@ -250,73 +250,73 @@ export const Home = () => {
   const businessFeatures = [
     {
       icon: <FiCreditCard />,
-      title: "Payment Infrastructure",
-      description: "Run checkout with Stripe or Paystack, generate payment links instantly, and keep payment lifecycle states synchronized from webhook to dashboard revenue.",
+      title: "Checkout & Payments",
+      description: "Run production checkout with Stripe and Paystack, generate payment links, and keep payment status synced from webhook confirmation to revenue reporting.",
       details: [
-        "Stripe & Paystack checkout routing",
+        "Stripe and Paystack checkout flows",
         "Automatic payment link generation",
-        "Webhook-confirmed payment state sync",
-        "Multi-currency payment support"
+        "Webhook-confirmed payment reconciliation",
+        "Revenue reflected in dashboard analytics"
       ],
       gradient: "from-green-500 to-emerald-500"
     },
     {
       icon: <FiUsers />,
-      title: "Storefront & Catalog",
-      description: "Launch branded storefronts with shop-specific categories, rich product variants, and media uploads. Manage inventory, pricing, and product publishing from one place.",
+      title: "Storefront & Product Ops",
+      description: "Launch branded multi-shop storefronts with category-aware templates, rich product variants, media uploads, and clean inventory controls.",
       details: [
         "Multi-shop storefront management",
-        "Category templates by shop type",
-        "Variants: size, color, texture, length",
-        "Image and product media uploads"
+        "Shop-type category templates",
+        "Variants for size, color, texture, and length",
+        "Image and video media support"
       ],
       gradient: "from-blue-500 to-indigo-500"
     },
     {
       icon: <FiMail />,
-      title: "Order Fulfillment",
-      description: "Capture structured checkout data, track order states end-to-end, and let customers view updates clearly from storefront order tracking.",
+      title: "Orders & Fulfillment",
+      description: "Capture structured checkout details, track order lifecycle updates, and manage shipping progress while giving customers transparent order tracking.",
       details: [
-        "Cart checkout with tracked order records",
+        "Tracked checkout and order records",
         "Order states: pending, paid, in-transit, delivered",
-        "Shop owner order management dashboard",
-        "Customer order tracking by verified details"
+        "Business-side order control actions",
+        "Customer order tracking experience"
       ],
       gradient: "from-purple-500 to-violet-500"
     },
     {
       icon: <FiMessageSquare />,
       title: "Customer Operations",
-      description: "Build clean, shop-scoped customer records from checkout and manual entries without duplicates, then manage communication history and notes in one workspace.",
+      description: "Maintain shop-scoped customer profiles with dedupe by email and phone, then manage notes, communication history, and segment-ready records.",
       details: [
-        "Shop-specific customer records",
-        "Duplicate prevention by email/phone",
+        "Shop-specific customer data model",
+        "Duplicate prevention by email and phone",
         "Communication history timelines",
-        "Customer notes and segmentation tools"
+        "Notes and segmentation workflows"
       ],
       gradient: "from-cyan-500 to-blue-500"
     },
     {
       icon: <FiRepeat />,
-      title: "Messaging & Automation",
-      description: "Trigger operational messages across channels and keep teams informed with reliable delivery and fallback support for business-critical notifications.",
+      title: "Messaging Automation",
+      description: "Trigger order and operational messaging across email, SMS, and WhatsApp with template support, channel visibility, and reliable delivery handling.",
       details: [
-        "Email, SMS, and WhatsApp channels",
-        "Business event-driven notification flows",
+        "Email, SMS, and WhatsApp automation",
+        "Event-driven notification flows",
         "Delivery status and retry visibility",
-        "Automated customer communication touchpoints"
+        "Business and customer messaging templates"
       ],
       gradient: "from-amber-500 to-yellow-500"
     },
     {
       icon: <FiTrendingUp />,
-      title: "Revenue Intelligence",
-      description: "Track operational and financial performance with actionable dashboards, payment analytics, and forecasting signals designed for growing business teams.",
+      title: "Intelligence & Reporting",
+      description: "Monitor revenue, payment performance, customer risk, and operational trends in one dashboard with forecasting and action-oriented analytics.",
       details: [
-        "Real-time revenue and payment analytics",
-        "Forecast and performance monitoring",
-        "Operational status dashboards",
-        "Business reporting visibility"
+        "Revenue and payment performance analytics",
+        "Cashflow and customer intelligence signals",
+        "Forecast and trend monitoring",
+        "Operational reporting for teams"
       ],
       gradient: "from-pink-500 to-rose-500"
     }
@@ -587,7 +587,7 @@ export const Home = () => {
   const faqs = [
     {
       question: "What's the difference between Developer and Business plans?",
-      answer: "Developer plans focus on API keys, webhooks, GitHub integration, and developer tools. Business plans include payment processing, customer management, notifications, and revenue tracking. Both share the same secure infrastructure."
+      answer: "Developer plans focus on API keys, webhooks, GitHub integration, and developer tooling. Business plans focus on storefront operations, checkout, order management, customer records, messaging automation, and revenue analytics. Both run on the same secure infrastructure."
     },
     {
       question: "How secure is my data?",
@@ -767,7 +767,7 @@ export const Home = () => {
                 animate={{ scale: [1, 1.2, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Trusted by 10,000+ developers, businesses & creators</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Trusted by 10,000+ developers, businesses, and creators</span>
             </motion.div>
             
             <motion.h1
@@ -793,7 +793,7 @@ export const Home = () => {
               transition={{ duration: 0.6, delay: 0.3 }}
               className="text-base md:text-2xl text-gray-700 dark:text-gray-200 mb-4 max-w-3xl mx-auto leading-relaxed font-medium"
             >
-              The all-in-one platform for <span className="text-blue-600 dark:text-blue-400">developers</span>, <span className="text-indigo-600 dark:text-indigo-400">businesses</span>, and <span className="text-pink-600 dark:text-pink-400">creators</span> to automate workflows, schedule content, process payments, and scale effortlessly.
+              The all-in-one platform for <span className="text-blue-600 dark:text-blue-400">developers</span>, <span className="text-indigo-600 dark:text-indigo-400">businesses</span>, and <span className="text-pink-600 dark:text-pink-400">creators</span> to automate workflows, run commerce operations, process payments, and scale effortlessly.
             </motion.p>
             
             <motion.p
@@ -802,7 +802,7 @@ export const Home = () => {
               transition={{ duration: 0.6, delay: 0.4 }}
               className="text-lg text-gray-600 dark:text-gray-300 mb-12 max-w-2xl mx-auto"
             >
-              Build powerful integrations, manage webhooks, process payments, schedule social media content, and automate everything—all in one secure, scalable platform.
+              Build powerful integrations, manage webhooks, operate storefronts, schedule social content, and automate execution in one secure platform.
             </motion.p>
             
             <motion.div
@@ -959,29 +959,29 @@ export const Home = () => {
                 </div>
                 <div>
                   <h3 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">For Businesses</h3>
-                  <p className="text-gray-600 dark:text-gray-200">Run storefront, payments, and fulfillment from one dashboard</p>
+                  <p className="text-gray-600 dark:text-gray-200">Operate storefront, checkout, orders, and customer ops from one dashboard</p>
                 </div>
               </div>
               <ul className="space-y-3 mb-6">
                 <li className="flex items-start gap-3">
                   <FiCheck className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 dark:text-white text-sm">Multi-shop storefront with category templates</span>
+                  <span className="text-gray-700 dark:text-white text-sm">Multi-shop storefront with category-aware templates</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <FiCheck className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 dark:text-white text-sm">Variant-based products (size, color, texture, length)</span>
+                  <span className="text-gray-700 dark:text-white text-sm">Variant products with media upload and inventory controls</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <FiCheck className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 dark:text-white text-sm">Checkout + payment links with Stripe & Paystack</span>
+                  <span className="text-gray-700 dark:text-white text-sm">Checkout and payment links with Stripe and Paystack</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <FiCheck className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 dark:text-white text-sm">Order tracking: pending, paid, in-transit, delivered</span>
+                  <span className="text-gray-700 dark:text-white text-sm">Order lifecycle tracking from pending to delivered</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <FiCheck className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-700 dark:text-white text-sm">Customer records, communication history, and revenue analytics</span>
+                  <span className="text-gray-700 dark:text-white text-sm">Customer records, messaging automation, and revenue analytics</span>
                 </li>
               </ul>
               <motion.div whileHover={{ x: 5 }}>
@@ -1311,9 +1311,9 @@ export const Home = () => {
           <div className="text-center mb-20">
             <div className="inline-flex items-center gap-2 bg-indigo-100 rounded-full px-4 py-2 mb-6">
               <FiBriefcase className="w-5 h-5 text-indigo-600" />
-              <span className="text-sm font-semibold text-indigo-600 uppercase tracking-wide">Business Features</span>
+              <span className="text-sm font-semibold text-indigo-600 uppercase tracking-wide">Business Operations Features</span>
             </div>
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-6">Everything Debby Business Delivers</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-6">Everything Debby Business Includes</h2>
             <p className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
               A unified operating layer for storefront, checkout, orders, customer operations, messaging, and revenue visibility.
             </p>
@@ -1872,7 +1872,7 @@ export const Home = () => {
           visibleSections.has("testimonials") ? "opacity-100 translate-y-0" : "opacity-100 translate-y-0"
         }`} id="testimonials">
           <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-4">Loved by Developers & Businesses</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-4">Loved by Developers, Businesses & Creators</h2>
             <p className="text-xl text-gray-600 dark:text-gray-300">See what our users are saying</p>
           </div>
 
@@ -2228,7 +2228,7 @@ export const Home = () => {
         }`} id="cta">
           <h2 className="text-3xl md:text-5xl font-bold text-white dark:text-gray-100 mb-6">Ready to Get Started?</h2>
           <p className="text-base text-blue-100 dark:text-gray-300 mb-10 max-w-2xl mx-auto">
-            Join thousands of developers and businesses automating their workflows with DEBBY. Start your free trial today.
+            Join thousands of developers, businesses, and creators automating their workflows with DEBBY. Start your free trial today.
           </p>
           <div className="flex gap-4 justify-center flex-wrap">
             <Link to="/signup" className="inline-flex items-center gap-2 bg-white text-blue-600 font-semibold py-2 md:py-4 px-4 md:px-10 rounded-xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all text-lg">
@@ -2263,7 +2263,7 @@ export const Home = () => {
                 <h3 className="text-2xl font-black text-white dark:text-gray-100 font-logo tracking-wider">DEBBY</h3>
               </div>
               <p className="text-gray-400 dark:text-gray-300 leading-relaxed">
-                The all-in-one automation platform for developers, businesses, and creators. Build, integrate, and grow effortlessly.
+                The all-in-one automation platform for developers, businesses, and creators. Build, operate, and scale from one secure system.
               </p>
             </div>
             <div>

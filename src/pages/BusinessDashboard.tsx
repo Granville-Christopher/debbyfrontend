@@ -1,8 +1,8 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BizNav } from "../components/BizNav";
 import { useAuth } from "../auth/AuthProvider";
-import { apiRequest } from "../api/client";
+import { API_BASE_URL, apiRequest } from "../api/client";
 import { Collapsible } from "../components/Collapsible";
 import { Sidebar } from "../components/Sidebar";
 import { Modal, ConfirmModal } from "../components/Modal";
@@ -49,6 +49,7 @@ import {
   FiAlertCircle,
   FiX
 } from "react-icons/fi";
+import { FaDollarSign, FaRegCreditCard, FaRegBell, FaLink, FaChartBar, FaExclamationCircle } from "react-icons/fa";
 
 type Payment = {
   id: string;
@@ -72,6 +73,7 @@ type Notification = {
   message: string;
   status: "queued" | "sent" | "failed";
   errorMessage?: string;
+  gatewayMessageId?: string;
   sentAt?: string;
   createdAt: string;
 };
@@ -125,7 +127,19 @@ type NativeWorkflowRun = {
 
 interface EmailTemplate {
   id: string;
-  triggerEvent: "order_receipt" | "order_shipped" | "order_delivered" | "abandoned_cart";
+  triggerEvent:
+    | "order_receipt"
+    | "payment_completed_update"
+    | "checkout_started_update"
+    | "order_placed_update"
+    | "storefront_order_completed"
+    | "storefront_order_completed_owner"
+    | "return_request_received"
+    | "return_requested_update"
+    | "return_status_updated"
+    | "order_shipped"
+    | "order_delivered"
+    | "abandoned_cart";
   subject: string;
   htmlBody: string;
   textBody?: string;
@@ -153,6 +167,15 @@ type PaymentStats = {
   totalRevenue: number;
   last24h: number;
   last7d: number;
+  revenueByCurrency?: Record<string, number>;
+  dashboardCurrency?: string;
+  totalRevenueInDashboardCurrency?: number;
+  revenueTrend?: Array<{
+    date: string;
+    amount: number;
+    currency: string;
+    transactions: number;
+  }>;
 };
 
 type NotificationStats = {
@@ -281,6 +304,7 @@ type ShopData = {
   metadata?: {
     businessType?: string | null;
     businessMode?: "own" | "dropship" | "hybrid" | null;
+    shopCurrency?: string | null;
     heroImageUrls?: string[] | null;
     heroVideoUrl?: string | null;
     growthAutomation?: {
@@ -297,6 +321,7 @@ type ShopData = {
       allowCatalogSync?: boolean;
       defaultTrafficSource?: "meta_ads" | "google_ads";
     } | null;
+    titleFont?: string | null;
   } | null;
   isActive: boolean;
   categories: ShopCategory[];
@@ -491,6 +516,7 @@ type ShopSummary = {
   metadata?: {
     businessType?: string | null;
     businessMode?: "own" | "dropship" | "hybrid" | null;
+    shopCurrency?: string | null;
     heroImageUrls?: string[] | null;
     heroVideoUrl?: string | null;
   } | null;
@@ -541,7 +567,6 @@ type ShopProductForm = {
   slug: string;
   description: string;
   price: number;
-  currency: string;
   inventory: number;
   categoryId: string;
   productType: string;
@@ -565,7 +590,6 @@ const createEmptyProductForm = (): ShopProductForm => ({
   slug: "",
   description: "",
   price: 0,
-  currency: "USD",
   inventory: 0,
   categoryId: "",
   productType: "",
@@ -597,6 +621,8 @@ const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
   { value: "beauty", label: "Beauty" },
   { value: "other", label: "Other" }
 ];
+
+const SHOP_CURRENCY_OPTIONS = ["USD", "NGN", "EUR", "GBP", "KES", "GHS", "ZAR"] as const;
 
 const SHOP_BUSINESS_MODE_OPTIONS: Array<{ value: ShopBusinessMode; label: string; description: string }> = [
   {
@@ -688,11 +714,13 @@ const createEmptyShopForm = (shopType: ShopType = "other") => ({
   name: "",
   slug: "",
   description: "",
+  currency: "USD",
   logoUrl: "",
   bannerUrl: "",
   heroImageUrls: ["", "", "", ""],
   heroVideoUrl: "",
   themeColor: "#4f46e5",
+  titleFont: "",
   businessType: shopType,
   businessMode: "own" as ShopBusinessMode
 });
@@ -1110,6 +1138,10 @@ export const BusinessDashboard = () => {
     typeof window !== "undefined" ? window.innerWidth < 640 : false
   );
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isWindowActive, setIsWindowActive] = useState(true);
+  const [isPageVisible, setIsPageVisible] = useState(
+    typeof document !== "undefined" ? document.visibilityState === "visible" : true
+  );
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -1273,6 +1305,27 @@ export const BusinessDashboard = () => {
   const [opsBackfills, setOpsBackfills] = useState<any[]>([]);
   const [opsContracts, setOpsContracts] = useState<any[]>([]);
   const [opsCertifications, setOpsCertifications] = useState<any[]>([]);
+  const [opsAccounting, setOpsAccounting] = useState<{ summary: any; rows: any[] } | null>(null);
+  const [opsAccountingSyncResult, setOpsAccountingSyncResult] = useState<any>(null);
+  const [opsFraudFlags, setOpsFraudFlags] = useState<any[]>([]);
+  const [opsFraudRules, setOpsFraudRules] = useState<any[]>([]);
+  const [opsFraudRulesDraft, setOpsFraudRulesDraft] = useState<string>("[]");
+  const [savingOpsFraudRules, setSavingOpsFraudRules] = useState(false);
+  const [resolvingFraudFlagId, setResolvingFraudFlagId] = useState<string | null>(null);
+  const [opsTaxForm, setOpsTaxForm] = useState({
+    amount: "100",
+    country: "US",
+    state: "",
+    taxInclusive: false
+  });
+  const [calculatingOpsTax, setCalculatingOpsTax] = useState(false);
+  const [opsTaxResult, setOpsTaxResult] = useState<any>(null);
+  const [opsShippingSummary, setOpsShippingSummary] = useState<any>(null);
+  const [creatingShippingLabelOrderId, setCreatingShippingLabelOrderId] = useState<string | null>(null);
+  const [updatingShippingOrderId, setUpdatingShippingOrderId] = useState<string | null>(null);
+  const [opsReturns, setOpsReturns] = useState<any[]>([]);
+  const [opsReturnStatusDrafts, setOpsReturnStatusDrafts] = useState<Record<string, string>>({});
+  const [updatingReturnId, setUpdatingReturnId] = useState<string | null>(null);
   const [processingBackfillId, setProcessingBackfillId] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -1312,6 +1365,10 @@ export const BusinessDashboard = () => {
         apiRequest<{ customers: any[] }>("/business/alerts/expiring-cards", { accessToken }).catch(() => ({ customers: [] }))
       ]);
       setDashboard(dashboardData);
+      const detectedDashboardCurrency = String(dashboardData?.stats?.payments?.dashboardCurrency || "").trim().toUpperCase();
+      if (detectedDashboardCurrency) {
+        setCurrency(detectedDashboardCurrency);
+      }
       setPayments(paymentsData.payments);
       setNotifications(notificationsData.notifications);
       setIntegrations(integrationsData.integrations);
@@ -1408,7 +1465,13 @@ export const BusinessDashboard = () => {
         secretsData,
         backfillsData,
         contractsData,
-        certificationsData
+        certificationsData,
+        shopsData,
+        accountingData,
+        fraudFlagsData,
+        fraudRulesData,
+        shippingSummaryData,
+        returnsData
       ] = await Promise.all([
         apiRequest<{ controlPlane: any }>("/business/ops/control-plane", { accessToken }).catch(() => ({ controlPlane: null })),
         apiRequest<{ health: any }>("/business/ops/payment-lifecycle/health", { accessToken }).catch(() => ({ health: null })),
@@ -1421,7 +1484,21 @@ export const BusinessDashboard = () => {
         apiRequest<{ secrets: any[] }>("/business/ops/secrets", { accessToken }).catch(() => ({ secrets: [] })),
         apiRequest<{ backfills: any[] }>("/business/ops/admin/backfills", { accessToken }).catch(() => ({ backfills: [] })),
         apiRequest<{ contracts: any[] }>("/business/integrations/contracts", { accessToken }).catch(() => ({ contracts: [] })),
-        apiRequest<{ certifications: any[] }>("/business/integrations/certifications", { accessToken }).catch(() => ({ certifications: [] }))
+        apiRequest<{ certifications: any[] }>("/business/integrations/certifications", { accessToken }).catch(() => ({ certifications: [] })),
+        apiRequest<{ shops: ShopSummary[] }>("/business/shops", { accessToken }).catch(() => ({ shops: [] })),
+        apiRequest<{ summary: any; rows: any[] }>("/business/accounting/reconciliation?limit=200", { accessToken }).catch(
+          () => ({ summary: null, rows: [] })
+        ),
+        apiRequest<{ flags: any[] }>(withShopIdQuery("/business/shop/fraud-flags?includeResolved=true"), {
+          accessToken
+        }).catch(() => ({ flags: [] })),
+        apiRequest<{ rules: any[] }>(withShopIdQuery("/business/shop/fraud-rules"), { accessToken }).catch(() => ({ rules: [] })),
+        apiRequest<{ summary: any }>(withShopIdQuery("/business/shop/shipping/summary?limit=120"), { accessToken }).catch(
+          () => ({ summary: null })
+        ),
+        apiRequest<{ returns: any[] }>(withShopIdQuery("/business/shop/returns?limit=200"), { accessToken }).catch(
+          () => ({ returns: [] })
+        )
       ]);
       setOpsControlPlane(controlPlaneData.controlPlane || null);
       setOpsPaymentHealth(paymentHealthData.health || null);
@@ -1435,6 +1512,32 @@ export const BusinessDashboard = () => {
       setOpsBackfills(backfillsData.backfills || []);
       setOpsContracts(contractsData.contracts || []);
       setOpsCertifications(certificationsData.certifications || []);
+      if (Array.isArray(shopsData.shops)) {
+        const safeShops = shopsData.shops.filter((shop): shop is ShopSummary => !!shop && typeof shop.id === "string");
+        if (safeShops.length > 0) setShops(safeShops);
+      }
+      setOpsAccounting({
+        summary: accountingData.summary || null,
+        rows: Array.isArray(accountingData.rows) ? accountingData.rows : []
+      });
+      setOpsFraudFlags(Array.isArray(fraudFlagsData.flags) ? fraudFlagsData.flags : []);
+      const loadedFraudRules = Array.isArray(fraudRulesData.rules) ? fraudRulesData.rules : [];
+      setOpsFraudRules(loadedFraudRules);
+      setOpsFraudRulesDraft(JSON.stringify(loadedFraudRules, null, 2));
+      setOpsShippingSummary(shippingSummaryData.summary || null);
+      const loadedReturns = Array.isArray(returnsData.returns) ? returnsData.returns : [];
+      setOpsReturns(loadedReturns);
+      setOpsReturnStatusDrafts((prev) => {
+        const next = { ...prev };
+        for (const entry of loadedReturns) {
+          const returnId = String(entry?.id || "");
+          const status = String(entry?.status || "requested");
+          if (returnId && !next[returnId]) {
+            next[returnId] = status;
+          }
+        }
+        return next;
+      });
     } catch (err: any) {
       setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to load ops data"}`);
     } finally {
@@ -1544,11 +1647,352 @@ export const BusinessDashboard = () => {
     }
   };
 
+  const runOpsAccountingSync = async () => {
+    if (!accessToken) return;
+    try {
+      const response = await apiRequest<{ result: any }>("/business/accounting/sync/run", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: { limit: 160 }
+      });
+      setOpsAccountingSyncResult(response.result || null);
+      setStatus(
+        `Accounting sync complete: ${response.result?.syncedPayments ?? 0} payments synced, ${response.result?.indexedOrders ?? 0} orders indexed`
+      );
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to run accounting sync"}`);
+    }
+  };
+
+  const setOpsFraudFlagResolved = async (flagId: string, isResolved: boolean) => {
+    if (!accessToken || !flagId) return;
+    try {
+      setResolvingFraudFlagId(flagId);
+      await apiRequest(withShopIdQuery(`/business/shop/fraud-flags/${flagId}`), {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: { isResolved, resolutionNote: isResolved ? "Resolved via Native Ops panel" : "Reopened via Native Ops panel" }
+      });
+      setStatus(isResolved ? "Fraud flag resolved" : "Fraud flag reopened");
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to update fraud flag"}`);
+    } finally {
+      setResolvingFraudFlagId(null);
+    }
+  };
+
+  const saveOpsFraudRules = async () => {
+    if (!accessToken) return;
+    let parsedRules: any[] = [];
+    try {
+      const parsed = JSON.parse(opsFraudRulesDraft || "[]");
+      if (!Array.isArray(parsed)) {
+        setStatus("Fraud rules must be a JSON array");
+        return;
+      }
+      parsedRules = parsed;
+    } catch {
+      setStatus("Invalid JSON format for fraud rules");
+      return;
+    }
+
+    try {
+      setSavingOpsFraudRules(true);
+      const response = await apiRequest<{ rules: any[] }>(withShopIdQuery("/business/shop/fraud-rules"), {
+        method: "PUT",
+        accessToken,
+        csrfToken,
+        body: { rules: parsedRules }
+      });
+      const nextRules = Array.isArray(response.rules) ? response.rules : [];
+      setOpsFraudRules(nextRules);
+      setOpsFraudRulesDraft(JSON.stringify(nextRules, null, 2));
+      setStatus("Fraud rules saved");
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to save fraud rules"}`);
+    } finally {
+      setSavingOpsFraudRules(false);
+    }
+  };
+
+  const runOpsTaxCalculation = async () => {
+    if (!accessToken) return;
+    const amount = Number(opsTaxForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setStatus("Tax amount must be greater than 0");
+      return;
+    }
+    try {
+      setCalculatingOpsTax(true);
+      const response = await apiRequest<any>("/business/tax/calculate", {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {
+          amount,
+          country: opsTaxForm.country.trim().toUpperCase(),
+          state: opsTaxForm.state.trim() || undefined,
+          taxInclusive: Boolean(opsTaxForm.taxInclusive)
+        }
+      });
+      setOpsTaxResult(response || null);
+      setStatus("Tax calculated");
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to calculate tax"}`);
+    } finally {
+      setCalculatingOpsTax(false);
+    }
+  };
+
+  const createOpsShippingLabel = async (orderId: string) => {
+    if (!accessToken || !orderId) return;
+    try {
+      setCreatingShippingLabelOrderId(orderId);
+      await apiRequest(withShopIdQuery(`/business/shop/orders/${orderId}/shipping-label`), {
+        method: "POST",
+        accessToken,
+        csrfToken,
+        body: {}
+      });
+      setStatus("Shipping label created using Debby Native Shipping");
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to create shipping label"}`);
+    } finally {
+      setCreatingShippingLabelOrderId(null);
+    }
+  };
+
+  const openOpsShippingLabel = async (labelUrl?: string | null) => {
+    if (!accessToken || !labelUrl) return;
+    try {
+      const raw = String(labelUrl || "").trim();
+      if (!raw) return;
+
+      let relativePath = raw;
+      if (/^https?:\/\//i.test(raw)) {
+        const parsed = new URL(raw);
+        relativePath = `${parsed.pathname}${parsed.search}`;
+      } else if (!raw.startsWith("/")) {
+        relativePath = `/${raw}`;
+      }
+
+      const withShop = withShopIdQuery(relativePath);
+      const finalUrl = `${API_BASE_URL}${withShop.startsWith("/") ? withShop : `/${withShop}`}`;
+
+      const response = await fetch(finalUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        let message = "Failed to open shipping label";
+        try {
+          const data = await response.json();
+          message = data?.error || message;
+        } catch {
+          // Ignore non-JSON error bodies
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+    } catch (err: any) {
+      setStatus(`❌ ${err?.message || "Failed to open shipping label"}`);
+    }
+  };
+
+  const updateOpsShippingStatus = async (orderId: string, status: "in_transit" | "delivered") => {
+    if (!accessToken || !orderId) return;
+    try {
+      setUpdatingShippingOrderId(orderId);
+      await apiRequest(withShopIdQuery(`/business/shop/orders/${orderId}/shipping-status`), {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: { status }
+      });
+      setStatus(`Shipping status updated to ${status}`);
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to update shipping status"}`);
+    } finally {
+      setUpdatingShippingOrderId(null);
+    }
+  };
+
+  const updateOpsReturnStatus = async (orderId: string, returnId: string) => {
+    if (!accessToken || !orderId || !returnId) return;
+    const nextStatus = String(opsReturnStatusDrafts[returnId] || "").trim();
+    if (!nextStatus) {
+      setStatus("Select a return status first");
+      return;
+    }
+    try {
+      setUpdatingReturnId(returnId);
+      await apiRequest(withShopIdQuery(`/business/shop/orders/${orderId}/returns/${returnId}/status`), {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: {
+          status: nextStatus,
+          resolutionNote: `Updated via Native Ops panel to ${nextStatus}`
+        }
+      });
+      setStatus(`Return status updated to ${nextStatus}`);
+      await loadOpsData();
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to update return status"}`);
+    } finally {
+      setUpdatingReturnId(null);
+    }
+  };
+
   useEffect(() => {
+    if (!accessToken) return;
     loadData();
-    const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
-    return () => clearInterval(interval);
-  }, [accessToken]);
+  }, [accessToken, activeTab]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    if (!isWindowActive || !isPageVisible) return;
+
+    // Keep realtime dashboard streaming only on highest-value tabs.
+    const realtimeTabs = new Set(["overview", "payments", "notifications"]);
+    if (!realtimeTabs.has(activeTab)) return;
+
+    let closed = false;
+    let reconnectTimer: number | null = null;
+    let abortController: AbortController | null = null;
+    let reconnectAttempt = 0;
+
+    const parseAndApplySseEvent = (rawChunk: string) => {
+      const normalized = rawChunk.replace(/\r/g, "");
+      const lines = normalized.split("\n");
+      let eventType = "message";
+      const dataLines: string[] = [];
+
+      for (const line of lines) {
+        if (!line || line.startsWith(":")) continue;
+        if (line.startsWith("event:")) {
+          eventType = line.slice("event:".length).trim();
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trim());
+        }
+      }
+
+      if (dataLines.length === 0) return;
+
+      const payloadText = dataLines.join("\n");
+      if (eventType === "dashboard") {
+        try {
+          const payload = JSON.parse(payloadText) as DashboardData;
+          setDashboard(payload);
+          const streamCurrency = String(payload?.stats?.payments?.dashboardCurrency || "").trim().toUpperCase();
+          if (streamCurrency) {
+            setCurrency(streamCurrency);
+          }
+        } catch {
+          // Ignore malformed payloads and wait for next valid event.
+        }
+      } else if (eventType === "error") {
+        try {
+          const payload = JSON.parse(payloadText) as { message?: string };
+          if (payload?.message) {
+            setStatus(`Dashboard stream warning: ${payload.message}`);
+          }
+        } catch {
+          // Ignore malformed error payloads.
+        }
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (closed) return;
+      const base = Math.min(15000, 1000 * Math.pow(2, reconnectAttempt));
+      const jitter = Math.floor(Math.random() * 500);
+      const delayMs = base + jitter;
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(() => {
+        void connectStream();
+      }, delayMs);
+    };
+
+    const connectStream = async () => {
+      if (closed) return;
+      if (document.visibilityState !== "visible") {
+        scheduleReconnect();
+        return;
+      }
+
+      try {
+        abortController = new AbortController();
+        const response = await fetch(`${API_BASE_URL}/business/dashboard/stream`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "text/event-stream"
+          },
+          credentials: "include",
+          signal: abortController.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`Dashboard stream request failed (${response.status})`);
+        }
+        if (!response.body) {
+          throw new Error("Dashboard stream response has no body");
+        }
+
+        reconnectAttempt = 0;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!closed) {
+          const { done, value } = await reader.read();
+          if (done) {
+            throw new Error("Dashboard stream closed");
+          }
+          if (!value) continue;
+
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const rawChunk = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            parseAndApplySseEvent(rawChunk);
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+      } catch (err: any) {
+        if (closed || err?.name === "AbortError") return;
+        scheduleReconnect();
+      }
+    };
+
+    void connectStream();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      abortController?.abort();
+    };
+  }, [accessToken, activeTab, isWindowActive, isPageVisible]);
 
   // Read saved integration configs into state
   useEffect(() => {
@@ -1578,6 +2022,10 @@ export const BusinessDashboard = () => {
     }
   }, [integrationSectionTab, integrations]);
 
+  const hasConfiguredEmailProvider = Boolean(
+    integrations.find((integration) => integration.provider === "email")?.hasToken
+  );
+
   useEffect(() => {
     const fetchTemplates = async () => {
       if (!accessToken || activeTab !== "integrations") return;
@@ -1603,7 +2051,7 @@ export const BusinessDashboard = () => {
     loadOpsData();
     const interval = setInterval(loadOpsData, 10000);
     return () => clearInterval(interval);
-  }, [activeTab, accessToken]);
+  }, [activeTab, accessToken, selectedShopId]);
 
   useEffect(() => {
     if (activeTab !== "automation" || !accessToken) return;
@@ -1665,6 +2113,22 @@ export const BusinessDashboard = () => {
       loadDeletionStatus();
     }
   }, [activeTab, accessToken]);
+
+  useEffect(() => {
+    const onFocus = () => setIsWindowActive(true);
+    const onBlur = () => setIsWindowActive(false);
+    const onVisibilityChange = () => {
+      setIsPageVisible(document.visibilityState === "visible");
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => setIsMobileViewport(window.innerWidth < 640);
@@ -2991,6 +3455,25 @@ export const BusinessDashboard = () => {
     return badges[status] || "badge";
   };
 
+  const getNotificationDeliverySourceLabel = (notification: Notification) => {
+    const raw = String(notification.gatewayMessageId || "");
+    const match = raw.match(/src:([^|]+)/i);
+    const sourceKey = (match?.[1] || "").trim().toLowerCase();
+    if (!sourceKey) return null;
+
+    const sourceLabels: Record<string, string> = {
+      owner_email_integration: "Owner Email Integration",
+      platform_sendgrid_fallback: "Platform SendGrid Fallback",
+      twilio_sms_integration: "Twilio SMS Integration",
+      twilio_whatsapp_integration: "Twilio WhatsApp Integration",
+      email_integration: "Email Integration",
+      sms_integration: "SMS Integration",
+      whatsapp_integration: "WhatsApp Integration"
+    };
+
+    return sourceLabels[sourceKey] || sourceKey.replace(/_/g, " ");
+  };
+
   type StatusModalTone = "success" | "error" | "warning" | "info";
 
   const getSanitizedStatusText = (messageText: string | null) => {
@@ -3383,6 +3866,19 @@ export const BusinessDashboard = () => {
     }).format(amount);
   };
 
+  const formatCompactCurrency = (amount: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        notation: "compact",
+        maximumFractionDigits: 1
+      }).format(amount);
+    } catch {
+      return `${currency} ${Number(amount || 0).toFixed(0)}`;
+    }
+  };
+
   const getShopOrderBadgeClass = (status: string) => {
     const normalized = String(status || "").toLowerCase();
     if (normalized === "delivered" || normalized === "paid" || normalized === "completed") {
@@ -3423,7 +3919,6 @@ export const BusinessDashboard = () => {
     shopSuppliers.find((supplier) => supplier.id === productForm.supplierId) || null;
   const isProductFormReady =
     productForm.name.trim().length > 0 &&
-    productForm.currency.trim().length === 3 &&
     Number.isFinite(productForm.price) &&
     productForm.price >= 0 &&
     Number.isFinite(productForm.inventory) &&
@@ -3442,6 +3937,33 @@ export const BusinessDashboard = () => {
     () => new Set((integrations || []).map((entry) => String(entry?.provider || "").trim().toLowerCase()).filter(Boolean)),
     [integrations]
   );
+  const gatewayApprovedCurrencies = useMemo(() => {
+    const allowed = new Set<string>();
+    for (const integration of integrations || []) {
+      const provider = String(integration?.provider || "").trim().toLowerCase();
+      if (provider !== "stripe" && provider !== "paystack") continue;
+      const config = (integration?.config || {}) as Record<string, unknown>;
+      const candidateValues = [config.accountCurrency, config.defaultCurrency, config.currency];
+      for (const raw of candidateValues) {
+        const code = String(raw || "").trim().toUpperCase();
+        if (/^[A-Z]{3}$/.test(code)) {
+          allowed.add(code);
+        }
+      }
+    }
+    return Array.from(allowed);
+  }, [integrations]);
+  const selectableShopCurrencies = useMemo(
+    () => (gatewayApprovedCurrencies.length > 0 ? gatewayApprovedCurrencies : Array.from(SHOP_CURRENCY_OPTIONS)),
+    [gatewayApprovedCurrencies]
+  );
+  const shopCurrencyOptionsForSelect = useMemo(() => {
+    const current = String(shopForm.currency || "").trim().toUpperCase();
+    if (current && !selectableShopCurrencies.includes(current)) {
+      return [current, ...selectableShopCurrencies];
+    }
+    return selectableShopCurrencies;
+  }, [shopForm.currency, selectableShopCurrencies]);
   const marketplaceTemplatesForDisplay = useMemo(
     () => {
       const byProvider = new Map<string, any>();
@@ -3735,7 +4257,6 @@ export const BusinessDashboard = () => {
       categoryId: productForm.categoryId || null,
       description: productForm.description || undefined,
       price: productForm.price,
-      currency: productForm.currency || "USD",
       inventory: productForm.inventory,
       imageUrl: imageUrls[0] || undefined,
       imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
@@ -3783,7 +4304,6 @@ export const BusinessDashboard = () => {
       slug: product.slug || "",
       description: product.description || "",
       price: product.price,
-      currency: product.currency || "USD",
       inventory: product.inventory,
       categoryId: product.categoryId || "",
       productType: metadata.productType || "",
@@ -4348,6 +4868,31 @@ export const BusinessDashboard = () => {
     navigate("/login");
   };
 
+  const handleOpenAccountSettings = () => {
+    setActiveTab("settings");
+    setSettingsSectionTab("account");
+    if (isMobileSidebarOpen) {
+      setIsMobileSidebarOpen(false);
+    }
+  };
+
+  const handleLogoutAllSessions = async () => {
+    if (!accessToken || !csrfToken) {
+      await handleLogout();
+      return;
+    }
+    try {
+      await apiRequest("/auth/logout-all", {
+        method: "POST",
+        accessToken,
+        csrfToken
+      });
+      await handleLogout();
+    } catch (err: any) {
+      setStatus(`❌ ${err?.response?.data?.error || err?.message || "Failed to sign out all sessions"}`);
+    }
+  };
+
   const queueIntelligenceRefreshJob = async () => {
     if (!accessToken) return;
     try {
@@ -4437,6 +4982,14 @@ export const BusinessDashboard = () => {
           name: normalizedShop.name || "",
           slug: normalizedShop.slug || "",
           description: normalizedShop.description || "",
+          currency:
+            String(
+              normalizedShop.metadata?.shopCurrency ||
+                normalizedShop.products?.[0]?.currency ||
+                "USD"
+            )
+              .trim()
+              .toUpperCase() || "USD",
           logoUrl: normalizedShop.logoUrl || "",
           bannerUrl: normalizedShop.bannerUrl || "",
           heroImageUrls: String(normalizedShop.metadata?.heroVideoUrl || "").trim()
@@ -4444,6 +4997,7 @@ export const BusinessDashboard = () => {
             : normalizeHeroImageUrls(normalizedShop.metadata?.heroImageUrls, normalizedShop.bannerUrl),
           heroVideoUrl: String(normalizedShop.metadata?.heroVideoUrl || "").trim(),
           themeColor: normalizedShop.themeColor || "#4f46e5",
+          titleFont: typeof normalizedShop.metadata?.titleFont === "string" ? normalizedShop.metadata.titleFont : "",
           businessType: (normalizedShop.metadata?.businessType as ShopType) || "other",
           businessMode: normalizeShopBusinessModeValue(normalizedShop.metadata?.businessMode)
         });
@@ -4768,6 +5322,9 @@ export const BusinessDashboard = () => {
         mobileMenuOpen={isMobileSidebarOpen}
         onMobileMenuOpenChange={setIsMobileSidebarOpen}
         showMobileToggleButton={false}
+        showLogout={false}
+        compactOpenWidthOnMobileMd
+        compactLinkDensity
       />
       
       <BizNav
@@ -4776,165 +5333,495 @@ export const BusinessDashboard = () => {
         orgId={user?.orgId}
         isMobileMenuOpen={isMobileSidebarOpen}
         onMobileMenuToggle={() => setIsMobileSidebarOpen((prev) => !prev)}
+        onOpenAccountSettings={handleOpenAccountSettings}
+        onLogoutAllSessions={handleLogoutAllSessions}
+        onLogout={handleLogout}
       />
       <div
         className="flex-1 transition-all duration-300 relative z-10 overflow-x-hidden"
         style={{
-          marginLeft: isMobileViewport ? "0px" : "var(--sidebar-width, 280px)",
+          marginLeft: isMobileViewport ? "0px" : "var(--sidebar-width, 180px)",
           marginTop: "64px"
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-8">
+        <div className="max-w-[1680px] mx-auto py-3 sm:py-8 px-5 lg:px-10">
         {loading && !dashboard ? (
           <div className="card">
             <p className="text-black font-semibold">Loading...</p>
           </div>
         ) : (
           <>
-            {/* Overview Tab */}
+                        {/* Overview Tab */}
             {activeTab === "overview" && dashboard && (
-              <div>
-                <h2 className="text-3xl font-bold text-gray-900 mb-4 sm:mb-8">Business Overview</h2>
+              <div className="space-y-6 w-full mb-8">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+                  <p className="text-sm text-gray-500 mt-1">Monitor your revenue, payments, and system activity.</p>
+                </div>
                 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-4 sm:mb-8">
-                  <div className="card min-w-0">
-                    <h3 className="text-sm text-gray-500 mb-2">Total Revenue</h3>
-                    <p className="text-2xl font-bold m-0 text-gray-900">
-                      {formatCurrency(dashboard.stats.payments.totalRevenue, "USD")}
-                    </p>
-                    <p className="mt-2 text-xs text-gray-500">
-                      {dashboard.stats.payments.completed} completed payments
-                    </p>
-                  </div>
-                  <div className="card min-w-0">
-                    <h3 className="text-sm text-gray-500 mb-2">Payments (24h)</h3>
-                    <p className="text-2xl font-bold m-0 text-gray-900">{dashboard.stats.payments.last24h}</p>
-                    <p className="mt-2 text-xs text-gray-500">
-                      {dashboard.stats.payments.queued} queued, {dashboard.stats.payments.processing} processing
-                    </p>
-                  </div>
-                  <div className="card">
-                    <h3 className="text-sm text-gray-500 mb-2">Notifications (24h)</h3>
-                    <p className="text-2xl font-bold m-0 text-gray-900">{dashboard.stats.notifications.last24h}</p>
-                    <p className="mt-2 text-xs text-gray-500">
-                      {dashboard.stats.notifications.sent} sent, {dashboard.stats.notifications.queued} queued
-                    </p>
-                  </div>
-                  <div className="card">
-                    <h3 className="text-sm text-gray-500 mb-2">Integrations</h3>
-                    <p className="text-2xl font-bold m-0 text-gray-900">{integrations.length}</p>
-                    <p className="mt-2 text-xs text-gray-500">
-                      {integrations.map(i => i.provider).join(", ") || "None connected"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Revenue Alerts */}
-                <div className="card mb-4 sm:mb-8">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold m-0 text-gray-900">Revenue Alerts</h3>
-                    {dashboard.revenueAlerts.length > 0 && (
-                      <span className="badge badge-success text-xs">
-                        {dashboard.revenueAlerts.length} {dashboard.revenueAlerts.length === 1 ? 'alert' : 'alerts'}
-                      </span>
-                    )}
-                  </div>
-                  {dashboard.revenueAlerts.length === 0 ? (
-                    <p className="text-gray-500">
-                      Connect Stripe or Paystack to enable automatic revenue tracking and alerts.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {dashboard.revenueAlerts.map((alert, index) => (
-                        <div key={index} className="p-3 bg-blue-50 rounded-lg text-gray-800">
-                          {alert}
-                        </div>
-                      ))}
+                {/* Professional Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                  {/* Total Revenue */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Total Revenue</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                          {dashboard.stats.payments.revenueByCurrency && Object.keys(dashboard.stats.payments.revenueByCurrency).length > 0 
+                            ? Object.entries(dashboard.stats.payments.revenueByCurrency).map(([curr, amt]) => formatCurrency(amt, curr)).join(" / ")
+                            : formatCurrency(
+                                dashboard.stats.payments.totalRevenue,
+                                dashboard.stats.payments.dashboardCurrency || "USD"
+                              )}
+                        </h3>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-inner">
+                        <FaDollarSign className="w-4 h-4" />
+                      </div>
                     </div>
-                  )}
+                    <div className="relative flex items-center text-xs mt-4 pt-4 border-t border-gray-100">
+                      <span className="text-emerald-600 font-medium flex items-center border bg-emerald-50 border-emerald-100 px-2 py-0.5 rounded-full">
+                        <FaChartBar className="w-3 h-3 mr-1.5" />
+                        {dashboard.stats.payments.completed} successful
+                      </span>
+                      <span className="text-gray-400 ml-3">payments processed</span>
+                    </div>
+                  </div>
+
+                  {/* Payments 24h */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Payments (24h)</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.payments.last24h}</h3>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-inner">
+                        <FaRegCreditCard className="w-5 h-5" />
+                      </div>
+                    </div>
+                    <div className="relative flex items-center text-[11px] sm:text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 font-medium gap-3">
+                      <span className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>{dashboard.stats.payments.processing} processing</span>
+                      <span className="flex items-center gap-1.5 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>{dashboard.stats.payments.queued} queued</span>
+                    </div>
+                  </div>
+
+                  {/* Notifications 24h */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Notifications (24h)</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.notifications.last24h}</h3>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shadow-inner">
+                        <FaRegBell className="w-5 h-5" />
+                      </div>
+                    </div>
+                    <div className="relative flex items-center text-[11px] sm:text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 font-medium gap-3">
+                      <span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>{dashboard.stats.notifications.sent} sent</span>
+                      <span className="flex items-center gap-1.5 text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>{dashboard.stats.notifications.queued} queued</span>
+                    </div>
+                  </div>
+
+                  {/* Integrations */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Integrations</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{integrations.length}</h3>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shadow-inner">
+                        <FaLink className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="relative text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 truncate flex items-center">
+                      <span className="font-medium text-gray-700 w-full truncate">
+                        {integrations.length > 0 ? "Connected: " + integrations.map(i => i.provider).join(", ") : "No active connections"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Recent Activity */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
-                  <div className="card">
-                    <h3 className="text-lg font-semibold mb-4 text-gray-900">Recent Payments</h3>
-                    {(payments || []).slice(0, 5).length === 0 ? (
-                      <p className="text-gray-500">No payments yet</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(payments || []).slice(0, 5).map((payment) => (
-                          <div key={payment.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                            <div>
-                              <p className="m-0 font-semibold text-gray-900">{formatCurrency(payment.amount, payment.currency)}</p>
-                              <p className="mt-1 text-sm text-gray-500">
-                                {payment.customerId}  {new Date(payment.createdAt).toLocaleString()}
+                {/* Charts Row */}
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 mt-6">
+                  {/* Chart 1: Revenue by Date */}
+                  <div className="xl:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 sm:p-7 shadow-sm flex flex-col min-h-[360px] xl:min-h-[460px]">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900 tracking-tight m-0">Revenue by Date</h3>
+                        <p className="text-xs text-gray-500 mt-1">Daily revenue trends for the last 7 days</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      <div className="relative flex h-full min-w-0 pr-1">
+                        {(() => {
+                        const revenueTrend = Array.isArray(dashboard.stats.payments.revenueTrend)
+                          ? dashboard.stats.payments.revenueTrend
+                          : [];
+                        const trendCurrencyFromPayload = String(revenueTrend[0]?.currency || "").trim().toUpperCase();
+                        const trendCurrency =
+                          trendCurrencyFromPayload ||
+                          String(dashboard.stats.payments.dashboardCurrency || "USD").trim().toUpperCase() ||
+                          "USD";
+
+                        const last7Days = Array.from({ length: 7 }, (_, i) => {
+                          const d = new Date();
+                          d.setDate(d.getDate() - (6 - i));
+                          const key = d.toISOString().split('T')[0]; 
+                          const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                          return { key, label, amount: 0 };
+                        });
+
+                        const amountByDate = new Map<string, number>();
+                        for (const point of revenueTrend) {
+                          const pointDate = String(point?.date || "").trim();
+                          if (!pointDate) continue;
+                          amountByDate.set(pointDate, Number(point?.amount || 0));
+                        }
+
+                        const entries = last7Days.map((entry) => ({
+                          ...entry,
+                          amount: Number(amountByDate.get(entry.key) || 0)
+                        }));
+                        const maxVal = Math.max(...entries.map(e => e.amount), 1);
+                        const hasRevenueData = entries.some((entry) => entry.amount > 0);
+                        
+                        // Calculate Y-axis ticks (4 ticks + 0 base)
+                        const tickCount = 4;
+                        const tickValue = Math.ceil(maxVal / tickCount / 100) * 100; // Round up to nearest 100
+                        const chartMax = Math.max(tickValue * tickCount, maxVal * 1.1); // add 10% headroom
+                        
+                        const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => i * (chartMax / tickCount)).reverse();
+
+                        return (
+                          <>
+                            {/* Y-Axis Grid Lines */}
+                            <div className="absolute inset-x-0 inset-y-0 left-14 sm:left-16 pb-10 flex flex-col justify-between pointer-events-none">
+                              {yTicks.map((tick, i) => (
+                                <div key={i} className="flex items-center w-full h-0">
+                                  <div className="w-full border-t border-dashed border-gray-200" />
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Y-Axis Labels */}
+                            <div className="w-14 sm:w-16 shrink-0 flex flex-col justify-between text-[9px] sm:text-[10px] text-gray-500 font-medium pb-10 pr-3">
+                              {yTicks.map((tick, i) => (
+                                <div key={i} className="text-right leading-none whitespace-nowrap">
+                                  {formatCompactCurrency(tick, trendCurrency)}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Chart Bars */}
+                            <div className="flex-1 min-w-0 flex items-end justify-between gap-1 sm:gap-1.5 md:gap-2 px-1 sm:px-2 pb-10 relative z-10 border-b border-gray-200 ml-1 sm:ml-2">
+                              {entries.map((entry, i) => {
+                                const pct = Math.max((entry.amount / chartMax) * 100, 2); // 2% min height for visibility
+                                return (
+                                  <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group mt-2 relative">
+                                    <span className="text-[10px] sm:text-xs font-bold text-gray-600 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-y-2 group-hover:translate-y-0 duration-300">
+                                      {formatCurrency(entry.amount, trendCurrency)}
+                                    </span>
+                                    <div className="w-full max-w-[20px] sm:max-w-[26px] md:max-w-[34px] lg:max-w-[48px] flex-1 bg-emerald-50/50 border border-emerald-100/50 rounded-t flex items-end relative overflow-hidden group-hover:bg-emerald-50 transition-colors">
+                                      <div
+                                        className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 transition-all duration-1000 ease-out shadow-sm rounded-t"
+                                        style={{ height: `${pct}%` }}
+                                      />
+                                    </div>
+                                    <span className="absolute -bottom-9 text-[8px] sm:text-[10px] text-gray-500 font-medium text-center w-full leading-tight">
+                                      {entry.label.split(',').map((part, idx) => (
+                                        <React.Fragment key={idx}>
+                                          {part}{idx === 0 && <br/>}
+                                        </React.Fragment>
+                                      ))}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {!hasRevenueData && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-xs font-medium text-gray-400 bg-white/80 px-3 py-1.5 rounded-full border border-gray-200">
+                                  No completed payments in the last 7 days
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {(() => {
+                        const revenueTrend = Array.isArray(dashboard.stats.payments.revenueTrend)
+                          ? dashboard.stats.payments.revenueTrend
+                          : [];
+                        const trendCurrencyFromPayload = String(revenueTrend[0]?.currency || "").trim().toUpperCase();
+                        const trendCurrency =
+                          trendCurrencyFromPayload ||
+                          String(dashboard.stats.payments.dashboardCurrency || "USD").trim().toUpperCase() ||
+                          "USD";
+
+                        const last7Days = Array.from({ length: 7 }, (_, i) => {
+                          const d = new Date();
+                          d.setDate(d.getDate() - (6 - i));
+                          return d.toISOString().split("T")[0];
+                        });
+
+                        const amountByDate = new Map<string, number>();
+                        for (const point of revenueTrend) {
+                          const pointDate = String(point?.date || "").trim();
+                          if (!pointDate) continue;
+                          amountByDate.set(pointDate, Number(point?.amount || 0));
+                        }
+
+                        const amounts = last7Days.map((key) => Number(amountByDate.get(key) || 0));
+                        const total = amounts.reduce((sum, value) => sum + value, 0);
+                        const avg = amounts.length > 0 ? total / amounts.length : 0;
+                        const best = Math.max(...amounts, 0);
+
+                        return (
+                          <>
+                            <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">7D Total</p>
+                              <p className="text-sm font-bold text-emerald-900 mt-0.5">
+                                {formatCompactCurrency(total, trendCurrency)}
                               </p>
                             </div>
-                            <span className={getStatusBadge(payment.status)}>{payment.status}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                            <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-wide text-blue-700 font-semibold">Best Day</p>
+                              <p className="text-sm font-bold text-blue-900 mt-0.5">
+                                {formatCompactCurrency(best, trendCurrency)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-wide text-slate-600 font-semibold">Daily Avg</p>
+                              <p className="text-sm font-bold text-slate-900 mt-0.5">
+                                {formatCompactCurrency(avg, trendCurrency)}
+                              </p>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
-                  <div className="card">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-semibold m-0 text-gray-900">Recent Notifications</h3>
-                      {(notifications || []).length > 0 && (
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={async () => {
-                            setConfirmModalData({
-                              title: "Clear All Notifications",
-                              message: "Are you sure you want to delete all notifications? This action cannot be undone.",
-                              variant: "danger",
-                              onConfirm: async () => {
-                                setShowConfirmModal(false);
-                                try {
-                                  await apiRequest("/business/notifications", {
-                                    method: "DELETE",
-                                    accessToken,
-                                    csrfToken
-                                  });
-                                  setNotifications([]);
-                                  setStatus(" All notifications deleted from database");
-                                  await loadData();
-                                } catch (err: any) {
-                                  setStatus(` ${err?.response?.data?.error || "Failed to delete notifications"}`);
-                                }
-                              }
-                            });
-                            setShowConfirmModal(true);
-                          }}
-                          title="Clear all notifications"
-                        >
-                          <FiTrash2 className="mr-1" /> Clear All ({(notifications || []).length})
-                        </button>
+
+                  {/* Right Rail: Pie + Bar charts */}
+                  <div className="xl:col-span-1 grid grid-cols-1 gap-4 sm:gap-6">
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                      <div className="mb-3">
+                        <h3 className="text-base font-bold text-gray-900 m-0">Notification Channel Mix</h3>
+                        <p className="text-xs text-gray-500 mt-1">Round chart by delivery channel</p>
+                      </div>
+                      {(() => {
+                        const byChannel = dashboard.stats.notifications.byChannel || { email: 0, sms: 0, whatsapp: 0 };
+                        const segments = [
+                          { label: "Email", value: Number(byChannel.email || 0), color: "#3b82f6" },
+                          { label: "SMS", value: Number(byChannel.sms || 0), color: "#10b981" },
+                          { label: "WhatsApp", value: Number(byChannel.whatsapp || 0), color: "#22c55e" }
+                        ];
+                        const total = segments.reduce((sum, item) => sum + item.value, 0);
+                        let cursor = 0;
+                        const gradient = segments
+                          .map((segment) => {
+                            const start = total > 0 ? (cursor / total) * 360 : 0;
+                            cursor += segment.value;
+                            const end = total > 0 ? (cursor / total) * 360 : 0;
+                            return `${segment.color} ${start}deg ${end}deg`;
+                          })
+                          .join(", ");
+
+                        return (
+                          <div className="flex items-center gap-4">
+                            <div className="relative h-24 w-24 flex-shrink-0">
+                              <div
+                                className="h-24 w-24 rounded-full border border-gray-100"
+                                style={{
+                                  background: total > 0 ? `conic-gradient(${gradient})` : "#f3f4f6"
+                                }}
+                              />
+                              <div className="absolute inset-3 rounded-full bg-white border border-gray-100 flex items-center justify-center">
+                                <span className="text-xs font-bold text-gray-700">{total}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-1.5 min-w-0">
+                              {segments.map((segment) => (
+                                <div key={segment.label} className="flex items-center justify-between gap-3 text-xs">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: segment.color }} />
+                                    <span className="text-gray-600 truncate">{segment.label}</span>
+                                  </div>
+                                  <span className="font-semibold text-gray-900">
+                                    {segment.value}
+                                    {total > 0 ? ` (${Math.round((segment.value / total) * 100)}%)` : ""}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                      <div className="mb-3">
+                        <h3 className="text-base font-bold text-gray-900 m-0">Payment Status Bars</h3>
+                        <p className="text-xs text-gray-500 mt-1">Compact bar chart for payment states</p>
+                      </div>
+                      {(() => {
+                        const stats = dashboard.stats.payments;
+                        const bars = [
+                          { label: "Completed", value: Number(stats.completed || 0), color: "bg-blue-500" },
+                          { label: "Processing", value: Number(stats.processing || 0), color: "bg-amber-400" },
+                          { label: "Queued", value: Number(stats.queued || 0), color: "bg-cyan-400" },
+                          { label: "Failed", value: Number(stats.failed || 0), color: "bg-rose-500" }
+                        ];
+                        const maxVal = Math.max(...bars.map((bar) => bar.value), 1);
+                        const total = bars.reduce((sum, bar) => sum + bar.value, 0);
+
+                        return (
+                          <div className="space-y-3">
+                            {bars.map((bar) => {
+                              const widthPct = Math.max((bar.value / maxVal) * 100, bar.value > 0 ? 8 : 0);
+                              return (
+                                <div key={bar.label}>
+                                  <div className="flex items-center justify-between text-xs mb-1.5">
+                                    <span className="font-medium text-gray-700">{bar.label}</span>
+                                    <span className="text-gray-900 font-semibold">
+                                      {bar.value}
+                                      {total > 0 ? ` (${Math.round((bar.value / total) * 100)}%)` : ""}
+                                    </span>
+                                  </div>
+                                  <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className={`h-full rounded-full ${bar.color}`} style={{ width: `${widthPct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Row: Alerts & Activity */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mt-6">
+                  {/* Revenue Alerts */}
+                  <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-7 shadow-sm flex flex-col h-full">
+                    <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                      <h3 className="text-lg font-bold m-0 text-gray-900 flex items-center gap-2">
+                        <FaExclamationCircle className="text-emerald-500 w-4 h-4" />
+                        Active Alerts
+                      </h3>
+                      {dashboard.revenueAlerts.length > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          {dashboard.revenueAlerts.length}
+                        </span>
                       )}
                     </div>
-                    {(notifications || []).slice(0, 5).length === 0 ? (
-                      <p className="text-gray-500">No notifications yet</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(notifications || []).slice(0, 5).map((notif) => (
-                          <div key={notif.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                            <div>
-                              <p className="m-0 font-semibold text-gray-900">{notif.channel.toUpperCase()}</p>
-                              <p className="mt-1 text-sm text-gray-500">
-                                {notif.recipient}  {new Date(notif.createdAt).toLocaleString()}
-                              </p>
-                            </div>
-                            <span className={getStatusBadge(notif.status)}>{notif.status}</span>
+                    
+                    <div className="flex-1 overflow-y-auto">
+                      {dashboard.revenueAlerts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full py-8 text-center text-gray-400">
+                          <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4 border border-gray-100 shadow-inner">
+                            <FaRegBell className="w-6 h-6 text-gray-300" />
                           </div>
-                        ))}
+                          <p className="text-sm">No active alerts at this time.</p>
+                          <p className="text-xs mt-1 text-gray-400">Ensure payment gateways are connected.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {dashboard.revenueAlerts.map((alert, index) => (
+                            <div key={index} className="px-4 py-3 bg-amber-50 rounded-lg text-sm text-amber-900 border border-amber-200/60 shadow-sm flex items-start gap-3">
+                              <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 flex-shrink-0"></div>
+                              <p className="leading-snug">{alert}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Recent Activity (takes 2 columns) */}
+                  <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                    {/* Recent Payments */}
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                          <FaRegCreditCard className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-base font-bold m-0 text-gray-900">Recent Payments</h3>
                       </div>
-                    )}
+                      
+                      <div className="flex-1">
+                        {(payments || []).slice(0, 5).length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-6">No payments yet</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(payments || []).slice(0, 5).map((payment) => (
+                              <div key={payment.id} className="p-3 bg-gray-50 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 rounded-xl flex justify-between items-center transition-colors">
+                                <div className="min-w-0">
+                                  <p className="m-0 text-sm font-bold text-gray-900">{formatCurrency(payment.amount, payment.currency)}</p>
+                                  <p className="mt-0.5 text-xs text-gray-500 truncate">
+                                    {payment.customerId} &middot; {new Date(payment.createdAt).toLocaleString()}
+                                  </p>
+                                </div>
+                                <span className={getStatusBadge(payment.status)}>{payment.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Recent Notifications */}
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100">
+                            <FaRegBell className="w-4 h-4" />
+                          </div>
+                          <h3 className="text-base font-bold m-0 text-gray-900">Push Activity</h3>
+                        </div>
+                      </div>
+                      
+                      <div className="flex-1">
+                        {(notifications || []).slice(0, 5).length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-6">No notifications yet</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(notifications || []).slice(0, 5).map((notif) => (
+                              <div key={notif.id} className="p-3 bg-gray-50 border border-gray-100 hover:border-purple-200 hover:bg-purple-50/30 rounded-xl flex justify-between items-center transition-colors">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                      notif.channel === 'email' ? 'bg-blue-100 text-blue-700' :
+                                      notif.channel === 'sms' ? 'bg-emerald-100 text-emerald-700' :
+                                      'bg-green-100 text-green-700'
+                                    }`}>
+                                      {notif.channel}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs font-medium text-gray-700 truncate">{notif.recipient}</p>
+                                </div>
+                                <span className={getStatusBadge(notif.status)}>{notif.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Payments Tab */}
+{/* Payments Tab */}
             {activeTab === "payments" && (
               <div className="space-y-4 min-w-0 max-w-full overflow-x-hidden">
                 {/* Row 1: Create Payment Request + Create Recurring Payment */}
@@ -5814,7 +6701,7 @@ export const BusinessDashboard = () => {
             {activeTab === "automation" && (
               <div className="space-y-3 sm:space-y-6">
                 <div className="flex justify-between items-center">
-                    <h2 className="text-3xl font-bold text-gray-900">Automation Engine</h2>
+                    <h2 className="text-2xl font-bold text-gray-900">Automation Engine</h2>
                     <button 
                         className="btn btn-primary flex items-center gap-2"
                         onClick={async () => {
@@ -5902,15 +6789,15 @@ export const BusinessDashboard = () => {
                         </button>
                       </div>
                       <p className="text-sm text-gray-600 mb-3">
-                        Converts supported external automation/support setups into native Debby workflows.
+                        Installs Debby-native automation templates as workflows.
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div className="p-3 bg-gray-50 rounded border border-gray-200">
-                          <p className="font-semibold text-gray-800 mb-1">Connected Providers</p>
+                          <p className="font-semibold text-gray-800 mb-1">Native Engine</p>
                           <p className="text-gray-600">
                             {(nativeMigrationPreview?.connectedProviders || []).length > 0
-                              ? nativeMigrationPreview.connectedProviders.join(", ")
-                              : "None detected"}
+                              ? "Debby Native"
+                              : "Debby Native"}
                           </p>
                         </div>
                         <div className="p-3 bg-gray-50 rounded border border-gray-200">
@@ -6663,8 +7550,18 @@ export const BusinessDashboard = () => {
                 <Collapsible title="Storefront Email Automation Templates" defaultOpen={false}>
                   <div className="space-y-6">
                     <p className="text-gray-600 text-sm">
-                      Customize the automated emails sent to your customers. You can use variables like <code>{`{{customer_name}}`}</code>, <code>{`{{shop_name}}`}</code>, <code>{`{{order_id}}`}</code>, <code>{`{{total_amount}}`}</code>, and <code>{`{{rating_link}}`}</code>.
+                      Customize the automated emails sent to your customers. You can use variables like <code>{`{{customer_name}}`}</code>, <code>{`{{customer_email}}`}</code>, <code>{`{{customer_phone}}`}</code>, <code>{`{{shop_name}}`}</code>, <code>{`{{order_id}}`}</code>, <code>{`{{tracking_id}}`}</code>, <code>{`{{items_html}}`}</code>, <code>{`{{return_id}}`}</code>, <code>{`{{return_status}}`}</code>, <code>{`{{return_reason}}`}</code>, <code>{`{{total_amount}}`}</code>, and <code>{`{{rating_link}}`}</code>.
                     </p>
+
+                    {!hasConfiguredEmailProvider && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                        <p className="text-sm font-semibold text-amber-900">Email provider not configured</p>
+                        <p className="mt-1 text-xs text-amber-800">
+                          Templates can be saved, but storefront automated emails will not send from your business
+                          integration until you configure Email under Notification Settings.
+                        </p>
+                      </div>
+                    )}
 
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                       <h4 className="text-sm font-bold text-gray-800 mb-4">
@@ -6681,6 +7578,14 @@ export const BusinessDashboard = () => {
                               >
                                 <option value="">Select Trigger...</option>
                                 <option value="order_receipt">Order Receipt (Confirmed Payment)</option>
+                                <option value="payment_completed_update">Payment Completed Update</option>
+                                <option value="checkout_started_update">Checkout Started Update</option>
+                                <option value="order_placed_update">Order Placed Update</option>
+                                <option value="storefront_order_completed">Storefront Order Completed</option>
+                                <option value="storefront_order_completed_owner">Storefront Order Completed (Owner)</option>
+                                <option value="return_request_received">Return Request (Notify Owner)</option>
+                                <option value="return_requested_update">Return Request Received (Notify Customer)</option>
+                                <option value="return_status_updated">Return Status Update (Notify Customer)</option>
                                 <option value="order_shipped">Order In-Transit / Shipped</option>
                                 <option value="order_delivered">Order Delivered (Confirmation)</option>
                                 <option value="abandoned_cart">Abandoned Cart Reminder</option>
@@ -6743,7 +7648,20 @@ export const BusinessDashboard = () => {
                         <p className="text-xs text-gray-500">Loading templates...</p>
                       ) : (
                         <div className="space-y-2">
-                          {["order_receipt", "order_shipped", "order_delivered", "abandoned_cart"].map(event => {
+                          {[
+                            "order_receipt",
+                            "payment_completed_update",
+                            "checkout_started_update",
+                            "order_placed_update",
+                            "storefront_order_completed",
+                            "storefront_order_completed_owner",
+                            "return_request_received",
+                            "return_requested_update",
+                            "return_status_updated",
+                            "order_shipped",
+                            "order_delivered",
+                            "abandoned_cart"
+                          ].map(event => {
                             const customTpl = emailTemplates.find(t => t.triggerEvent === event);
                             return (
                               <div key={event} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg shadow-sm">
@@ -10243,12 +11161,27 @@ export const BusinessDashboard = () => {
                 <p className="text-gray-500 mt-1">Unified runs, retries, reconciliation, reliability, and admin controls</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="input input-sm min-w-[200px]"
+                  value={selectedShopId || ""}
+                  onChange={(e) => setSelectedShopId(e.target.value || null)}
+                >
+                  <option value="">Auto-select shop</option>
+                  {shops.map((shop) => (
+                    <option key={shop.id} value={shop.id}>
+                      {shop.name} ({shop.slug})
+                    </option>
+                  ))}
+                </select>
                 <button className="btn btn-secondary btn-sm" onClick={loadOpsData} disabled={loadingOps}>
                   <FiRefreshCw className="mr-1" />
                   {loadingOps ? "Refreshing..." : "Refresh Ops"}
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={runOpsPaymentReconcile}>
                   Reconcile Payments
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={runOpsAccountingSync}>
+                  Sync Accounting
                 </button>
               </div>
             </div>
@@ -10276,6 +11209,334 @@ export const BusinessDashboard = () => {
                 <p className="text-2xl font-bold text-gray-900">{opsSlo?.achievedSlo ?? 0}%</p>
                 <p className="text-xs text-gray-500 mt-1">Target: {opsSlo?.targetSlo ?? 99}%</p>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="card">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900">Accounting Reconciliation</h3>
+                  <button className="btn btn-xs btn-secondary" onClick={runOpsAccountingSync}>
+                    Run Sync
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">Total</p>
+                    <p className="text-lg font-bold text-gray-900">{opsAccounting?.summary?.total ?? 0}</p>
+                  </div>
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">Synced</p>
+                    <p className="text-lg font-bold text-green-700">{opsAccounting?.summary?.synced ?? 0}</p>
+                  </div>
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">Drift</p>
+                    <p className="text-lg font-bold text-red-700">{opsAccounting?.summary?.drift ?? 0}</p>
+                  </div>
+                </div>
+                {opsAccountingSyncResult && (
+                  <p className="text-xs text-gray-600 mb-3">
+                    Last run: {opsAccountingSyncResult?.syncedPayments ?? 0} synced payments,{" "}
+                    {opsAccountingSyncResult?.indexedOrders ?? 0} indexed orders
+                  </p>
+                )}
+                <div className="w-full overflow-x-auto max-h-64 overflow-y-auto">
+                  <table className="table w-full min-w-[760px] text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50">
+                    <thead>
+                      <tr>
+                        <th>Payment</th>
+                        <th>Status</th>
+                        <th>Accounting</th>
+                        <th>Ledger</th>
+                        <th>Drift</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(opsAccounting?.rows || []).slice(0, 20).map((row: any) => (
+                        <tr key={row.paymentId}>
+                          <td className="font-mono text-[11px] text-gray-700">{String(row.paymentId || "").slice(0, 12)}...</td>
+                          <td>{row.paymentStatus}</td>
+                          <td>{row.accountingStatus}</td>
+                          <td>{row.ledgerEntryCount ?? 0}</td>
+                          <td>
+                            <span className={row.drift ? "badge badge-danger" : "badge badge-success"}>
+                              {row.drift ? "Yes" : "No"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Tax Automation</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label">Amount</label>
+                    <input
+                      type="number"
+                      className="input"
+                      min="0"
+                      step="0.01"
+                      value={opsTaxForm.amount}
+                      onChange={(e) => setOpsTaxForm((prev) => ({ ...prev, amount: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Country</label>
+                    <input
+                      className="input"
+                      value={opsTaxForm.country}
+                      onChange={(e) => setOpsTaxForm((prev) => ({ ...prev, country: e.target.value.toUpperCase() }))}
+                      placeholder="US"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">State / Region (optional)</label>
+                    <input
+                      className="input"
+                      value={opsTaxForm.state}
+                      onChange={(e) => setOpsTaxForm((prev) => ({ ...prev, state: e.target.value }))}
+                      placeholder="CA"
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm mt-3">
+                  <input
+                    type="checkbox"
+                    checked={opsTaxForm.taxInclusive}
+                    onChange={(e) => setOpsTaxForm((prev) => ({ ...prev, taxInclusive: e.target.checked }))}
+                  />
+                  <span className="!text-gray-900" style={{ color: "#111827" }}>Tax is already included in amount</span>
+                </label>
+                <button className="btn btn-primary btn-sm mt-3" onClick={runOpsTaxCalculation} disabled={calculatingOpsTax}>
+                  {calculatingOpsTax ? "Calculating..." : "Calculate Tax"}
+                </button>
+                {opsTaxResult && (
+                  <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100">
+                    <p className="text-gray-900 dark:text-gray-100">Subtotal: <span className="font-semibold">{opsTaxResult.subtotal}</span></p>
+                    <p className="text-gray-900 dark:text-gray-100">Tax: <span className="font-semibold">{opsTaxResult.taxAmount}</span></p>
+                    <p className="text-gray-900 dark:text-gray-100">Total: <span className="font-semibold">{opsTaxResult.total}</span></p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">
+                      Rate: {(Number(opsTaxResult.taxRate || 0) * 100).toFixed(2)}% • Type: {opsTaxResult.taxType || "n/a"}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Fraud & Risk Controls</h3>
+                <p className="text-xs text-gray-500">{opsFraudFlags.length} flags</p>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium text-gray-900">Rules (JSON)</p>
+                    <button className="btn btn-xs btn-secondary" onClick={saveOpsFraudRules} disabled={savingOpsFraudRules}>
+                      {savingOpsFraudRules ? "Saving..." : "Save Rules"}
+                    </button>
+                  </div>
+                  <textarea
+                    className="input min-h-[220px] font-mono text-xs"
+                    value={opsFraudRulesDraft}
+                    onChange={(e) => setOpsFraudRulesDraft(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">
+                    Fields: amount, country, ip, email_domain, velocity, customer_age_days
+                  </p>
+                </div>
+                <div className="max-h-[300px] overflow-y-auto space-y-2">
+                  {opsFraudFlags.length === 0 ? (
+                    <p className="text-sm text-gray-500">No fraud flags found.</p>
+                  ) : (
+                    opsFraudFlags.slice(0, 40).map((flag: any) => (
+                      <div key={flag.id} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-gray-900">{flag.flagType || "risk_flag"}</p>
+                          <span className={flag.isResolved ? "badge badge-success" : "badge badge-warning"}>
+                            {flag.isResolved ? "Resolved" : "Open"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">{flag.reason || "No reason"}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Severity: {flag.severity || "medium"} • Score: {flag.riskScore ?? "n/a"}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          {!flag.isResolved ? (
+                            <button
+                              className="btn btn-xs btn-primary"
+                              disabled={resolvingFraudFlagId === flag.id}
+                              onClick={() => setOpsFraudFlagResolved(flag.id, true)}
+                            >
+                              {resolvingFraudFlagId === flag.id ? "Saving..." : "Mark Resolved"}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-xs btn-secondary"
+                              disabled={resolvingFraudFlagId === flag.id}
+                              onClick={() => setOpsFraudFlagResolved(flag.id, false)}
+                            >
+                              {resolvingFraudFlagId === flag.id ? "Saving..." : "Reopen"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Shipping Labels & Tracking</h3>
+                <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                  Debby Native Shipping
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                  <p className="text-[11px] text-gray-500">Orders</p>
+                  <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.totalOrders ?? 0}</p>
+                </div>
+                <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                  <p className="text-[11px] text-gray-500">With Shipment</p>
+                  <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.withShipmentData ?? 0}</p>
+                </div>
+                <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                  <p className="text-[11px] text-gray-500">Delivered</p>
+                  <p className="text-lg font-bold text-green-700">{opsShippingSummary?.statusCounts?.delivered ?? 0}</p>
+                </div>
+              </div>
+              <div className="w-full overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="table w-full min-w-[980px] text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Status</th>
+                      <th>Provider</th>
+                      <th>Tracking</th>
+                      <th>Label</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(opsShippingSummary?.recent || []).slice(0, 30).map((entry: any) => (
+                      <tr key={entry.orderId}>
+                        <td className="font-medium text-gray-900">{entry.orderNumber}</td>
+                        <td>{entry.shipment?.shipmentStatus || entry.status}</td>
+                        <td>{entry.shipment?.provider || "-"}</td>
+                        <td className="font-mono">{entry.shipment?.trackingNumber || "-"}</td>
+                        <td>
+                          {entry.shipment?.labelUrl ? (
+                            <button
+                              type="button"
+                              className="text-blue-600 hover:underline"
+                              onClick={() => openOpsShippingLabel(entry.shipment.labelUrl)}
+                            >
+                              Open
+                            </button>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1">
+                            <button
+                              className="btn btn-xs btn-secondary"
+                              disabled={creatingShippingLabelOrderId === entry.orderId}
+                              onClick={() => createOpsShippingLabel(entry.orderId)}
+                            >
+                              {creatingShippingLabelOrderId === entry.orderId ? "..." : "Label"}
+                            </button>
+                            <button
+                              className="btn btn-xs btn-warning"
+                              disabled={updatingShippingOrderId === entry.orderId}
+                              onClick={() => updateOpsShippingStatus(entry.orderId, "in_transit")}
+                            >
+                              Transit
+                            </button>
+                            <button
+                              className="btn btn-xs btn-success"
+                              disabled={updatingShippingOrderId === entry.orderId}
+                              onClick={() => updateOpsShippingStatus(entry.orderId, "delivered")}
+                            >
+                              Delivered
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Returns Control Panel</h3>
+              {opsReturns.length === 0 ? (
+                <p className="text-sm text-gray-500">No return requests found.</p>
+              ) : (
+                <div className="w-full overflow-x-auto max-h-80 overflow-y-auto">
+                  <table className="table w-full min-w-[980px] text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50">
+                    <thead>
+                      <tr>
+                        <th>Order</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                        <th>Updated</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {opsReturns.slice(0, 60).map((request: any) => (
+                        <tr key={request.id}>
+                          <td className="font-medium text-gray-900">{request.order?.orderNumber || "N/A"}</td>
+                          <td>{request.customer?.email || request.customer?.phone || "N/A"}</td>
+                          <td>
+                            <span className="badge">{request.status}</span>
+                          </td>
+                          <td className="max-w-[280px] truncate">{request.reason || "N/A"}</td>
+                          <td>{request.updatedAt ? new Date(request.updatedAt).toLocaleString() : "-"}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <select
+                                className="input input-xs min-w-[130px]"
+                                value={opsReturnStatusDrafts[request.id] || request.status}
+                                onChange={(e) =>
+                                  setOpsReturnStatusDrafts((prev) => ({
+                                    ...prev,
+                                    [request.id]: e.target.value
+                                  }))
+                                }
+                              >
+                                <option value="requested">requested</option>
+                                <option value="approved">approved</option>
+                                <option value="rejected">rejected</option>
+                                <option value="in_transit">in_transit</option>
+                                <option value="received">received</option>
+                                <option value="refunded">refunded</option>
+                                <option value="exchanged">exchanged</option>
+                              </select>
+                              <button
+                                className="btn btn-xs btn-primary"
+                                disabled={updatingReturnId === request.id}
+                                onClick={() => updateOpsReturnStatus(request.order?.id, request.id)}
+                              >
+                                {updatingReturnId === request.id ? "Saving..." : "Update"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="card">
@@ -10609,9 +11870,31 @@ export const BusinessDashboard = () => {
 
             {shopSectionTab === "shop" && (
             <div className="card space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Shop Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="md:col-span-2">
+              <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold text-gray-900 m-0">Shop Details</h3>
+                <div className="flex items-center gap-2 md:ml-auto">
+                  <button
+                    className="btn btn-secondary whitespace-nowrap"
+                    onClick={() => {
+                      setIsCreatingAnotherShop(true);
+                      resetShopEditorForCreate();
+                    }}
+                  >
+                    Create Another Shop
+                  </button>
+                  {!isCreatingAnotherShop && !!selectedShopId && (
+                    <button
+                      className="btn btn-danger whitespace-nowrap"
+                      onClick={() => requestDeleteShop(selectedShopId)}
+                      disabled={deletingShopId === selectedShopId}
+                    >
+                      {deletingShopId === selectedShopId ? "Deleting..." : "Delete Shop"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
                   <label className="label">Select Shop</label>
                   <select
                     className="input"
@@ -10630,26 +11913,6 @@ export const BusinessDashboard = () => {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="flex items-end gap-2">
-                  <button
-                    className="btn btn-secondary flex-1"
-                    onClick={() => {
-                      setIsCreatingAnotherShop(true);
-                      resetShopEditorForCreate();
-                    }}
-                  >
-                    Create Another Shop
-                  </button>
-                  {!isCreatingAnotherShop && !!selectedShopId && (
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => requestDeleteShop(selectedShopId)}
-                      disabled={deletingShopId === selectedShopId}
-                    >
-                      {deletingShopId === selectedShopId ? "Deleting..." : "Delete Shop"}
-                    </button>
-                  )}
                 </div>
               </div>
               {isCreatingAnotherShop && (
@@ -10811,10 +12074,65 @@ export const BusinessDashboard = () => {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label mb-0">Shop Title Font</label>
+                </div>
+                <select
+                  className="input mb-2"
+                  value={shopForm.titleFont}
+                  onChange={(e) => setShopForm({ ...shopForm, titleFont: e.target.value })}
+                >
+                  <option value="">Default (Playfair Display)</option>
+                  <option value="'Inter', sans-serif">Inter (Modern Sans)</option>
+                  <option value="'Outfit', sans-serif">Outfit (Geometric Sans)</option>
+                  <option value="'Great Vibes', cursive">Great Vibes (Elegant Cursive)</option>
+                  <option value="'Dancing Script', cursive">Dancing Script (Playful Cursive)</option>
+                  <option value="'Cinzel', serif">Cinzel (Classic Serif)</option>
+                  <option value="'Montserrat', sans-serif">Montserrat (Bold Sans)</option>
+                </select>
+                <div className="p-4 rounded-xl border bg-slate-50 flex items-center justify-center min-h-[5rem]">
+                  <span
+                    style={{
+                      fontFamily: shopForm.titleFont || '"Playfair Display","Bodoni Moda","Times New Roman",serif',
+                      fontSize: '1.75rem',
+                      fontWeight: 700,
+                      color: shopForm.themeColor || '#000'
+                    }}
+                  >
+                    {shopForm.name || "Your Shop Name"}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Select a font style for your public storefront hero section.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="label">Theme Color</label>
                   <input type="color" className="input" value={shopForm.themeColor} onChange={(e) => setShopForm({ ...shopForm, themeColor: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Shop Currency</label>
+                  <select
+                    className="input"
+                    value={shopForm.currency}
+                    onChange={(e) => setShopForm({ ...shopForm, currency: e.target.value.toUpperCase() })}
+                  >
+                    {shopCurrencyOptionsForSelect.map((code) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    All products in this shop use this currency.
+                  </p>
+                  {gatewayApprovedCurrencies.length > 0 && !gatewayApprovedCurrencies.includes(shopForm.currency) && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Connected gateway approved currency: {gatewayApprovedCurrencies.join(", ")}.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Business Model</label>
@@ -10881,11 +12199,13 @@ export const BusinessDashboard = () => {
                           name: shopForm.name,
                           slug: shopForm.slug,
                           description: shopForm.description || undefined,
+                          currency: shopForm.currency,
                           logoUrl: shopForm.logoUrl || undefined,
                           bannerUrl: primaryHeroImage || undefined,
                           heroImageUrls: normalizedHeroImageUrls,
                           heroVideoUrl: heroVideoUrl || undefined,
                           themeColor: shopForm.themeColor,
+                          titleFont: shopForm.titleFont || undefined,
                           businessType: shopForm.businessType,
                           businessMode: shopForm.businessMode
                         }
@@ -10905,11 +12225,13 @@ export const BusinessDashboard = () => {
                           name: shopForm.name,
                           slug: shopForm.slug,
                           description: shopForm.description,
+                          currency: shopForm.currency,
                           logoUrl: shopForm.logoUrl || "",
                           bannerUrl: primaryHeroImage,
                           heroImageUrls: normalizedHeroImageUrls,
                           heroVideoUrl: heroVideoUrl,
-                          themeColor: shopForm.themeColor
+                          themeColor: shopForm.themeColor,
+                          titleFont: shopForm.titleFont || null
                         }
                       });
                       setStatus(" Shop updated");
@@ -11247,7 +12569,7 @@ export const BusinessDashboard = () => {
                   )}
                   {shopSectionTab === "upload" && (
                   <div className="text-xs text-gray-600 bg-gray-50 border rounded-lg p-3">
-                    Required fields: <span className="font-semibold">Name, Price, Currency, Quantity</span>. Other fields are optional.
+                    Required fields: <span className="font-semibold">Name, Price, Quantity</span>. Currency comes from Shop Settings.
                   </div>
                   )}
                   {shopSectionTab === "upload" && (
@@ -11271,16 +12593,10 @@ export const BusinessDashboard = () => {
                       value={productForm.price || ""}
                       onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
                     />
-                    <select
-                      className="input"
-                      value={productForm.currency}
-                      onChange={(e) => setProductForm({ ...productForm, currency: e.target.value })}
-                    >
-                      <option value="USD">USD</option>
-                      <option value="NGN">NGN</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                    </select>
+                    <div className="input bg-gray-50 text-gray-700 flex items-center justify-between">
+                      <span>Currency</span>
+                      <span className="font-semibold">{shopForm.currency || "USD"}</span>
+                    </div>
                     <select
                       className="input"
                       value={productForm.categoryId}
@@ -11537,10 +12853,6 @@ export const BusinessDashboard = () => {
                           setStatus("? Product name is required");
                           return;
                         }
-                        if (!payload.currency || payload.currency.trim().length !== 3) {
-                          setStatus("? Product currency is required");
-                          return;
-                        }
                         if (!Number.isFinite(payload.price) || payload.price < 0) {
                           setStatus("? Enter a valid product price");
                           return;
@@ -11640,7 +12952,20 @@ export const BusinessDashboard = () => {
                               )}
                               <div>
                                 <p className="font-medium text-gray-900">{p.name}</p>
-                                <p className="text-sm text-gray-600">{p.currency} {p.price.toFixed(2)}  Stock: {p.inventory}</p>
+                                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                  <p className="text-sm text-gray-600">
+                                    {p.currency} {p.price.toFixed(2)}
+                                  </p>
+                                  <span
+                                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                      p.inventory > 0
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : "bg-rose-100 text-rose-800"
+                                    }`}
+                                  >
+                                    {p.inventory > 0 ? `${p.inventory} in stock` : "Out of stock"}
+                                  </span>
+                                </div>
                                 <p className="text-xs text-gray-500">
                                   Fulfillment:{" "}
                                   {p.metadata?.fulfillment?.type === "dropship"
@@ -13628,6 +14953,7 @@ export const BusinessDashboard = () => {
     </div>
   );
 };
+
 
 
 

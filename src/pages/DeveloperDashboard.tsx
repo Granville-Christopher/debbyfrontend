@@ -494,7 +494,7 @@ export const DeveloperDashboard = () => {
       />
       
       <DevNav userEmail={user?.email} orgName={user?.orgName} orgId={user?.orgId} />
-      <div className="flex-1 transition-all duration-300 relative z-10" style={{ marginLeft: 'var(--sidebar-width, 280px)', marginTop: '64px' }}>
+      <div className="flex-1 transition-all duration-300 relative z-10" style={{ marginLeft: 'var(--sidebar-width, 180px)', marginTop: '64px' }}>
         <div className="max-w-7xl mx-auto px-6 py-8">
           {status && (
             <div className={`bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl p-4 mb-6 animate-fade-in ${
