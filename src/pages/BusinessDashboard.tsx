@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BizNav } from "../components/BizNav";
 import { useAuth } from "../auth/AuthProvider";
@@ -1137,6 +1137,9 @@ export const BusinessDashboard = () => {
   const [isMobileViewport, setIsMobileViewport] = useState(
     typeof window !== "undefined" ? window.innerWidth < 640 : false
   );
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isWindowActive, setIsWindowActive] = useState(true);
   const [isPageVisible, setIsPageVisible] = useState(
@@ -1327,6 +1330,8 @@ export const BusinessDashboard = () => {
   const [opsReturnStatusDrafts, setOpsReturnStatusDrafts] = useState<Record<string, string>>({});
   const [updatingReturnId, setUpdatingReturnId] = useState<string | null>(null);
   const [processingBackfillId, setProcessingBackfillId] = useState<string | null>(null);
+  const isTabletViewport = viewportWidth >= 640 && viewportWidth < 1280;
+  const isNarrowOverviewRevenueChart = isTabletViewport && !isSidebarCollapsed;
 
   const loadData = async () => {
     if (!accessToken) return;
@@ -2131,7 +2136,10 @@ export const BusinessDashboard = () => {
   }, []);
 
   useEffect(() => {
-    const handleResize = () => setIsMobileViewport(window.innerWidth < 640);
+    const handleResize = () => {
+      setIsMobileViewport(window.innerWidth < 640);
+      setViewportWidth(window.innerWidth);
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -5457,7 +5465,7 @@ export const BusinessDashboard = () => {
                     </div>
                     
                     <div className="flex-1 min-h-0 overflow-hidden">
-                      <div className="relative flex h-full min-w-0 pr-1">
+                      <div className="relative flex h-[200px] sm:h-full min-w-0 pr-1">
                         {(() => {
                         const revenueTrend = Array.isArray(dashboard.stats.payments.revenueTrend)
                           ? dashboard.stats.payments.revenueTrend
@@ -5496,11 +5504,24 @@ export const BusinessDashboard = () => {
                         const chartMax = Math.max(tickValue * tickCount, maxVal * 1.1); // add 10% headroom
                         
                         const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => i * (chartMax / tickCount)).reverse();
+                        const yAxisWidthClass = isNarrowOverviewRevenueChart ? "w-10 sm:w-12" : "w-14 sm:w-16";
+                        const yAxisLeftClass = isNarrowOverviewRevenueChart ? "left-10 sm:left-12" : "left-14 sm:left-16";
+                        const barGapClass = isNarrowOverviewRevenueChart
+                          ? "gap-0.5 sm:gap-1 md:gap-1"
+                          : "gap-1 sm:gap-1.5 md:gap-2";
+                        const barWidthClass = isNarrowOverviewRevenueChart
+                          ? "max-w-[8px] sm:max-w-[10px] md:max-w-[12px] lg:max-w-[14px]"
+                          : isTabletViewport
+                          ? "max-w-[10px] sm:max-w-[12px] md:max-w-[14px] lg:max-w-[16px]"
+                          : "max-w-[12px] sm:max-w-[16px] md:max-w-[20px] lg:max-w-[32px] xl:max-w-[48px]";
+                        const xLabelClass = isNarrowOverviewRevenueChart
+                          ? "text-[7px] sm:text-[9px]"
+                          : "text-[8px] sm:text-[10px]";
 
                         return (
                           <>
                             {/* Y-Axis Grid Lines */}
-                            <div className="absolute inset-x-0 inset-y-0 left-14 sm:left-16 pb-10 flex flex-col justify-between pointer-events-none">
+                            <div className={`absolute inset-x-0 inset-y-0 ${yAxisLeftClass} pb-10 flex flex-col justify-between pointer-events-none`}>
                               {yTicks.map((tick, i) => (
                                 <div key={i} className="flex items-center w-full h-0">
                                   <div className="w-full border-t border-dashed border-gray-200" />
@@ -5509,7 +5530,7 @@ export const BusinessDashboard = () => {
                             </div>
 
                             {/* Y-Axis Labels */}
-                            <div className="w-14 sm:w-16 shrink-0 flex flex-col justify-between text-[9px] sm:text-[10px] text-gray-500 font-medium pb-10 pr-3">
+                            <div className={`${yAxisWidthClass} shrink-0 flex flex-col justify-between text-[9px] sm:text-[10px] text-gray-500 font-medium pb-10 pr-2 sm:pr-3`}>
                               {yTicks.map((tick, i) => (
                                 <div key={i} className="text-right leading-none whitespace-nowrap">
                                   {formatCompactCurrency(tick, trendCurrency)}
@@ -5518,21 +5539,21 @@ export const BusinessDashboard = () => {
                             </div>
 
                             {/* Chart Bars */}
-                            <div className="flex-1 min-w-0 flex items-end justify-between gap-1 sm:gap-1.5 md:gap-2 px-1 sm:px-2 pb-10 relative z-10 border-b border-gray-200 ml-1 sm:ml-2">
+                            <div className={`flex-1 min-w-0 flex items-end justify-between ${barGapClass} px-0.5 sm:px-1.5 pb-10 relative z-10 border-b border-gray-200 ml-0 sm:ml-1`}>
                               {entries.map((entry, i) => {
                                 const pct = Math.max((entry.amount / chartMax) * 100, 2); // 2% min height for visibility
                                 return (
-                                  <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group mt-2 relative">
+                                  <div key={i} className="flex-1 min-w-0 flex flex-col items-center h-full justify-end group mt-2 relative">
                                     <span className="text-[10px] sm:text-xs font-bold text-gray-600 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-y-2 group-hover:translate-y-0 duration-300">
                                       {formatCurrency(entry.amount, trendCurrency)}
                                     </span>
-                                    <div className="w-full max-w-[20px] sm:max-w-[26px] md:max-w-[34px] lg:max-w-[48px] flex-1 bg-emerald-50/50 border border-emerald-100/50 rounded-t flex items-end relative overflow-hidden group-hover:bg-emerald-50 transition-colors">
+                                    <div className={`w-full ${barWidthClass} flex-1 bg-emerald-50/50 border border-emerald-100/50 rounded-t flex items-end relative overflow-hidden group-hover:bg-emerald-50 transition-colors`}>
                                       <div
                                         className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 transition-all duration-1000 ease-out shadow-sm rounded-t"
                                         style={{ height: `${pct}%` }}
                                       />
                                     </div>
-                                    <span className="absolute -bottom-9 text-[8px] sm:text-[10px] text-gray-500 font-medium text-center w-full leading-tight">
+                                    <span className={`absolute -bottom-9 ${xLabelClass} text-gray-500 font-medium text-center w-full leading-tight`}>
                                       {entry.label.split(',').map((part, idx) => (
                                         <React.Fragment key={idx}>
                                           {part}{idx === 0 && <br/>}

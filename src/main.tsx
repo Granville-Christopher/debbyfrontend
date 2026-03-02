@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
+import { AdminAuthProvider } from "./auth/AdminAuthProvider";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./index.css";
 
@@ -22,7 +23,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <AdminAuthProvider>
+            <App />
+          </AdminAuthProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { RoleGate } from "./auth/RoleGate";
+import { AdminProtectedRoute } from "./auth/AdminProtectedRoute";
 import { useAuth } from "./auth/AuthProvider";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
@@ -49,6 +50,15 @@ const PitchDeck = lazy(() =>
 const BusinessHome = lazy(() =>
   import("./pages/BusinessHome").then((module) => ({ default: module.BusinessHome }))
 );
+const AdminLogin = lazy(() =>
+  import("./pages/AdminLogin").then((module) => ({ default: module.AdminLogin }))
+);
+const AdminSignup = lazy(() =>
+  import("./pages/AdminSignup").then((module) => ({ default: module.AdminSignup }))
+);
+const AdminDashboard = lazy(() =>
+  import("./pages/AdminDashboard").then((module) => ({ default: module.AdminDashboard }))
+);
 
 const HomeRedirect = () => {
   const { role, isAuthenticated, loading } = useAuth();
@@ -91,6 +101,8 @@ export const App = () => {
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/signup" element={<AdminSignup />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/integrations" element={<Integrations />} />
@@ -129,6 +141,14 @@ export const App = () => {
                 <CreatorDashboard />
               </RoleGate>
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/*"
+          element={
+            <AdminProtectedRoute>
+              <AdminDashboard />
+            </AdminProtectedRoute>
           }
         />
         <Route path="*" element={<NotFound />} />

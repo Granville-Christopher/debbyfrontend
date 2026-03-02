@@ -15,6 +15,7 @@ interface SidebarProps {
   showLogout?: boolean;
   compactOpenWidthOnMobileMd?: boolean;
   compactLinkDensity?: boolean;
+  theme?: "light" | "dark";
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -31,7 +32,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   showLogout = true,
   compactOpenWidthOnMobileMd = false,
   compactLinkDensity = false,
+  theme = "light",
 }) => {
+  const isDark = theme === "dark";
   const [isSmall, setIsSmall] = useState(window.innerWidth < 640);
   const [isBelowLg, setIsBelowLg] = useState(window.innerWidth < 1024);
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false);
@@ -100,7 +103,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {(!isMobileHiddenMode || showMobileToggleButton) && (
         <button
           onClick={handleToggle}
-          className="fixed z-30 p-2.5 bg-white/80 backdrop-blur-xl shadow-lg shadow-gray-200/50 rounded-full transition-all duration-300 hover:bg-white hover:shadow-xl hover:scale-105"
+          className={`fixed z-30 p-2.5 backdrop-blur-xl rounded-full transition-all duration-300 hover:scale-105 ${
+            isDark
+              ? "bg-slate-900/85 border border-slate-700 shadow-lg shadow-black/30 hover:bg-slate-800"
+              : "bg-white/80 shadow-lg shadow-gray-200/50 hover:bg-white hover:shadow-xl"
+          }`}
           style={{
             left: isMobileHiddenMode ? "12px" : isCollapsed ? (isSmall ? "28px" : "68px") : expandedToggleLeft,
             top: "76px",
@@ -117,14 +124,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {isMobileHiddenMode ? (
             isMobileMenuOpen ? (
-              <FiX className="w-4 h-4 text-gray-600" />
+              <FiX className={`w-4 h-4 ${isDark ? "text-slate-200" : "text-gray-600"}`} />
             ) : (
-              <FiMenu className="w-4 h-4 text-gray-600" />
+              <FiMenu className={`w-4 h-4 ${isDark ? "text-slate-200" : "text-gray-600"}`} />
             )
           ) : isCollapsed ? (
-            <FiChevronRight className="w-4 h-4 text-gray-600" />
+            <FiChevronRight className={`w-4 h-4 ${isDark ? "text-slate-200" : "text-gray-600"}`} />
           ) : (
-            <FiChevronLeft className="w-4 h-4 text-gray-600" />
+            <FiChevronLeft className={`w-4 h-4 ${isDark ? "text-slate-200" : "text-gray-600"}`} />
           )}
         </button>
       )}
@@ -138,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <div
-        className={`bg-white/70 backdrop-blur-2xl fixed left-0 transition-all duration-500 ease-out shadow-2xl shadow-gray-300/30 ${
+        className={`${isDark ? "bg-slate-950/85 border-r border-slate-800 shadow-2xl shadow-black/40" : "bg-white/70 shadow-2xl shadow-gray-300/30"} backdrop-blur-2xl fixed left-0 transition-all duration-500 ease-out ${
           isMobileHiddenMode
             ? `z-40 ${isCompactOpenWidth ? "w-[180px]" : "w-72"} ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`
             : `${isCollapsed ? "w-10 sm:w-20" : isCompactOpenWidth ? "w-[180px] lg:w-72" : "w-[180px]"} z-10`
@@ -158,7 +165,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center ${isCollapsed && !isMobileHiddenMode ? "justify-center" : "gap-3"} px-4 ${compactLinkDensity ? "py-2.5" : "py-3"} rounded-xl transition-all duration-300 ${
                     activeTab === tab.id
-                      ? "bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-600 font-semibold shadow-lg shadow-blue-200/30"
+                      ? isDark
+                        ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-200 font-semibold border border-cyan-400/30"
+                        : "bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-600 font-semibold shadow-lg shadow-blue-200/30"
+                      : isDark
+                      ? "text-slate-300 hover:bg-slate-900/80"
                       : "text-gray-600 hover:bg-white/80 hover:shadow-md"
                   }`}
                   title={isCollapsed && !isMobileHiddenMode ? tab.label : undefined}
