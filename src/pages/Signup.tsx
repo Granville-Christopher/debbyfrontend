@@ -3,24 +3,14 @@ import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { BusinessSignupProfile, Role, useAuth } from "../auth/AuthProvider";
 import { apiRequest } from "../api/client";
 import { FiGithub, FiCode, FiBriefcase, FiZap, FiLock, FiBarChart2, FiLink2, FiUsers, FiCheck, FiFeather, FiTwitter, FiCalendar, FiTrendingUp } from "react-icons/fi";
+import { ALL_COUNTRIES } from "../constants/countries";
+import {
+  PHONE_COUNTRY_CODES,
+  combinePhoneNumber,
+  getDialCodeForCountry
+} from "../constants/phoneCountryCodes";
 
-const BUSINESS_COUNTRIES = [
-  "United States",
-  "United Kingdom",
-  "Canada",
-  "Nigeria",
-  "South Africa",
-  "Kenya",
-  "Ghana",
-  "India",
-  "United Arab Emirates",
-  "Germany",
-  "France",
-  "Netherlands",
-  "Brazil",
-  "Australia",
-  "Other"
-];
+const BUSINESS_COUNTRIES = [...ALL_COUNTRIES];
 
 const BUSINESS_INDUSTRIES = [
   "Retail and Ecommerce",
@@ -36,6 +26,7 @@ const BUSINESS_INDUSTRIES = [
 ];
 
 const BUSINESS_TEAM_SIZES = ["Solo", "2-5", "6-20", "21-50", "51-200", "200+"];
+const DEFAULT_PHONE_DIAL_CODE = "+1";
 
 export const Signup = () => {
   const { signup, refresh } = useAuth();
@@ -53,6 +44,7 @@ export const Signup = () => {
     teamSize: "",
     website: ""
   });
+  const [businessPhoneDialCode, setBusinessPhoneDialCode] = useState(DEFAULT_PHONE_DIAL_CODE);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
@@ -92,6 +84,14 @@ export const Signup = () => {
     setBusinessProfile((prev) => ({ ...prev, [field]: value }));
   };
 
+  useEffect(() => {
+    if (role !== "business") return;
+    const dialCode = getDialCodeForCountry(businessProfile.country);
+    if (dialCode) {
+      setBusinessPhoneDialCode(dialCode);
+    }
+  }, [role, businessProfile.country]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -123,13 +123,20 @@ export const Signup = () => {
           return;
         }
 
+        const fullPhone = combinePhoneNumber(businessPhoneDialCode, businessProfile.phone);
+        if (!fullPhone) {
+          setError("Phone number is required for business registration.");
+          setLoading(false);
+          return;
+        }
+
         signupOptions = {
           businessProfile: {
             ...businessProfile,
             fullName: businessProfile.fullName.trim(),
             businessName: businessProfile.businessName.trim(),
             country: businessProfile.country.trim(),
-            phone: businessProfile.phone.trim(),
+            phone: fullPhone,
             industry: businessProfile.industry.trim(),
             teamSize: businessProfile.teamSize.trim(),
             website: businessProfile.website?.trim() || undefined
@@ -411,14 +418,28 @@ export const Signup = () => {
                     </div>
                     <div>
                       <label className="label">Phone Number</label>
-                      <input
-                        type="tel"
-                        className="input"
-                        value={businessProfile.phone}
-                        onChange={(e) => updateBusinessProfile("phone", e.target.value)}
-                        placeholder="+1 555 123 4567"
-                        required={role === "business"}
-                      />
+                      <div className="flex gap-2">
+                        <select
+                          className="input w-44 shrink-0"
+                          value={businessPhoneDialCode}
+                          onChange={(e) => setBusinessPhoneDialCode(e.target.value)}
+                          aria-label="Phone country code"
+                        >
+                          {PHONE_COUNTRY_CODES.map((entry) => (
+                            <option key={`${entry.country}-${entry.dialCode}`} value={entry.dialCode}>
+                              {entry.country} ({entry.dialCode})
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="tel"
+                          className="input flex-1"
+                          value={businessProfile.phone}
+                          onChange={(e) => updateBusinessProfile("phone", e.target.value)}
+                          placeholder="8012345678"
+                          required={role === "business"}
+                        />
+                      </div>
                     </div>
                   </div>
 

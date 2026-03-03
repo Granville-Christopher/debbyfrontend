@@ -13,6 +13,13 @@ import { useKeyboardShortcuts } from "../components/KeyboardShortcuts";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { BillingPlans } from "../components/BillingPlans";
 import { CustomerManager } from "../components/CustomerManager";
+import { ALL_COUNTRIES } from "../constants/countries";
+import {
+  PHONE_COUNTRY_CODES,
+  combinePhoneNumber,
+  getDialCodeForCountry,
+  splitPhoneNumber
+} from "../constants/phoneCountryCodes";
 import { 
   FiBarChart2, 
   FiCreditCard, 
@@ -50,6 +57,9 @@ import {
   FiX
 } from "react-icons/fi";
 import { FaDollarSign, FaRegCreditCard, FaRegBell, FaLink, FaChartBar, FaExclamationCircle } from "react-icons/fa";
+
+const ACCOUNT_COUNTRIES = [...ALL_COUNTRIES] as string[];
+const DEFAULT_PHONE_DIAL_CODE = "+1";
 
 type Payment = {
   id: string;
@@ -197,6 +207,41 @@ type DashboardData = {
   };
 };
 
+type BusinessAccountDetails = {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    firstName: string | null;
+    lastName: string | null;
+    fullName: string | null;
+  };
+  organization: {
+    id: string;
+    name: string;
+    createdAt: string;
+  };
+  businessProfile: {
+    fullName: string | null;
+    businessName: string | null;
+    country: string | null;
+    countryCode: string | null;
+    phone: string | null;
+    industry: string | null;
+    teamSize: string | null;
+    website: string | null;
+  };
+  billing: {
+    currency: "NGN" | "USD";
+    countryCode: string | null;
+    resolvedAt: string | null;
+  };
+  onboarding: {
+    source: string | null;
+    collectedAt: string | null;
+  };
+};
+
 type ShopCategory = {
   id: string;
   name: string;
@@ -304,6 +349,7 @@ type ShopData = {
   metadata?: {
     businessType?: string | null;
     businessMode?: "own" | "dropship" | "hybrid" | null;
+    checkoutMode?: "whatsapp_only" | "card_only" | "hybrid" | null;
     shopCurrency?: string | null;
     heroImageUrls?: string[] | null;
     heroVideoUrl?: string | null;
@@ -722,7 +768,8 @@ const createEmptyShopForm = (shopType: ShopType = "other") => ({
   themeColor: "#4f46e5",
   titleFont: "",
   businessType: shopType,
-  businessMode: "own" as ShopBusinessMode
+  businessMode: "own" as ShopBusinessMode,
+  checkoutMode: "hybrid" as "whatsapp_only" | "card_only" | "hybrid"
 });
 
 const normalizeHeroImageUrls = (value: unknown, fallbackBannerUrl?: unknown): string[] => {
@@ -876,6 +923,23 @@ const segmentOperatorOptions: Array<{ value: SegmentRuleOperator; label: string 
   { value: "not_in", label: "not in list" }
 ];
 
+const DASHBOARD_TAB_LOCKS: Record<string, string[]> = {
+  free: ["automation", "intelligence", "ops", "surveys", "analytics"],
+  starter: ["automation", "intelligence", "ops"],
+  professional: [],
+  enterprise: [],
+  pro: []
+};
+
+const toBusinessPlanLabel = (planId: string) => {
+  const normalized = String(planId || "").trim().toLowerCase();
+  if (normalized === "professional") return "Growth";
+  if (normalized === "enterprise" || normalized === "pro") return "Scale";
+  if (normalized === "starter") return "Starter";
+  if (normalized === "free") return "Free";
+  return normalized || "Unknown";
+};
+
 export const BusinessDashboard = () => {
   const { accessToken, csrfToken, refresh, logout, user } = useAuth();
   const navigate = useNavigate();
@@ -931,10 +995,14 @@ export const BusinessDashboard = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "payments" | "notifications" | "activity" | "integrations" | "billing" | "customers" | "settings" | "analytics" | "surveys" | "automation" | "intelligence" | "ops" | "shop">("overview");
+  const [lockedTabAttempt, setLockedTabAttempt] = useState<string | null>(null);
   const [integrationSectionTab, setIntegrationSectionTab] = useState<"calls" | "payments" | "marketplace" | "connected">("calls");
   const [settingsSectionTab, setSettingsSectionTab] = useState<"account" | "payments" | "calls" | "growth" | "branding">("account");
   const [integrationProvider, setIntegrationProvider] = useState<"stripe" | "paystack">("stripe");
   const [integrationToken, setIntegrationToken] = useState("");
+  const [integrationSplitCapable, setIntegrationSplitCapable] = useState(true);
+  const [stripeConnectedAccountId, setStripeConnectedAccountId] = useState("");
+  const [paystackSplitCode, setPaystackSplitCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [webhookUrls, setWebhookUrls] = useState<{ orgId: string; webhooks: { stripe: string; paystack: string }; instructions: { local: string; production: string } } | null>(null);
   
@@ -1167,6 +1235,20 @@ export const BusinessDashboard = () => {
   const [deletionLoading, setDeletionLoading] = useState(false);
   const [hasPendingDeletion, setHasPendingDeletion] = useState(false);
   const [deletionScheduledAt, setDeletionScheduledAt] = useState<string | null>(null);
+  const [businessAccountDetails, setBusinessAccountDetails] = useState<BusinessAccountDetails | null>(null);
+  const [loadingBusinessAccountDetails, setLoadingBusinessAccountDetails] = useState(false);
+  const [editingBusinessAccountDetails, setEditingBusinessAccountDetails] = useState(false);
+  const [savingBusinessAccountDetails, setSavingBusinessAccountDetails] = useState(false);
+  const [businessAccountPhoneDialCode, setBusinessAccountPhoneDialCode] = useState(DEFAULT_PHONE_DIAL_CODE);
+  const [businessAccountForm, setBusinessAccountForm] = useState({
+    fullName: "",
+    businessName: "",
+    country: "",
+    phone: "",
+    industry: "",
+    teamSize: "",
+    website: ""
+  });
   
   const [showIntegrationDeleteModal, setShowIntegrationDeleteModal] = useState(false);
   const [integrationToDelete, setIntegrationToDelete] = useState<string | null>(null);
@@ -1210,6 +1292,7 @@ export const BusinessDashboard = () => {
   const [runningNativeMigration, setRunningNativeMigration] = useState(false);
   const [nativeSupportOverview, setNativeSupportOverview] = useState<any>(null);
   const [nativeSupportTickets, setNativeSupportTickets] = useState<NativeSupportTicket[]>([]);
+  const [platformSupportEmail, setPlatformSupportEmail] = useState("support@debby.co");
   const [selectedNativeSupportTicket, setSelectedNativeSupportTicket] = useState<any>(null);
   const [showNativeSupportTicketModal, setShowNativeSupportTicketModal] = useState(false);
   const [nativeSupportReply, setNativeSupportReply] = useState("");
@@ -2116,6 +2199,7 @@ export const BusinessDashboard = () => {
     if (activeTab === "settings" && accessToken) {
       loadPreferences();
       loadDeletionStatus();
+      loadBusinessAccountDetails();
     }
   }, [activeTab, accessToken]);
 
@@ -2306,17 +2390,54 @@ export const BusinessDashboard = () => {
     }
   };
 
+  useEffect(() => {
+    const currentIntegration = integrations.find((entry) => entry.provider === integrationProvider);
+    const config = currentIntegration?.config || {};
+    const explicitSplitCapable = typeof config.splitCapable === "boolean" ? config.splitCapable : null;
+    const inferredSplitCapable = Boolean(
+      config.stripeConnectedAccountId ||
+        config.connectedAccountId ||
+        config.destinationAccountId ||
+        config.paystackSplitCode ||
+        config.splitCode
+    );
+    setIntegrationSplitCapable(explicitSplitCapable !== null ? explicitSplitCapable : inferredSplitCapable);
+    setStripeConnectedAccountId(
+      String(config.stripeConnectedAccountId || config.connectedAccountId || config.destinationAccountId || "")
+    );
+    setPaystackSplitCode(String(config.paystackSplitCode || config.splitCode || ""));
+  }, [integrationProvider, integrations]);
+
   const connectIntegration = async () => {
     if (!accessToken || !integrationToken) {
       setStatus(" Integration token is required");
       return;
     }
+    if (integrationSplitCapable) {
+      if (integrationProvider === "stripe" && !stripeConnectedAccountId.trim()) {
+        setStatus(" Stripe connected account ID is required for split-capable checkout.");
+        return;
+      }
+      if (integrationProvider === "paystack" && !paystackSplitCode.trim()) {
+        setStatus(" Paystack split code is required for split-capable checkout.");
+        return;
+      }
+    }
     try {
+      const config: Record<string, any> = {
+        splitCapable: integrationSplitCapable
+      };
+      if (integrationProvider === "stripe" && stripeConnectedAccountId.trim()) {
+        config.stripeConnectedAccountId = stripeConnectedAccountId.trim();
+      }
+      if (integrationProvider === "paystack" && paystackSplitCode.trim()) {
+        config.paystackSplitCode = paystackSplitCode.trim();
+      }
       await apiRequest("/business/integrations", {
         method: "POST",
         accessToken,
         csrfToken,
-        body: { provider: integrationProvider, token: integrationToken }
+        body: { provider: integrationProvider, token: integrationToken, config }
       });
       setStatus(` ${integrationProvider.charAt(0).toUpperCase() + integrationProvider.slice(1)} connected successfully`);
       setIntegrationToken("");
@@ -2529,7 +2650,8 @@ export const BusinessDashboard = () => {
         runsData,
         supportOverviewData,
         supportTicketsData,
-        migrationPreviewData
+        migrationPreviewData,
+        supportEmailData
       ] = await Promise.all([
         apiRequest<{ native: any; externalRails: any }>("/business/native/capabilities", { accessToken }).catch(
           () => ({ native: null, externalRails: null })
@@ -2559,7 +2681,10 @@ export const BusinessDashboard = () => {
           templates: [],
           installedTemplateKeys: [],
           pendingTemplateKeys: []
-        }))
+        })),
+        apiRequest<{ supportEmail?: string }>("/billing/plans?role=business", { accessToken }).catch(
+          () => ({ supportEmail: "support@debby.co" })
+        )
       ]);
 
       setNativeCapabilities(capabilitiesData || null);
@@ -2571,6 +2696,7 @@ export const BusinessDashboard = () => {
         queue: Array.isArray(supportOverviewData.queue) ? supportOverviewData.queue : []
       });
       setNativeSupportTickets(Array.isArray(supportTicketsData.tickets) ? supportTicketsData.tickets : []);
+      setPlatformSupportEmail(String(supportEmailData.supportEmail || "support@debby.co").trim().toLowerCase());
       setNativeMigrationPreview(migrationPreviewData || null);
     } catch (err: any) {
       setStatus(err?.response?.data?.error || err?.message || "Failed to load native automation data");
@@ -3217,6 +3343,98 @@ export const BusinessDashboard = () => {
   };
   
   // Load and Save Preferences
+  const syncBusinessAccountForm = (account: BusinessAccountDetails | null) => {
+    if (!account) {
+      setBusinessAccountPhoneDialCode(DEFAULT_PHONE_DIAL_CODE);
+      setBusinessAccountForm({
+        fullName: "",
+        businessName: "",
+        country: "",
+        phone: "",
+        industry: "",
+        teamSize: "",
+        website: ""
+      });
+      return;
+    }
+    const preferredDialCode =
+      getDialCodeForCountry(account.businessProfile.country || "") ||
+      DEFAULT_PHONE_DIAL_CODE;
+    const parsedPhone = splitPhoneNumber(account.businessProfile.phone || "", preferredDialCode);
+    setBusinessAccountPhoneDialCode(parsedPhone.dialCode || preferredDialCode);
+    setBusinessAccountForm({
+      fullName: account.businessProfile.fullName || account.user.fullName || "",
+      businessName: account.businessProfile.businessName || account.organization.name || "",
+      country: account.businessProfile.country || account.billing.countryCode || "",
+      phone: parsedPhone.localNumber || "",
+      industry: account.businessProfile.industry || "",
+      teamSize: account.businessProfile.teamSize || "",
+      website: account.businessProfile.website || ""
+    });
+  };
+
+  const loadBusinessAccountDetails = async () => {
+    if (!accessToken) return;
+    setLoadingBusinessAccountDetails(true);
+    try {
+      const response = await apiRequest<{ account: BusinessAccountDetails }>("/auth/business-account-details", { accessToken });
+      const account = response.account || null;
+      setBusinessAccountDetails(account);
+      syncBusinessAccountForm(account);
+    } catch {
+      setBusinessAccountDetails(null);
+      syncBusinessAccountForm(null);
+    } finally {
+      setLoadingBusinessAccountDetails(false);
+    }
+  };
+
+  const handleSaveBusinessAccountDetails = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    if (!businessAccountForm.fullName.trim() || !businessAccountForm.businessName.trim() || !businessAccountForm.country.trim()) {
+      setStatus(" Full name, business name, and country are required");
+      return;
+    }
+
+    setSavingBusinessAccountDetails(true);
+    try {
+      const optionalField = (value: string) => {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      };
+      const formattedPhone = combinePhoneNumber(
+        businessAccountPhoneDialCode,
+        businessAccountForm.phone
+      );
+
+      const response = await apiRequest<{ account: BusinessAccountDetails }>("/auth/business-account-details", {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: {
+          fullName: businessAccountForm.fullName.trim(),
+          businessName: businessAccountForm.businessName.trim(),
+          country: businessAccountForm.country.trim(),
+          phone: formattedPhone || undefined,
+          industry: optionalField(businessAccountForm.industry),
+          teamSize: optionalField(businessAccountForm.teamSize),
+          website: optionalField(businessAccountForm.website)
+        }
+      });
+      setBusinessAccountDetails(response.account || null);
+      syncBusinessAccountForm(response.account || null);
+      setEditingBusinessAccountDetails(false);
+      setStatus(" Business account details saved");
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save business account details"}`);
+    } finally {
+      setSavingBusinessAccountDetails(false);
+    }
+  };
+
   const loadPreferences = async () => {
     if (!accessToken) return;
     try {
@@ -3923,6 +4141,18 @@ export const BusinessDashboard = () => {
   const isDropshipShopMode = activeShopBusinessMode === "dropship";
   const canUseDropshipForShop = isDropshipShopMode && Boolean(shopCapabilities?.canDropship);
   const useDropshipForProduct = canUseDropshipForShop;
+
+  useEffect(() => {
+    if (!shopCapabilities) return;
+    if (!shopCapabilities.canWhatsappCheckout && shopForm.checkoutMode !== "card_only") {
+      setShopForm((prev) => ({ ...prev, checkoutMode: "card_only" }));
+      return;
+    }
+    if (!shopCapabilities.canCardCheckout && shopForm.checkoutMode !== "whatsapp_only") {
+      setShopForm((prev) => ({ ...prev, checkoutMode: "whatsapp_only" }));
+    }
+  }, [shopCapabilities, shopForm.checkoutMode]);
+
   const selectedSupplier =
     shopSuppliers.find((supplier) => supplier.id === productForm.supplierId) || null;
   const isProductFormReady =
@@ -5007,7 +5237,11 @@ export const BusinessDashboard = () => {
           themeColor: normalizedShop.themeColor || "#4f46e5",
           titleFont: typeof normalizedShop.metadata?.titleFont === "string" ? normalizedShop.metadata.titleFont : "",
           businessType: (normalizedShop.metadata?.businessType as ShopType) || "other",
-          businessMode: normalizeShopBusinessModeValue(normalizedShop.metadata?.businessMode)
+          businessMode: normalizeShopBusinessModeValue(normalizedShop.metadata?.businessMode),
+          checkoutMode:
+            data.capabilities?.checkoutMode ||
+            (normalizedShop.metadata?.checkoutMode as "whatsapp_only" | "card_only" | "hybrid") ||
+            "hybrid"
         });
         setSelectedProductTemplateId(null);
         try {
@@ -5282,24 +5516,42 @@ export const BusinessDashboard = () => {
   
   // Onboarding
   const { showOnboarding, setShowOnboarding } = useOnboarding("business");
+
+  const currentPlanIdForGating = shopCapabilities?.planId || "free";
+  const lockedTabIds = useMemo(
+    () => new Set(DASHBOARD_TAB_LOCKS[currentPlanIdForGating] || DASHBOARD_TAB_LOCKS.free),
+    [currentPlanIdForGating]
+  );
+  const handleDashboardTabChange = (tab: string) => {
+    if (lockedTabIds.has(tab)) {
+      setLockedTabAttempt(tab);
+      return;
+    }
+    setActiveTab(tab as typeof activeTab);
+  };
+  useEffect(() => {
+    if (!lockedTabIds.has(activeTab)) return;
+    setLockedTabAttempt(activeTab);
+    setActiveTab("overview");
+  }, [activeTab, lockedTabIds]);
   
   // Keyboard Shortcuts
   const { ShortcutsModal } = useKeyboardShortcuts({
     onSearch: () => setSearchOpen(true),
     onHelp: () => setHelpOpen(true),
-    onNavigate: (tab) => setActiveTab(tab as typeof activeTab),
+    onNavigate: (tab) => handleDashboardTabChange(tab),
   });
 
   const tabs = [
     { id: "overview", label: "Overview", icon: <FiBarChart2 /> },
     { id: "payments", label: "Payments", icon: <FiCreditCard /> },
     { id: "notifications", label: "Notifications", icon: <FiBell /> },
-    { id: "intelligence", label: "Intelligence", icon: <FiActivity /> },
-    { id: "ops", label: "Ops", icon: <FiSettings /> },
-    { id: "automation", label: "Automation", icon: <FiZap /> },
+    { id: "intelligence", label: "Intelligence", icon: <FiActivity />, locked: lockedTabIds.has("intelligence"), badge: "Upgrade" },
+    { id: "ops", label: "Ops", icon: <FiSettings />, locked: lockedTabIds.has("ops"), badge: "Upgrade" },
+    { id: "automation", label: "Automation", icon: <FiZap />, locked: lockedTabIds.has("automation"), badge: "Upgrade" },
     { id: "customers", label: "Customers", icon: <FiUsers /> },
-    { id: "analytics", label: "Analytics", icon: <FiTrendingUp /> },
-    { id: "surveys", label: "Surveys", icon: <FiClipboard /> },
+    { id: "analytics", label: "Analytics", icon: <FiTrendingUp />, locked: lockedTabIds.has("analytics"), badge: "Upgrade" },
+    { id: "surveys", label: "Surveys", icon: <FiClipboard />, locked: lockedTabIds.has("surveys"), badge: "Upgrade" },
     { id: "shop", label: "Shop", icon: <FiShoppingBag /> },
     { id: "activity", label: "Activity", icon: <FiActivity /> },
     { id: "integrations", label: "Integrations", icon: <FiLink2 /> },
@@ -5322,7 +5574,7 @@ export const BusinessDashboard = () => {
       <Sidebar 
         tabs={tabs} 
         activeTab={activeTab} 
-        onTabChange={(tab) => setActiveTab(tab as typeof activeTab)}
+        onTabChange={(tab) => handleDashboardTabChange(tab)}
         onLogout={handleLogout}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -5367,7 +5619,7 @@ export const BusinessDashboard = () => {
                   <p className="text-sm text-gray-500 mt-1">Monitor your revenue, payments, and system activity.</p>
                 </div>
                 
-                {/* Professional Stats Cards */}
+                {/* Growth Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                   {/* Total Revenue */}
                   <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
@@ -6979,6 +7231,29 @@ export const BusinessDashboard = () => {
 
                 {automationSectionTab === "support" && (
                   <div className="space-y-4">
+                    <div className="p-4 rounded-lg border border-blue-200 bg-blue-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-blue-700">Debby Support Contact</p>
+                        <p className="text-sm font-semibold text-blue-900">{platformSupportEmail || "support@debby.co"}</p>
+                        <p className="text-xs text-blue-700">
+                          Starter plan uses email-only support. Reach out here when needed.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm self-start sm:self-auto"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(platformSupportEmail || "support@debby.co");
+                            setStatus(" Support email copied");
+                          } catch {
+                            setStatus(" Unable to copy support email");
+                          }
+                        }}
+                      >
+                        Copy Email
+                      </button>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                       <div className="p-4 rounded-lg border border-gray-200 bg-white">
                         <p className="text-xs text-gray-500">Total Tickets</p>
@@ -7846,6 +8121,49 @@ export const BusinessDashboard = () => {
                           : "Get your secret key from https://dashboard.paystack.com/#/settings/developer"}
                       </p>
                     </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <label className="inline-flex items-center gap-2 text-sm font-medium text-amber-900">
+                        <input
+                          type="checkbox"
+                          checked={integrationSplitCapable}
+                          onChange={(e) => setIntegrationSplitCapable(e.target.checked)}
+                        />
+                        Enable split-capable checkout (required for card checkout)
+                      </label>
+                      <p className="mt-1 text-xs text-amber-800">
+                        Card checkout now requires split-capable setup so Debby fee and merchant payout are separated at provider settlement.
+                      </p>
+                    </div>
+                    {integrationProvider === "stripe" && (
+                      <div>
+                        <label className="label">Stripe Connected Account ID</label>
+                        <input
+                          className="input"
+                          type="text"
+                          value={stripeConnectedAccountId}
+                          onChange={(e) => setStripeConnectedAccountId(e.target.value)}
+                          placeholder="acct_..."
+                        />
+                        <p className="mt-2 text-xs text-gray-500">
+                          Required when split-capable is enabled. Debby applies <code>application_fee_amount</code> and routes the remainder to this connected account.
+                        </p>
+                      </div>
+                    )}
+                    {integrationProvider === "paystack" && (
+                      <div>
+                        <label className="label">Paystack Split Code</label>
+                        <input
+                          className="input"
+                          type="text"
+                          value={paystackSplitCode}
+                          onChange={(e) => setPaystackSplitCode(e.target.value)}
+                          placeholder="SPL_..."
+                        />
+                        <p className="mt-2 text-xs text-gray-500">
+                          Required when split-capable is enabled. Debby initializes transactions with this split code.
+                        </p>
+                      </div>
+                    )}
                     <button className="btn btn-primary w-full" onClick={connectIntegration} disabled={!integrationToken}>
                       Connect {integrationProvider.charAt(0).toUpperCase() + integrationProvider.slice(1)}
                     </button>
@@ -9057,6 +9375,213 @@ export const BusinessDashboard = () => {
                 })}
               </div>
             </div>
+
+            {/* Business Account Details */}
+            {settingsSectionTab === "account" && (
+            <Collapsible title="Business Account Setup Details" defaultOpen={true}>
+              {loadingBusinessAccountDetails ? (
+                <p className="text-sm text-gray-500">Loading business account details...</p>
+              ) : !businessAccountDetails ? (
+                <p className="text-sm text-gray-500">Business account details are not available yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-gray-500">
+                      If anything is showing as N/A, click Edit and save your setup details.
+                    </p>
+                    {!editingBusinessAccountDetails ? (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setEditingBusinessAccountDetails(true)}
+                      >
+                        Edit Details
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            syncBusinessAccountForm(businessAccountDetails);
+                            setEditingBusinessAccountDetails(false);
+                          }}
+                          disabled={savingBusinessAccountDetails}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleSaveBusinessAccountDetails}
+                          disabled={savingBusinessAccountDetails}
+                        >
+                          {savingBusinessAccountDetails ? "Saving..." : "Save Changes"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {editingBusinessAccountDetails ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Business Name</label>
+                        <input
+                          className="input"
+                          value={businessAccountForm.businessName}
+                          onChange={(e) => setBusinessAccountForm((prev) => ({ ...prev, businessName: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Owner Full Name</label>
+                        <input
+                          className="input"
+                          value={businessAccountForm.fullName}
+                          onChange={(e) => setBusinessAccountForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Country</label>
+                        <select
+                          className="input"
+                          value={businessAccountForm.country}
+                          onChange={(e) => {
+                            const nextCountry = e.target.value;
+                            setBusinessAccountForm((prev) => ({ ...prev, country: nextCountry }));
+                            const nextDialCode = getDialCodeForCountry(nextCountry);
+                            if (nextDialCode) {
+                              setBusinessAccountPhoneDialCode(nextDialCode);
+                            }
+                          }}
+                        >
+                          <option value="">Select country</option>
+                          {businessAccountForm.country &&
+                          !ACCOUNT_COUNTRIES.includes(businessAccountForm.country) ? (
+                            <option value={businessAccountForm.country}>{businessAccountForm.country}</option>
+                          ) : null}
+                          {ACCOUNT_COUNTRIES.map((country) => (
+                            <option key={country} value={country}>
+                              {country}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">Phone</label>
+                        <div className="flex gap-2">
+                          <select
+                            className="input w-44 shrink-0"
+                            value={businessAccountPhoneDialCode}
+                            onChange={(e) => setBusinessAccountPhoneDialCode(e.target.value)}
+                            aria-label="Phone country code"
+                          >
+                            {PHONE_COUNTRY_CODES.map((entry) => (
+                              <option key={`${entry.country}-${entry.dialCode}`} value={entry.dialCode}>
+                                {entry.country} ({entry.dialCode})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="input flex-1"
+                            value={businessAccountForm.phone}
+                            onChange={(e) =>
+                              setBusinessAccountForm((prev) => ({ ...prev, phone: e.target.value }))
+                            }
+                            placeholder="8012345678"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label">Industry</label>
+                        <input
+                          className="input"
+                          value={businessAccountForm.industry}
+                          onChange={(e) => setBusinessAccountForm((prev) => ({ ...prev, industry: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Team Size</label>
+                        <input
+                          className="input"
+                          value={businessAccountForm.teamSize}
+                          onChange={(e) => setBusinessAccountForm((prev) => ({ ...prev, teamSize: e.target.value }))}
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="label">Website</label>
+                        <input
+                          className="input"
+                          type="url"
+                          placeholder="https://example.com"
+                          value={businessAccountForm.website}
+                          onChange={(e) => setBusinessAccountForm((prev) => ({ ...prev, website: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Business Name</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {businessAccountDetails.businessProfile.businessName || businessAccountDetails.organization.name || "N/A"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Owner Full Name</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {businessAccountDetails.businessProfile.fullName || businessAccountDetails.user.fullName || "N/A"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Country</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {businessAccountDetails.businessProfile.country || businessAccountDetails.billing.countryCode || "N/A"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Billing Currency</p>
+                        <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.billing.currency || "N/A"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Phone</p>
+                        <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.businessProfile.phone || "N/A"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Industry</p>
+                        <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.businessProfile.industry || "N/A"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Team Size</p>
+                        <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.businessProfile.teamSize || "N/A"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-gray-50">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Website</p>
+                        <p className="text-sm font-semibold text-gray-900 break-all">{businessAccountDetails.businessProfile.website || "N/A"}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg border bg-white">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Account Email</p>
+                      <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.user.email || "N/A"}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-white">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Organization ID</p>
+                      <p className="text-sm font-mono text-gray-900 break-all">{businessAccountDetails.organization.id || "N/A"}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-white">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Onboarding Source</p>
+                      <p className="text-sm font-semibold text-gray-900">{businessAccountDetails.onboarding.source || "N/A"}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-white">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Account Created</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {businessAccountDetails.organization.createdAt ? new Date(businessAccountDetails.organization.createdAt).toLocaleString() : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Collapsible>
+            )}
 
             {/* Profile Settings */}
             {settingsSectionTab === "account" && (
@@ -12200,6 +12725,33 @@ export const BusinessDashboard = () => {
                     </p>
                   )}
                 </div>
+                <div>
+                  <label className="label">Checkout Completion</label>
+                  <select
+                    className="input"
+                    value={shopForm.checkoutMode}
+                    onChange={(e) =>
+                      setShopForm({
+                        ...shopForm,
+                        checkoutMode: e.target.value as "whatsapp_only" | "card_only" | "hybrid"
+                      })
+                    }
+                  >
+                    {(shopCapabilities?.canCardCheckout ?? true) &&
+                      (shopCapabilities?.canWhatsappCheckout ?? true) && (
+                        <option value="hybrid">Gateway + WhatsApp</option>
+                      )}
+                    {(shopCapabilities?.canCardCheckout ?? true) && (
+                      <option value="card_only">Gateway only</option>
+                    )}
+                    {(shopCapabilities?.canWhatsappCheckout ?? true) && (
+                      <option value="whatsapp_only">WhatsApp only (Starter only)</option>
+                    )}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Growth/Scale plans are forced to gateway checkout only.
+                  </p>
+                </div>
               </div>
               <button
                 className="btn btn-primary"
@@ -12228,7 +12780,8 @@ export const BusinessDashboard = () => {
                           themeColor: shopForm.themeColor,
                           titleFont: shopForm.titleFont || undefined,
                           businessType: shopForm.businessType,
-                          businessMode: shopForm.businessMode
+                          businessMode: shopForm.businessMode,
+                          checkoutMode: shopForm.checkoutMode
                         }
                       });
                       setStatus(" Shop created");
@@ -12252,7 +12805,8 @@ export const BusinessDashboard = () => {
                           heroImageUrls: normalizedHeroImageUrls,
                           heroVideoUrl: heroVideoUrl,
                           themeColor: shopForm.themeColor,
-                          titleFont: shopForm.titleFont || null
+                          titleFont: shopForm.titleFont || null,
+                          checkoutMode: shopForm.checkoutMode
                         }
                       });
                       setStatus(" Shop updated");
@@ -12413,7 +12967,7 @@ export const BusinessDashboard = () => {
                   {shopSectionTab === "upload" && shopCapabilities && (
                     <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">Plan: {shopCapabilities.planId}</span>
+                        <span className="font-semibold text-slate-900">Plan: {toBusinessPlanLabel(shopCapabilities.planId)}</span>
                         <span
                           className={`badge ${
                             isDropshipShopMode
@@ -12435,7 +12989,7 @@ export const BusinessDashboard = () => {
                       </div>
                       {isDropshipShopMode && !canUseDropshipForShop && (
                         <p className="text-amber-700">
-                          Upgrade to Professional to unlock dropship fulfillment and supplier routing.
+                          Upgrade to Growth to unlock dropship fulfillment and supplier routing.
                         </p>
                       )}
                     </div>
@@ -14960,6 +15514,37 @@ export const BusinessDashboard = () => {
         ) : (
           <p className="text-sm text-gray-500">Loading ticket...</p>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(lockedTabAttempt)}
+        onClose={() => setLockedTabAttempt(null)}
+        title="Upgrade Required"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            <span className="font-semibold capitalize">{String(lockedTabAttempt || "").replace("_", " ")}</span> is
+            locked on your current plan.
+          </p>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            Upgrade to Growth or Scale to unlock advanced automations, intelligence, and ops controls.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn btn-secondary" onClick={() => setLockedTabAttempt(null)}>
+              Close
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setLockedTabAttempt(null);
+                setActiveTab("billing");
+              }}
+            >
+              View Plans
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Confirm Modal (replaces all confirm() calls) */}

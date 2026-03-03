@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { FiChevronLeft, FiChevronRight, FiMenu, FiX } from "react-icons/fi";
 
 interface SidebarProps {
-  tabs: Array<{ id: string; label: string; icon: React.ReactNode }>;
+  tabs: Array<{ id: string; label: string; icon: React.ReactNode; locked?: boolean; badge?: string }>;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onLogout: () => void;
@@ -178,9 +178,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {tab.icon}
                   </span>
                   {(!isCollapsed || isMobileHiddenMode) && (
-                    <span className={`capitalize truncate ${compactLinkDensity ? "text-sm" : ""}`}>
-                      {tab.label.replace("-", " ")}
-                    </span>
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span className={`capitalize truncate ${compactLinkDensity ? "text-sm" : ""}`}>
+                        {tab.label.replace("-", " ")}
+                      </span>
+                      {tab.locked && (
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                            isDark
+                              ? "border-amber-400/40 bg-amber-500/20 text-amber-200"
+                              : "border-amber-300 bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {tab.badge || "Locked"}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </button>
               ))}

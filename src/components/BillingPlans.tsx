@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
-  FiCheck, FiStar, FiZap, FiShield, FiTrendingUp, FiCreditCard,
+  FiCheck, FiTrendingUp, FiCreditCard,
   FiX, FiAlertCircle, FiDownload
 } from "react-icons/fi";
 import { apiRequest } from "../api/client";
@@ -61,6 +61,142 @@ interface BillingPlansProps {
   onPlanUpdated?: () => void;
 }
 
+type BusinessTierMeta = {
+  displayName: string;
+  tierLabel: string;
+  goal: string;
+  transactionFee: string;
+  cap: string;
+  serviceLevel: string[];
+  support: string;
+  checkoutAccess: string;
+  dashboardAccess: string;
+  commerceMode: string;
+};
+
+const BUSINESS_PLAN_ORDER = ["starter", "professional", "enterprise"];
+
+const BUSINESS_TIER_META: Record<string, BusinessTierMeta> = {
+  starter: {
+    displayName: "Starter",
+    tierLabel: "Starter Tier",
+    goal: "Low-friction adoption",
+    transactionFee: "0%",
+    cap: "No Debby transaction-fee cap needed",
+    serviceLevel: [
+      "Storefront + catalog + checkout essentials",
+      "Basic CRM and analytics",
+      "Optional WhatsApp order completion"
+    ],
+    support: "Email support only",
+    checkoutAccess: "Card checkout + optional WhatsApp completion",
+    dashboardAccess: "Core dashboard, Analytics, Surveys",
+    commerceMode: "Own inventory mode (dropshipping locked)"
+  },
+  professional: {
+    displayName: "Growth",
+    tierLabel: "Growth (Mid)",
+    goal: "Scale operations with automation",
+    transactionFee: "0.50% local, 0.75% international",
+    cap: "Cap: NGN 2,000 per transaction",
+    serviceLevel: [
+      "Everything in Starter",
+      "Advanced automation + recovery",
+      "Advanced analytics + integrations"
+    ],
+    support: "Email + in-app support",
+    checkoutAccess: "Gateway checkout only (WhatsApp completion disabled)",
+    dashboardAccess: "All modules unlocked (Automation, Intelligence, Ops, Analytics, Surveys)",
+    commerceMode: "Own, Dropship, and Hybrid modes"
+  },
+  enterprise: {
+    displayName: "Scale",
+    tierLabel: "Scale (High)",
+    goal: "Highest access with the lowest fee rate",
+    transactionFee: "0.25% local, 0.40% international",
+    cap: "Cap: NGN 1,000 per transaction",
+    serviceLevel: [
+      "Everything in Growth",
+      "Full premium modules and controls",
+      "Priority SLA-grade support"
+    ],
+    support: "Priority support handling + in-app support",
+    checkoutAccess: "Gateway checkout only (WhatsApp completion disabled)",
+    dashboardAccess: "All modules unlocked (Automation, Intelligence, Ops, Analytics, Surveys)",
+    commerceMode: "Own, Dropship, and Hybrid modes"
+  }
+};
+
+const formatUsageKey = (key: string) => key.replace(/([A-Z])/g, " $1").trim();
+
+const getUsageLabel = (key: string, role: "developer" | "business" | "creator") => {
+  if (role === "business") {
+    if (key === "teamMembers") return "Team members";
+    if (key === "customers") return "Customer profiles";
+    if (key === "notifications") return "Notifications (24h)";
+  }
+  if (role === "developer") {
+    if (key === "apiCalls") return "API calls (month)";
+    if (key === "teamMembers") return "Team members";
+  }
+  if (role === "creator") {
+    if (key === "postsPerMonth") return "Posts created (month)";
+    if (key === "scheduledPosts") return "Scheduled posts";
+    if (key === "mediaUploads") return "Media uploads";
+    if (key === "socialAccounts") return "Social accounts";
+    if (key === "teamMembers") return "Team members";
+  }
+  return formatUsageKey(key);
+};
+
+const getUsageHint = (key: string, role: "developer" | "business" | "creator") => {
+  if (role === "business") {
+    if (key === "teamMembers") return "Total users currently in your organization.";
+    if (key === "customers") return "Customer records stored in your workspace.";
+    if (key === "notifications") return "Notifications sent in the last 24 hours.";
+  }
+  if (role === "developer" && key === "apiCalls") {
+    return "Request count tracked for the current billing month.";
+  }
+  if (role === "creator" && key === "postsPerMonth") {
+    return "Posts created in the current billing month.";
+  }
+  return "";
+};
+
+const getUsagePriority = (key: string, role: "developer" | "business" | "creator") => {
+  if (role === "business") {
+    if (key === "teamMembers") return 1;
+    if (key === "customers") return 2;
+    if (key === "notifications") return 3;
+    return 20;
+  }
+  if (role === "developer") {
+    if (key === "apiCalls") return 1;
+    if (key === "apiKeys") return 2;
+    if (key === "webhooks") return 3;
+    if (key === "teamMembers") return 4;
+    if (key === "notifications") return 5;
+    return 20;
+  }
+  if (key === "postsPerMonth") return 1;
+  if (key === "scheduledPosts") return 2;
+  if (key === "socialAccounts") return 3;
+  if (key === "mediaUploads") return 4;
+  if (key === "teamMembers") return 5;
+  return 20;
+};
+
+const shouldShowUsageMetric = (key: string, role: "developer" | "business" | "creator") => {
+  if (role === "developer") {
+    return !["customers", "socialAccounts", "postsPerMonth", "scheduledPosts", "mediaUploads"].includes(key);
+  }
+  if (role === "creator") {
+    return !["apiKeys", "apiCalls", "webhooks", "notifications", "customers"].includes(key);
+  }
+  return !["apiKeys", "apiCalls", "webhooks", "socialAccounts", "postsPerMonth", "scheduledPosts", "mediaUploads"].includes(key);
+};
+
 export const BillingPlans: React.FC<BillingPlansProps> = ({
   role = "business",
   currentPlan: externalCurrentPlan,
@@ -77,6 +213,7 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState<"plans" | "usage" | "invoices">("plans");
+  const [supportEmail, setSupportEmail] = useState<string>("");
 
   // Use external currentPlan if provided, otherwise use internal state
   const currentPlan = externalCurrentPlan !== undefined ? externalCurrentPlan : internalCurrentPlan;
@@ -101,12 +238,13 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
 
     try {
       const [plansRes, usageRes, invoicesRes] = await Promise.all([
-        apiRequest<{ plans: Plan[] }>(`/billing/plans?role=${role}`, { accessToken }),
+        apiRequest<{ plans: Plan[]; supportEmail?: string }>(`/billing/plans?role=${role}`, { accessToken }),
         apiRequest<{ usage: Usage; planId: string }>("/billing/usage", { accessToken }),
         apiRequest<{ invoices: Invoice[] }>("/billing/invoices", { accessToken }),
       ]);
 
       setPlans(plansRes.plans);
+      setSupportEmail(String(plansRes.supportEmail || "").trim().toLowerCase());
       setUsage(usageRes.usage);
       setCurrentPlan(usageRes.planId);
       setInvoices(invoicesRes.invoices);
@@ -159,6 +297,126 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
     if (limit === -1) return "Unlimited";
     return limit.toLocaleString();
   };
+
+  const formatCurrencyAmount = (amount: number, currency?: string) => {
+    const safeCurrency = currency || "USD";
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: safeCurrency,
+        minimumFractionDigits: safeCurrency === "NGN" ? 0 : 2,
+        maximumFractionDigits: safeCurrency === "NGN" ? 0 : 2,
+      }).format(amount);
+    } catch {
+      return `${safeCurrency} ${amount.toLocaleString()}`;
+    }
+  };
+
+  const getPlanHighlights = (plan: Plan) => {
+    const highlights: string[] = [`Team: ${formatLimit(plan.limits.teamMembers)}`];
+    if (role === "business" && typeof plan.limits.customers === "number") {
+      highlights.push(`Customers: ${formatLimit(plan.limits.customers)}`);
+    }
+    if (role === "developer" && typeof plan.limits.apiCalls === "number") {
+      highlights.push(`API calls: ${formatLimit(plan.limits.apiCalls)}`);
+    }
+    if (role === "creator" && typeof plan.limits.socialAccounts === "number") {
+      highlights.push(`Accounts: ${formatLimit(plan.limits.socialAccounts)}`);
+    }
+    return highlights.slice(0, 2);
+  };
+
+  const displayedPlans = useMemo(() => {
+    if (role !== "business") return plans;
+
+    const dedupedPlans = Array.from(
+      plans.reduce((acc, plan) => {
+        if (!acc.has(plan.id)) {
+          acc.set(plan.id, plan);
+        }
+        return acc;
+      }, new Map<string, Plan>()).values()
+    );
+
+    return dedupedPlans
+      .filter((plan) => BUSINESS_PLAN_ORDER.includes(plan.id))
+      .sort((a, b) => BUSINESS_PLAN_ORDER.indexOf(a.id) - BUSINESS_PLAN_ORDER.indexOf(b.id))
+      .map((plan) => {
+        const tierMeta = BUSINESS_TIER_META[plan.id];
+        if (!tierMeta) return plan;
+        return {
+          ...plan,
+          name: tierMeta.displayName,
+          description: tierMeta.goal
+        };
+      });
+  }, [plans, role]);
+
+  const businessBillingCurrency = useMemo(() => {
+    if (role !== "business") return "USD";
+    const raw = String(displayedPlans[0]?.currency || plans[0]?.currency || "USD").trim().toUpperCase();
+    return raw === "NGN" ? "NGN" : "USD";
+  }, [displayedPlans, plans, role]);
+
+  const getBusinessFeeDisplay = (planId: string) => {
+    const isLocal = businessBillingCurrency === "NGN";
+    if (planId === "starter") {
+      return {
+        title: "Debby Transaction Fee",
+        fee: "0%",
+        cap: ""
+      };
+    }
+    if (planId === "professional") {
+      return isLocal
+        ? { title: "Debby Transaction Fee (Local)", fee: "0.50% per transaction", cap: "Cap: NGN 2,000 per transaction" }
+        : { title: "Debby Transaction Fee (International)", fee: "0.75% per transaction", cap: "" };
+    }
+    if (planId === "enterprise" || planId === "pro") {
+      return isLocal
+        ? { title: "Debby Transaction Fee (Local)", fee: "0.25% per transaction", cap: "Cap: NGN 1,000 per transaction" }
+        : { title: "Debby Transaction Fee (International)", fee: "0.40% per transaction", cap: "" };
+    }
+    return {
+      title: "Debby Transaction Fee",
+      fee: "0%",
+      cap: ""
+    };
+  };
+
+  const getBusinessCheckoutPolicy = (planId: string) => {
+    const normalized = String(planId || "").trim().toLowerCase();
+    if (normalized === "professional" || normalized === "enterprise" || normalized === "pro") {
+      return "Gateway checkout only";
+    }
+    return "Gateway + optional WhatsApp";
+  };
+
+  const getBusinessOperationalLimits = (plan: Plan) => {
+    const rows: Array<{ label: string; value: string }> = [];
+    rows.push({ label: "Team members", value: formatLimit(plan.limits.teamMembers) });
+    if (typeof plan.limits.customers === "number") {
+      rows.push({ label: "Customer profiles", value: formatLimit(plan.limits.customers) });
+    }
+    if (typeof plan.limits.notifications === "number") {
+      rows.push({ label: "Daily notifications", value: formatLimit(plan.limits.notifications) });
+    }
+    return rows;
+  };
+
+  const getBusinessSupportDisplay = (planId: string, tierSupport: string) => {
+    const normalized = String(planId || "").trim().toLowerCase();
+    const emailSuffix = supportEmail ? ` (${supportEmail})` : "";
+    if (normalized === "starter") {
+      return `Email support only${emailSuffix}`;
+    }
+    if (normalized === "professional" || normalized === "enterprise" || normalized === "pro") {
+      return `${tierSupport}${emailSuffix}`;
+    }
+    return `${tierSupport}${emailSuffix}`;
+  };
+
+  const currentPlanPrice = plans.find((plan) => plan.id === currentPlan)?.price || 0;
 
   if (loading) {
     return (
@@ -227,111 +485,227 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
 
       {/* Plans Tab */}
       {activeTab === "plans" && (
-        <div className="grid gap-3 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {plans.map(plan => (
-            <div 
-              key={plan.id}
-              className={`relative flex flex-col bg-white/70 backdrop-blur-xl rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 ${
-                plan.popular ? "ring-2 ring-blue-500" : ""
-              } ${currentPlan === plan.id ? "ring-2 ring-green-500" : ""}`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-semibold rounded-full">
-                  Most Popular
-                </div>
-              )}
-              
-              {currentPlan === plan.id && (
-                <div className="absolute -top-3 right-4 px-3 py-1 bg-green-500 text-white text-xs font-semibold rounded-full">
-                  Current Plan
-                </div>
-              )}
-
-              <div className="text-center mb-4 sm:mb-6">
-                <h3 className="text-lg sm:text-xl font-bold text-gray-900">{plan.name}</h3>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">{plan.description}</p>
-              </div>
-
-              <div className="text-center mb-4 sm:mb-6">
-                <span className="text-3xl sm:text-4xl font-bold text-gray-900">${plan.price}</span>
-                <span className="text-sm sm:text-base text-gray-500">/{plan.interval}</span>
-              </div>
-
-              {/* Features list - flex-1 to push button to bottom */}
-              <ul className="space-y-2 sm:space-y-3 mb-4 sm:mb-6 flex-1">
-                {plan.features.map((feature, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs sm:text-sm">
-                    <FiCheck className="w-4 h-4 sm:w-5 sm:h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-gray-600">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* Button at bottom */}
-              <button
-                onClick={() => handleChangePlan(plan.id)}
-                disabled={currentPlan === plan.id || upgrading !== null}
-                className={`w-full py-2.5 rounded-lg font-medium transition-all mt-auto ${
+        <>
+          {role === "business" && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Billing currency: <span className="font-semibold">{businessBillingCurrency}</span>
+            </div>
+          )}
+          <div className="grid gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {displayedPlans.map((plan) => {
+            const tierMeta = role === "business" ? BUSINESS_TIER_META[plan.id] : null;
+            const feeDisplay = role === "business" ? getBusinessFeeDisplay(plan.id) : null;
+            return (
+              <div
+                key={plan.id}
+                className={`relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 sm:p-6 ${
                   currentPlan === plan.id
-                    ? "bg-gray-100 text-gray-400 cursor-default"
+                    ? "border-emerald-400 shadow-emerald-100/80"
                     : plan.popular
-                      ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg hover:shadow-blue-500/30"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "border-cyan-400 shadow-cyan-100/80"
+                    : "border-slate-200 hover:border-slate-300 hover:shadow-md"
                 }`}
               >
-                {upgrading === plan.id ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Processing...
-                  </span>
-                ) : currentPlan === plan.id ? (
-                  "Current Plan"
-                ) : plan.price > (plans.find(p => p.id === currentPlan)?.price || 0) ? (
-                  "Upgrade"
-                ) : (
-                  "Downgrade"
+                <div
+                  className={`absolute inset-x-0 top-0 h-1 ${
+                    currentPlan === plan.id
+                      ? "bg-emerald-400"
+                      : plan.popular
+                      ? "bg-cyan-500"
+                      : "bg-slate-300"
+                  }`}
+                />
+                {currentPlan === plan.id && (
+                  <div className="absolute right-4 top-4 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Current
+                  </div>
                 )}
-              </button>
-            </div>
-          ))}
-        </div>
+                {plan.popular && currentPlan !== plan.id && (
+                  <div className="absolute right-4 top-4 rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-700">
+                    Recommended
+                  </div>
+                )}
+
+                <div className="mb-5 mt-3">
+                  {tierMeta?.tierLabel && (
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      {tierMeta.tierLabel}
+                    </p>
+                  )}
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{plan.name}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
+                </div>
+
+                <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-3xl font-bold tracking-tight text-slate-900">
+                    {formatCurrencyAmount(plan.price, plan.currency)}
+                  </p>
+                  <p className="text-sm text-slate-500">per {plan.interval}</p>
+                </div>
+
+                {tierMeta && (
+                  <div className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      {feeDisplay?.title || "Debby Transaction Fee"}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">{feeDisplay?.fee || "0%"}</p>
+                    {feeDisplay?.cap ? <p className="mt-1 text-xs text-slate-500">{feeDisplay.cap}</p> : null}
+                  </div>
+                )}
+
+                <div className="mb-5 grid grid-cols-1 gap-2">
+                  {getPlanHighlights(plan).map((highlight) => (
+                    <div
+                      key={highlight}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600"
+                    >
+                      {highlight}
+                    </div>
+                  ))}
+                </div>
+
+                {role === "business" && (
+                  <div className="mb-5 grid grid-cols-1 gap-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Billing currency: <span className="font-semibold">{businessBillingCurrency}</span>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Billing region: <span className="font-semibold">{businessBillingCurrency === "NGN" ? "Local (Nigeria)" : "International"}</span>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Checkout policy: <span className="font-semibold">{getBusinessCheckoutPolicy(plan.id)}</span>
+                    </div>
+                    {supportEmail ? (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                        Support contact: <span className="font-semibold">{supportEmail}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {tierMeta?.serviceLevel?.length ? (
+                  <div className="mb-5">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Service Level
+                    </p>
+                    <ul className="space-y-2">
+                      {tierMeta.serviceLevel.map((service) => (
+                        <li key={service} className="flex items-start gap-2 text-sm text-slate-600">
+                          <FiCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-500" />
+                          <span>{service}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {role === "business" && tierMeta ? (
+                  <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Access Details
+                    </p>
+                    <ul className="space-y-2 text-xs text-slate-700">
+                      <li>
+                        Support: <span className="font-semibold">{getBusinessSupportDisplay(plan.id, tierMeta.support)}</span>
+                      </li>
+                      <li>
+                        Checkout: <span className="font-semibold">{tierMeta.checkoutAccess}</span>
+                      </li>
+                      <li>
+                        Dashboard modules: <span className="font-semibold">{tierMeta.dashboardAccess}</span>
+                      </li>
+                      <li>
+                        Commerce mode: <span className="font-semibold">{tierMeta.commerceMode}</span>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null}
+
+                {role === "business" ? (
+                  <div className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Operational Limits
+                    </p>
+                    <ul className="space-y-2 text-xs text-slate-700">
+                      {getBusinessOperationalLimits(plan).map((row) => (
+                        <li key={row.label} className="flex items-center justify-between gap-3">
+                          <span>{row.label}</span>
+                          <span className="font-semibold">{row.value}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {role !== "business" && (
+                  <ul className="mb-6 flex-1 space-y-2.5">
+                    {plan.features.map((feature, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <FiCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-500" />
+                        <span className="text-slate-600">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <button
+                  onClick={() => handleChangePlan(plan.id)}
+                  disabled={currentPlan === plan.id || upgrading !== null}
+                  className={`mt-auto w-full rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
+                    currentPlan === plan.id
+                      ? "cursor-default bg-slate-100 text-slate-400"
+                      : plan.popular
+                      ? "bg-cyan-600 text-white hover:bg-cyan-700"
+                      : "bg-slate-900 text-white hover:bg-slate-800"
+                  }`}
+                >
+                  {upgrading === plan.id ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Processing...
+                    </span>
+                  ) : currentPlan === plan.id ? (
+                    "Current Plan"
+                  ) : plan.price > currentPlanPrice ? (
+                    "Upgrade"
+                  ) : (
+                    "Downgrade"
+                  )}
+                </button>
+              </div>
+            );
+          })}
+          </div>
+        </>
       )}
 
       {/* Usage Tab */}
       {activeTab === "usage" && usage && (
         <div className="grid gap-6 md:grid-cols-2">
           {Object.entries(usage)
-            // Filter based on role:
-            // - Developers: exclude customers (they don't deal with customers)
-            // - Business: exclude apiKeys, apiCalls, webhooks (developer-only features)
-            // - Creators: exclude apiKeys, apiCalls, webhooks, notifications, customers (social media focused)
-            .filter(([key]) => {
-              if (role === "developer") {
-                return key !== "customers" && key !== "socialAccounts" && key !== "postsPerMonth" && key !== "scheduledPosts" && key !== "mediaUploads";
-              } else if (role === "creator") {
-                return key !== "apiKeys" && key !== "apiCalls" && key !== "webhooks" && key !== "notifications" && key !== "customers";
-              } else {
-                return key !== "apiKeys" && key !== "apiCalls" && key !== "webhooks" && key !== "socialAccounts" && key !== "postsPerMonth" && key !== "scheduledPosts" && key !== "mediaUploads";
-              }
-            })
+            .filter(([key]) => shouldShowUsageMetric(key, role))
+            .sort(([a], [b]) => getUsagePriority(a, role) - getUsagePriority(b, role))
             .map(([key, value]) => {
-            const percent = formatUsagePercent(value.used, value.limit);
-            const isUnlimited = value.limit === -1;
-            const isAtLimit = !isUnlimited && value.used >= value.limit;
+            const metric = value as { used: number; limit: number };
+            const percent = formatUsagePercent(metric.used, metric.limit);
+            const isUnlimited = metric.limit === -1;
+            const isAtLimit = !isUnlimited && metric.used >= metric.limit;
             const isApproaching = !isUnlimited && percent >= 50 && percent < 100;
+            const label = getUsageLabel(key, role);
+            const hint = getUsageHint(key, role);
             
             return (
               <div key={key} className={`bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl p-6 ${
                 isAtLimit ? "ring-2 ring-red-400" : isApproaching && percent >= 80 ? "ring-2 ring-orange-300" : ""
               }`}>
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-semibold text-gray-900 capitalize">
-                    {key.replace(/([A-Z])/g, " $1").trim()}
+                  <h4 className="font-semibold text-gray-900">
+                    {label}
                   </h4>
                   <span className={`text-sm font-medium ${
                     isAtLimit ? "text-red-600" : isApproaching && percent >= 80 ? "text-orange-600" : "text-gray-500"
                   }`}>
-                    {value.used.toLocaleString()} / {formatLimit(value.limit)}
+                    {metric.used.toLocaleString()} / {formatLimit(metric.limit)}
                   </span>
                 </div>
                 
@@ -346,9 +720,11 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
                             ? "bg-yellow-500" 
                             : "bg-blue-500"
                     }`}
-                    style={{ width: `${Math.min(percent, 100)}%` }}
+                    style={{ width: `${isUnlimited ? 100 : Math.min(percent, 100)}%` }}
                   />
                 </div>
+
+                {hint ? <p className="mt-2 text-xs text-gray-500">{hint}</p> : null}
                 
                 {/* Warning Messages */}
                 {isAtLimit ? (
@@ -358,7 +734,7 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
                       You've hit your limit!
                     </p>
                     <p className="text-xs text-red-600 mt-1">
-                      Kindly upgrade your plan to get more {key.replace(/([A-Z])/g, " $1").toLowerCase().trim()}.
+                      Kindly upgrade your plan to get more {label.toLowerCase()}.
                     </p>
                     <button
                       onClick={() => setActiveTab("plans")}
@@ -618,40 +994,36 @@ export const UsageWidget: React.FC<UsageWidgetProps> = ({ role = "business" }) =
     return Math.min(100, Math.round((used / limit) * 100));
   };
 
-  // Filter usage entries based on role:
-  // - Developers: exclude customers (they don't deal with customers)
-  // - Business: exclude apiKeys, apiCalls, webhooks (developer-only features)
-  const filteredUsage = Object.entries(usage).filter(([key]) => {
-    if (role === "developer") {
-      return key !== "customers";
-    } else {
-      return key !== "apiKeys" && key !== "apiCalls" && key !== "webhooks";
-    }
-  });
+  const filteredUsage = Object.entries(usage)
+    .filter(([key]) => shouldShowUsageMetric(key, role))
+    .sort(([a], [b]) => getUsagePriority(a, role) - getUsagePriority(b, role));
 
   // Check if any usage is at or approaching limit
   const hasLimitIssues = filteredUsage.some(([, v]) => {
-    const percent = formatPercent(v.used, v.limit);
-    return v.limit !== -1 && percent >= 50;
+    const metric = v as { used: number; limit: number };
+    const percent = formatPercent(metric.used, metric.limit);
+    return metric.limit !== -1 && percent >= 50;
   });
 
   return (
     <div className="space-y-3">
       {filteredUsage.slice(0, 3).map(([key, value]) => {
-        const percent = formatPercent(value.used, value.limit);
-        const isUnlimited = value.limit === -1;
-        const isAtLimit = !isUnlimited && value.used >= value.limit;
+        const metric = value as { used: number; limit: number };
+        const percent = formatPercent(metric.used, metric.limit);
+        const isUnlimited = metric.limit === -1;
+        const isAtLimit = !isUnlimited && metric.used >= metric.limit;
         const isApproaching = !isUnlimited && percent >= 50;
+        const label = getUsageLabel(key, role);
         
         return (
           <div key={key}>
             <div className="flex items-center justify-between text-sm mb-1">
-              <span className={`capitalize ${
+              <span className={`${
                 isAtLimit ? "text-red-600 font-medium" : 
                 isApproaching && percent >= 80 ? "text-orange-600" : 
                 "text-gray-600"
               }`}>
-                {key.replace(/([A-Z])/g, " $1").trim()}
+                {label}
                 {isAtLimit && " ⚠️"}
               </span>
               <span className={`font-medium ${
@@ -674,7 +1046,7 @@ export const UsageWidget: React.FC<UsageWidgetProps> = ({ role = "business" }) =
                         ? "bg-yellow-500" 
                         : "bg-blue-500"
                 }`}
-                style={{ width: `${Math.min(percent, 100)}%` }}
+                style={{ width: `${isUnlimited ? 100 : Math.min(percent, 100)}%` }}
               />
             </div>
             {isAtLimit && (
@@ -698,3 +1070,4 @@ export const UsageWidget: React.FC<UsageWidgetProps> = ({ role = "business" }) =
     </div>
   );
 };
+
