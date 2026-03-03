@@ -174,15 +174,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
                   title={isCollapsed && !isMobileHiddenMode ? tab.label : undefined}
                 >
-                  <span className="text-lg flex-shrink-0 flex items-center justify-center">
+                  <span className="relative text-lg flex-shrink-0 flex items-center justify-center">
                     {tab.icon}
+                    {tab.badge && (
+                      <span
+                        className={`absolute -right-2 -top-2 min-w-[18px] rounded-full border px-1 text-center text-[10px] font-semibold leading-4 ${
+                          isDark
+                            ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
+                            : "border-rose-300 bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
                   </span>
                   {(!isCollapsed || isMobileHiddenMode) && (
                     <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                       <span className={`capitalize truncate ${compactLinkDensity ? "text-sm" : ""}`}>
                         {tab.label.replace("-", " ")}
                       </span>
-                      {tab.locked && (
+                      {tab.locked ? (
                         <span
                           className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${
                             isDark
@@ -192,7 +203,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         >
                           {tab.badge || "Locked"}
                         </span>
-                      )}
+                      ) : tab.badge ? (
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                            isDark
+                              ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
+                              : "border-rose-300 bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          {tab.badge}
+                        </span>
+                      ) : null}
                     </div>
                   )}
                 </button>

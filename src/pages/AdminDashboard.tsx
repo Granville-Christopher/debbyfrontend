@@ -6,7 +6,19 @@ import { Sidebar } from "../components/Sidebar";
 import { ConfirmModal } from "../components/Modal";
 
 type AdminTab = "overview" | "payments" | "revenue" | "risk" | "ops" | "support" | "reliability" | "audit" | "access";
-type Overview = { metrics: any; trends: { revenueByDay: Array<{ date: string; amount: number }> }; leaders: any };
+type FxPayload = {
+  reportingCurrency: string;
+  source: "live" | "fallback" | string;
+  fetchedAt: string | null;
+  rates?: Array<{
+    fromCurrency: string;
+    toCurrency: string;
+    rate: number;
+    fetchedAt: string | null;
+    source: "live" | "fallback" | string;
+  }>;
+};
+type Overview = { metrics: any; trends: { revenueByDay: Array<{ date: string; amount: number }> }; leaders: any; fx?: FxPayload };
 type Health = { attempts: number; successRate: number; declineRate: number; refundAndChargebackRate: number; fraudFlags: number; avgPaymentApiLatencyMs: number };
 type PaymentProvider = "paystack" | "stripe";
 type RevenueChartType = "bar" | "line";
@@ -191,6 +203,7 @@ type BusinessOwnerDetails = {
     errorMessage: string | null;
     createdAt: string;
   }>;
+  fx?: FxPayload;
 };
 type AdminSupportTicketListItem = {
   id: string;
@@ -255,6 +268,21 @@ const moneyInCurrency = (v: number, currency: string) =>
     v || 0
   );
 const compact = (v: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(v || 0);
+const parseFxTime = (value: string | null | undefined) => {
+  const t = value ? Date.parse(value) : NaN;
+  return Number.isFinite(t) ? t : 0;
+};
+const pickFreshFx = (a: FxPayload | null | undefined, b: FxPayload | null | undefined): FxPayload | null => {
+  if (!a && !b) return null;
+  if (!a) return b || null;
+  if (!b) return a;
+  const ta = parseFxTime(a.fetchedAt);
+  const tb = parseFxTime(b.fetchedAt);
+  if (tb > ta) return b;
+  if (ta > tb) return a;
+  if (a.source !== "live" && b.source === "live") return b;
+  return a;
+};
 const toProviderLabel = (provider: PaymentProvider) => provider === "paystack" ? "Paystack" : "Stripe";
 const toCanonicalPlanId = (planId: string) => {
   const normalized = String(planId || "").trim().toLowerCase();
@@ -499,6 +527,7 @@ export const AdminDashboard = () => {
   const [commandConfig, setCommandConfig] = useState<CmdConfig>(defaultCmdConfig);
   const [mrrChartType, setMrrChartType] = useState<RevenueChartType>("bar");
   const [arrChartType, setArrChartType] = useState<RevenueChartType>("bar");
+  const [fxStatus, setFxStatus] = useState<FxPayload | null>(null);
   const [platformForm, setPlatformForm] = useState({ provider: "paystack" as "stripe" | "paystack", secretKey: "", publicKey: "", webhookSecret: "" });
   const [feePolicyForm, setFeePolicyForm] = useState({
     planId: "professional",
@@ -514,17 +543,25 @@ export const AdminDashboard = () => {
   });
   const [roleForm, setRoleForm] = useState({ userId: "", role: "support_admin" });
 
+  const supportNotificationCount = useMemo(() => {
+    const moduleCount = Number(modules?.merchantOps?.supportSla?.openOrInProgress);
+    if (Number.isFinite(moduleCount) && moduleCount > 0) return moduleCount;
+    return supportTickets.filter((ticket) => ticket.status === "open" || ticket.status === "in_progress").length;
+  }, [modules, supportTickets]);
+  const supportNotificationBadge =
+    supportNotificationCount > 0 ? (supportNotificationCount > 99 ? "99+" : String(supportNotificationCount)) : undefined;
+
   const tabs = useMemo(() => [
     { id: "overview", label: "Overview", icon: <FiBarChart2 /> },
     { id: "payments", label: "Payments", icon: <FiCreditCard /> },
     { id: "revenue", label: "Revenue", icon: <FiDollarSign /> },
     { id: "risk", label: "Risk", icon: <FiAlertTriangle /> },
     { id: "ops", label: "Merchant Ops", icon: <FiUsers /> },
-    { id: "support", label: "Support Inbox", icon: <FiMessageSquare /> },
+    { id: "support", label: "Support Inbox", icon: <FiMessageSquare />, badge: supportNotificationBadge },
     { id: "reliability", label: "Reliability", icon: <FiBarChart2 /> },
     { id: "audit", label: "Audit", icon: <FiSettings /> },
     { id: "access", label: "Access", icon: <FiShield /> }
-  ], []);
+  ], [supportNotificationBadge]);
 
   const feePoliciesForDisplay = useMemo(() => {
     const rows = new Map<string, FeePolicyRow>();
@@ -576,6 +613,10 @@ export const AdminDashboard = () => {
       if (base[0].status === "fulfilled") setOverview(base[0].value);
       if (base[1].status === "fulfilled") setHealth(base[1].value);
       if (base[2].status === "fulfilled") setModules(base[2].value);
+      let nextFx = pickFreshFx(
+        base[0].status === "fulfilled" ? base[0].value?.fx : null,
+        base[2].status === "fulfilled" ? (base[2].value?.fx as FxPayload | undefined) : null
+      );
 
       const loadedPlatformConfigs = base[4].status === "fulfilled" ? (base[4].value.configs || []) : [];
       if (base[4].status === "fulfilled") {
@@ -653,6 +694,7 @@ export const AdminDashboard = () => {
       }
       if (optional[7].status === "fulfilled") {
         setBusinessOwners(optional[7].value.owners || []);
+        nextFx = pickFreshFx(nextFx, (optional[7].value as any)?.fx as FxPayload | undefined);
       } else {
         setBusinessOwners([]);
       }
@@ -678,6 +720,7 @@ export const AdminDashboard = () => {
         setSupportEmailConfig(config);
         setSupportEmailForm(config.supportEmail || "");
       }
+      setFxStatus(nextFx);
     } catch (e) { setStatus((e as Error).message || "Failed to load admin dashboard"); }
     finally { setLoading(false); }
   };
@@ -791,6 +834,7 @@ export const AdminDashboard = () => {
         { accessToken }
       );
       setSelectedOwnerDetails(response);
+      setFxStatus((prev) => pickFreshFx(prev, response.fx));
     } catch (e) {
       setStatus((e as Error).message || "Failed to load owner details");
     }
@@ -985,6 +1029,150 @@ export const AdminDashboard = () => {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : 0;
     };
+    const statusBadgeClass: Record<string, string> = {
+      open: "bg-emerald-500/20 text-emerald-200 border-emerald-400/30",
+      in_progress: "bg-amber-500/20 text-amber-200 border-amber-400/30",
+      resolved: "bg-cyan-500/20 text-cyan-200 border-cyan-400/30",
+      closed: "bg-slate-700 text-slate-200 border-slate-600"
+    };
+    const latestSupportNotifications = [...supportTickets]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 2);
+    const openSupportInboxForReply = (ticketId: string) => {
+      setActiveTab("support");
+      void loadSupportTicketDetails(ticketId);
+    };
+    const renderSupportInboxSection = () => (
+      <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Support Inbox (Business Owners)</h3>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">{supportTickets.length} tickets</span>
+            <select
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 [color-scheme:dark]"
+              value={supportStatusFilter}
+              onChange={(e) => setSupportStatusFilter(e.target.value as "all" | "open" | "in_progress" | "resolved" | "closed")}
+            >
+              <option className="bg-slate-900 text-slate-100" value="all">All</option>
+              <option className="bg-slate-900 text-slate-100" value="open">Open</option>
+              <option className="bg-slate-900 text-slate-100" value="in_progress">In Progress</option>
+              <option className="bg-slate-900 text-slate-100" value="resolved">Resolved</option>
+              <option className="bg-slate-900 text-slate-100" value="closed">Closed</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1.35fr]">
+          <div className="max-h-[460px] overflow-auto rounded-lg border border-slate-800">
+            {supportTickets.length === 0 ? (
+              <p className="p-3 text-sm text-slate-400">No support tickets found.</p>
+            ) : (
+              <div className="divide-y divide-slate-800">
+                {supportTickets.map((ticket) => (
+                  <button
+                    type="button"
+                    key={ticket.id}
+                    onClick={() => loadSupportTicketDetails(ticket.id)}
+                    className={`w-full text-left px-3 py-3 transition hover:bg-slate-800/70 ${
+                      selectedSupportTicket?.id === ticket.id ? "bg-slate-800/90" : ""
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-100 line-clamp-1">{ticket.subject}</p>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadgeClass[ticket.status] || statusBadgeClass.open}`}>
+                        {ticket.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400 line-clamp-1">
+                      {(ticket.org?.name || "Unknown org")} | {(ticket.user?.email || "Unknown user")}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 line-clamp-1">
+                      {ticket.lastMessage?.message || ticket.description}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {ticket.priority} | {ticket.messageCount} messages | {new Date(ticket.updatedAt).toLocaleString()}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+            {supportLoading ? (
+              <p className="text-sm text-slate-400">Loading support ticket...</p>
+            ) : !selectedSupportTicket ? (
+              <p className="text-sm text-slate-400">Select a ticket to view business owner messages.</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="border-b border-slate-800 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <h4 className="text-base font-semibold text-slate-100">{selectedSupportTicket.subject}</h4>
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadgeClass[selectedSupportTicket.status] || statusBadgeClass.open}`}>
+                      {selectedSupportTicket.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {(selectedSupportTicket.org?.name || "Unknown org")} | {(selectedSupportTicket.user?.email || "Unknown user")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {selectedSupportTicket.category} | {selectedSupportTicket.priority} | Updated {new Date(selectedSupportTicket.updatedAt).toLocaleString()}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-300">{selectedSupportTicket.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(["open", "in_progress", "resolved", "closed"] as const).map((statusKey) => (
+                      <button
+                        key={statusKey}
+                        type="button"
+                        disabled={updatingSupportStatus || selectedSupportTicket.status === statusKey}
+                        onClick={() => updateSupportTicketStatus(statusKey)}
+                        className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        Mark {statusKey.replace("_", " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="max-h-[320px] overflow-auto space-y-2 pr-1">
+                  {(selectedSupportTicket.messages || []).length === 0 ? (
+                    <p className="text-sm text-slate-400">No messages yet.</p>
+                  ) : (
+                    selectedSupportTicket.messages.map((message) => (
+                      <div key={message.id} className="rounded-lg border border-slate-800 px-3 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                          {String(message.senderType || "unknown")} | {new Date(message.createdAt).toLocaleString()}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-200 whitespace-pre-wrap">{message.message}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="border-t border-slate-800 pt-3">
+                  <label className="text-xs uppercase tracking-[0.14em] text-slate-500">Reply to business owner</label>
+                  <textarea
+                    className="mt-2 min-h-[96px] w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                    value={supportReply}
+                    onChange={(e) => setSupportReply(e.target.value)}
+                    placeholder="Type your support reply..."
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={sendSupportReply}
+                      disabled={sendingSupportReply || !supportReply.trim()}
+                      className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"
+                    >
+                      {sendingSupportReply ? "Sending..." : "Send Reply"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          To reply: select a ticket on the left, then use the reply box on the right panel.
+        </p>
+      </section>
+    );
 
     if (activeTab === "overview") {
       return (
@@ -1002,6 +1190,10 @@ export const AdminDashboard = () => {
               <p className="text-xs uppercase tracking-[0.14em] text-amber-200/80">Notification Lag</p>
               <p className="mt-2 text-2xl font-semibold">{live?.ops?.notificationLag || 0}</p>
             </article>
+          </section>
+          <section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs text-cyan-100">
+            Reporting currency: <span className="font-semibold">USD</span>. Values are normalized from source
+            currencies using live FX rates.
           </section>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <article className="rounded-xl border border-slate-800 bg-slate-900 p-4">
@@ -1639,12 +1831,6 @@ export const AdminDashboard = () => {
     }
 
     if (activeTab === "ops") {
-      const statusBadgeClass: Record<string, string> = {
-        open: "bg-emerald-500/20 text-emerald-200 border-emerald-400/30",
-        in_progress: "bg-amber-500/20 text-amber-200 border-amber-400/30",
-        resolved: "bg-cyan-500/20 text-cyan-200 border-cyan-400/30",
-        closed: "bg-slate-700 text-slate-200 border-slate-600"
-      };
       return (
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -1870,131 +2056,51 @@ export const AdminDashboard = () => {
           )}
           <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Support Inbox (Business Owners)</h3>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">{supportTickets.length} tickets</span>
-                <select
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 [color-scheme:dark]"
-                  value={supportStatusFilter}
-                  onChange={(e) => setSupportStatusFilter(e.target.value as "all" | "open" | "in_progress" | "resolved" | "closed")}
-                >
-                  <option className="bg-slate-900 text-slate-100" value="all">All</option>
-                  <option className="bg-slate-900 text-slate-100" value="open">Open</option>
-                  <option className="bg-slate-900 text-slate-100" value="in_progress">In Progress</option>
-                  <option className="bg-slate-900 text-slate-100" value="resolved">Resolved</option>
-                  <option className="bg-slate-900 text-slate-100" value="closed">Closed</option>
-                </select>
-              </div>
+              <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Latest Support Notifications</h3>
+              <button
+                type="button"
+                onClick={() => setActiveTab("support")}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Open Support Inbox
+              </button>
             </div>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1.35fr]">
-              <div className="max-h-[460px] overflow-auto rounded-lg border border-slate-800">
-                {supportTickets.length === 0 ? (
-                  <p className="p-3 text-sm text-slate-400">No support tickets found.</p>
-                ) : (
-                  <div className="divide-y divide-slate-800">
-                    {supportTickets.map((ticket) => (
-                      <button
-                        type="button"
-                        key={ticket.id}
-                        onClick={() => loadSupportTicketDetails(ticket.id)}
-                        className={`w-full text-left px-3 py-3 transition hover:bg-slate-800/70 ${
-                          selectedSupportTicket?.id === ticket.id ? "bg-slate-800/90" : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-medium text-slate-100 line-clamp-1">{ticket.subject}</p>
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadgeClass[ticket.status] || statusBadgeClass.open}`}>
-                            {ticket.status.replace("_", " ")}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-400 line-clamp-1">
+            <div className="mt-3 space-y-2">
+              {latestSupportNotifications.length === 0 ? (
+                <p className="text-sm text-slate-400">No support notifications yet.</p>
+              ) : (
+                latestSupportNotifications.map((ticket) => (
+                  <div key={ticket.id} className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-100">{ticket.subject}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-400">
                           {(ticket.org?.name || "Unknown org")} | {(ticket.user?.email || "Unknown user")}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500 line-clamp-1">
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                           {ticket.lastMessage?.message || ticket.description}
                         </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {ticket.priority} | {ticket.messageCount} messages | {new Date(ticket.updatedAt).toLocaleString()}
-                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadgeClass[ticket.status] || statusBadgeClass.open}`}>
+                        {ticket.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-slate-500">{new Date(ticket.updatedAt).toLocaleString()}</p>
+                      <button
+                        type="button"
+                        onClick={() => openSupportInboxForReply(ticket.id)}
+                        className="rounded-lg bg-cyan-400 px-2.5 py-1 text-[11px] font-semibold text-slate-950"
+                      >
+                        Reply in Inbox
                       </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-                {supportLoading ? (
-                  <p className="text-sm text-slate-400">Loading support ticket...</p>
-                ) : !selectedSupportTicket ? (
-                  <p className="text-sm text-slate-400">Select a ticket to view business owner messages.</p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="border-b border-slate-800 pb-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <h4 className="text-base font-semibold text-slate-100">{selectedSupportTicket.subject}</h4>
-                        <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadgeClass[selectedSupportTicket.status] || statusBadgeClass.open}`}>
-                          {selectedSupportTicket.status.replace("_", " ")}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {(selectedSupportTicket.org?.name || "Unknown org")} | {(selectedSupportTicket.user?.email || "Unknown user")}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {selectedSupportTicket.category} | {selectedSupportTicket.priority} | Updated {new Date(selectedSupportTicket.updatedAt).toLocaleString()}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-300">{selectedSupportTicket.description}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {(["open", "in_progress", "resolved", "closed"] as const).map((statusKey) => (
-                          <button
-                            key={statusKey}
-                            type="button"
-                            disabled={updatingSupportStatus || selectedSupportTicket.status === statusKey}
-                            onClick={() => updateSupportTicketStatus(statusKey)}
-                            className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
-                          >
-                            Mark {statusKey.replace("_", " ")}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="max-h-[320px] overflow-auto space-y-2 pr-1">
-                      {(selectedSupportTicket.messages || []).length === 0 ? (
-                        <p className="text-sm text-slate-400">No messages yet.</p>
-                      ) : (
-                        selectedSupportTicket.messages.map((message) => (
-                          <div key={message.id} className="rounded-lg border border-slate-800 px-3 py-2">
-                            <p className="text-[11px] uppercase tracking-wide text-slate-500">
-                              {String(message.senderType || "unknown")} | {new Date(message.createdAt).toLocaleString()}
-                            </p>
-                            <p className="mt-1 text-sm text-slate-200 whitespace-pre-wrap">{message.message}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <div className="border-t border-slate-800 pt-3">
-                      <label className="text-xs uppercase tracking-[0.14em] text-slate-500">Reply to business owner</label>
-                      <textarea
-                        className="mt-2 min-h-[96px] w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
-                        value={supportReply}
-                        onChange={(e) => setSupportReply(e.target.value)}
-                        placeholder="Type your support reply..."
-                      />
-                      <div className="mt-2 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={sendSupportReply}
-                          disabled={sendingSupportReply || !supportReply.trim()}
-                          className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"
-                        >
-                          {sendingSupportReply ? "Sending..." : "Send Reply"}
-                        </button>
-                      </div>
                     </div>
                   </div>
-                )}
-              </div>
+                ))
+              )}
             </div>
             <p className="mt-3 text-xs text-slate-500">
-              To reply: select a ticket on the left, then use the reply box on the right panel.
+              Merchant Ops shows only the latest two notifications. Reply workflow is in Support Inbox.
             </p>
           </section>
           <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
@@ -2086,21 +2192,7 @@ export const AdminDashboard = () => {
               {supportEmailConfig.updatedAt ? `| Updated ${new Date(supportEmailConfig.updatedAt).toLocaleString()}` : ""}
             </p>
           </section>
-          <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-            <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Support Inbox Location</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              Full support reply workflow is in <span className="font-semibold">Merchant Ops</span> (ticket list, status updates, and reply composer).
-            </p>
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab("ops")}
-                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
-              >
-                Open Merchant Ops Inbox
-              </button>
-            </div>
-          </section>
+          {renderSupportInboxSection()}
         </div>
       );
     }
@@ -2276,7 +2368,25 @@ export const AdminDashboard = () => {
               <button type="button" onClick={() => setIsMobileSidebarOpen((p) => !p)} className="sm:hidden inline-flex items-center justify-center rounded-lg border border-slate-700 p-2 text-slate-200 hover:bg-slate-800" aria-label={isMobileSidebarOpen ? "Close menu" : "Open menu"}><FiMenu className="h-4 w-4" /></button>
               <div><p className="text-xs uppercase tracking-[0.18em] text-slate-400">Debby Internal</p><h1 className="text-sm sm:text-base lg:text-lg font-semibold">Admin Control Tower</h1></div>
             </div>
-            <div className="flex items-center gap-2"><span className="hidden md:block text-xs text-slate-400">{user?.email || "Admin Session"}</span><button type="button" onClick={load} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-200 hover:bg-slate-800"><FiRefreshCw className="h-4 w-4" />Refresh</button><button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs sm:text-sm text-red-200 hover:bg-red-500/20"><FiLogOut className="h-4 w-4" />Logout</button></div>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {fxStatus ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[10px] sm:text-[11px] text-cyan-100"
+                  title={`FX ${fxStatus.reportingCurrency || "USD"} • ${String(fxStatus.source || "fallback").toUpperCase()} • ${
+                    fxStatus.fetchedAt ? new Date(fxStatus.fetchedAt).toLocaleString() : "No timestamp"
+                  }`}
+                >
+                  <span className="font-semibold">FX {fxStatus.reportingCurrency || "USD"}</span>
+                  <span className="text-cyan-200/80">{String(fxStatus.source || "fallback").toUpperCase()}</span>
+                  <span className="hidden md:inline text-cyan-200/70">
+                    {fxStatus.fetchedAt ? new Date(fxStatus.fetchedAt).toLocaleTimeString() : "No timestamp"}
+                  </span>
+                </span>
+              ) : null}
+              <span className="hidden md:block text-xs text-slate-400">{user?.email || "Admin Session"}</span>
+              <button type="button" onClick={load} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-slate-200 hover:bg-slate-800"><FiRefreshCw className="h-4 w-4" /><span className="hidden sm:inline">Refresh</span></button>
+              <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-red-200 hover:bg-red-500/20"><FiLogOut className="h-4 w-4" /><span className="hidden sm:inline">Logout</span></button>
+            </div>
           </div>
         </header>
         <main className="flex-1 transition-all duration-300 relative z-10 overflow-x-hidden" style={{ marginLeft: isMobileViewport ? "0px" : "var(--sidebar-width, 180px)", marginTop: "64px" }}>
