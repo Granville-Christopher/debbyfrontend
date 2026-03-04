@@ -34,6 +34,8 @@ type ShopProduct = {
   currency: string;
   imageUrl?: string | null;
   inventory: number;
+  averageRating?: number;
+  ratingCount?: number;
   categoryId?: string | null;
   metadata?: {
     imageUrls?: string[];
@@ -45,6 +47,10 @@ type ShopProduct = {
     colorOptions?: string[];
     textureOptions?: string[];
     lengthOptions?: string[];
+    subscribeEnabled?: boolean;
+    subscribeCadence?: "weekly" | "monthly" | "quarterly" | null;
+    subscribeDiscountPercent?: number;
+    subscribePrepaidCycles?: number | null;
   } | null;
 };
 
@@ -85,6 +91,12 @@ type CartItem = {
     color?: string;
     texture?: string;
     length?: string;
+  };
+  purchaseMode?: "one_time" | "subscribe";
+  subscription?: {
+    cadence?: "weekly" | "monthly" | "quarterly";
+    discountPercent?: number;
+    prepaidCycles?: number | null;
   };
 };
 
@@ -270,6 +282,46 @@ type ShopReturnRequestResponse = {
   orderNumber: string;
 };
 
+type ProductReviewsResponse = {
+  summary: {
+    productId: string;
+    productName: string;
+    averageRating: number;
+    ratingCount: number;
+    breakdown: Record<number, number>;
+  };
+  reviews: Array<{
+    id: string;
+    rating: number;
+    title?: string | null;
+    comment?: string | null;
+    mediaUrls?: string[];
+    verifiedBuyer: boolean;
+    createdAt: string;
+    customerName: string;
+  }>;
+};
+
+type ReviewInviteLookupResponse = {
+  invite: {
+    id: string;
+    expiresAt: string;
+    product: {
+      id: string;
+      name: string;
+      slug: string;
+      imageUrl?: string | null;
+    };
+    order: {
+      id: string;
+      orderNumber: string;
+      status: string;
+      createdAt: string;
+    };
+    customerName?: string | null;
+  };
+};
+
 const deterministicHash = (value: string) => {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -286,6 +338,11 @@ const getDeterministicSubset = <T,>(items: T[], count: number, seed: string) => 
   });
   keyed.sort((a, b) => a.score - b.score);
   return keyed.slice(0, count).map((entry) => entry.item);
+};
+
+const formatRatingValue = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return "0.0";
+  return Number(value).toFixed(1);
 };
 
 export const PublicShop = () => {
@@ -306,6 +363,7 @@ export const PublicShop = () => {
   const [selectedTexture, setSelectedTexture] = useState("");
   const [selectedLength, setSelectedLength] = useState("");
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedPurchaseMode, setSelectedPurchaseMode] = useState<"one_time" | "subscribe">("one_time");
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
@@ -352,6 +410,22 @@ export const PublicShop = () => {
   const [returnReason, setReturnReason] = useState("");
   const [returnNote, setReturnNote] = useState("");
   const [returnItemQuantities, setReturnItemQuantities] = useState<Record<string, number>>({});
+  const [productReviewDetailsById, setProductReviewDetailsById] = useState<
+    Record<string, ProductReviewsResponse>
+  >({});
+  const [loadingReviewProductId, setLoadingReviewProductId] = useState<string | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [loadingReviewInvite, setLoadingReviewInvite] = useState(false);
+  const [reviewInviteDetails, setReviewInviteDetails] = useState<ReviewInviteLookupResponse["invite"] | null>(
+    null
+  );
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewForm, setReviewForm] = useState({
+    token: "",
+    rating: 5,
+    title: "",
+    comment: ""
+  });
   const heroSectionRef = useRef<HTMLDivElement | null>(null);
   const [heroCollapseOffset, setHeroCollapseOffset] = useState(320);
   const [storefrontSessionId, setStorefrontSessionId] = useState("");
@@ -585,6 +659,55 @@ export const PublicShop = () => {
     };
     loadRecommendations();
   }, [slug, shop?.id, activeCategoryId, searchTerm, selectedProduct?.id]);
+
+  useEffect(() => {
+    const loadProductReviews = async () => {
+      if (!slug || !selectedProduct?.id) return;
+      try {
+        setLoadingReviewProductId(selectedProduct.id);
+        const data = await apiRequest<ProductReviewsResponse>(
+          `/shops/${slug}/products/${selectedProduct.id}/reviews`
+        );
+        setProductReviewDetailsById((prev) => ({
+          ...prev,
+          [selectedProduct.id]: data
+        }));
+      } catch {
+        // Keep storefront responsive even when reviews fail to load.
+      } finally {
+        setLoadingReviewProductId((prev) => (prev === selectedProduct.id ? null : prev));
+      }
+    };
+    loadProductReviews();
+  }, [slug, selectedProduct?.id]);
+
+  useEffect(() => {
+    const loadReviewInviteFromUrl = async () => {
+      if (!slug) return;
+      const params = new URLSearchParams(location.search || "");
+      const token = String(params.get("token") || "").trim();
+      if (!token) return;
+      try {
+        setLoadingReviewInvite(true);
+        const data = await apiRequest<ReviewInviteLookupResponse>(
+          `/shops/${slug}/reviews/invite/${encodeURIComponent(token)}`
+        );
+        setReviewInviteDetails(data.invite);
+        setReviewForm({
+          token,
+          rating: 5,
+          title: "",
+          comment: ""
+        });
+        setShowReviewModal(true);
+      } catch (err: any) {
+        setNotice(err?.response?.data?.error || err?.message || "This review link is invalid.");
+      } finally {
+        setLoadingReviewInvite(false);
+      }
+    };
+    loadReviewInviteFromUrl();
+  }, [slug, location.search]);
 
   useEffect(() => {
     if (!slug) return;
@@ -941,6 +1064,95 @@ export const PublicShop = () => {
     }
   };
 
+  const clearReviewTokenFromUrl = () => {
+    const params = new URLSearchParams(location.search || "");
+    if (!params.has("token")) return;
+    params.delete("token");
+    const nextSearch = params.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : ""
+      },
+      { replace: true }
+    );
+  };
+
+  const submitProductReview = async () => {
+    if (!slug || !reviewForm.token) {
+      setNotice("Missing review token.");
+      return;
+    }
+    if (reviewForm.rating < 1 || reviewForm.rating > 5) {
+      setNotice("Select a rating between 1 and 5 stars.");
+      return;
+    }
+
+    try {
+      setSubmittingReview(true);
+      const response = await apiRequest<{ review: { id: string; status: string }; pendingModeration: boolean }>(
+        `/shops/${slug}/reviews/submit`,
+        {
+          method: "POST",
+          body: {
+            token: reviewForm.token,
+            rating: reviewForm.rating,
+            title: reviewForm.title.trim() || undefined,
+            comment: reviewForm.comment.trim() || undefined
+          }
+        }
+      );
+
+      const targetProductId = reviewInviteDetails?.product?.id;
+      if (targetProductId) {
+        const latest = await apiRequest<ProductReviewsResponse>(
+          `/shops/${slug}/products/${targetProductId}/reviews`
+        ).catch(() => null);
+        if (latest) {
+          setProductReviewDetailsById((prev) => ({ ...prev, [targetProductId]: latest }));
+          setShop((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              products: prev.products.map((product) =>
+                product.id === targetProductId
+                  ? {
+                      ...product,
+                      averageRating: latest.summary.averageRating,
+                      ratingCount: latest.summary.ratingCount
+                    }
+                  : product
+              )
+            };
+          });
+          setSelectedProduct((prev) =>
+            prev && prev.id === targetProductId
+              ? {
+                  ...prev,
+                  averageRating: latest.summary.averageRating,
+                  ratingCount: latest.summary.ratingCount
+                }
+              : prev
+          );
+        }
+      }
+
+      setShowReviewModal(false);
+      setReviewInviteDetails(null);
+      setReviewForm({ token: "", rating: 5, title: "", comment: "" });
+      clearReviewTokenFromUrl();
+      setNotice(
+        response.pendingModeration
+          ? "Thanks. Your review was submitted and is pending moderation."
+          : "Thanks. Your review was submitted successfully."
+      );
+    } catch (err: any) {
+      setNotice(err?.response?.data?.error || err?.message || "Failed to submit review.");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   useEffect(() => {
     const runPaymentResultFlow = async () => {
       if (!slug) return;
@@ -1030,6 +1242,24 @@ export const PublicShop = () => {
       : (["whatsapp", "card"] as Array<"whatsapp" | "card">);
   const canWhatsappCheckout = allowedCheckoutMethods.includes("whatsapp");
   const canCardCheckout = allowedCheckoutMethods.includes("card");
+  const selectedProductReviewDetails = selectedProduct
+    ? productReviewDetailsById[selectedProduct.id] || null
+    : null;
+  const selectedProductAverageRating = selectedProductReviewDetails
+    ? Number(selectedProductReviewDetails.summary.averageRating || 0)
+    : Number(selectedProduct?.averageRating || 0);
+  const selectedProductRatingCount = selectedProductReviewDetails
+    ? Number(selectedProductReviewDetails.summary.ratingCount || 0)
+    : Number(selectedProduct?.ratingCount || 0);
+  const selectedProductSubscribeEnabled = Boolean(selectedProduct?.metadata?.subscribeEnabled);
+  const selectedProductSubscribeDiscount = selectedProductSubscribeEnabled
+    ? Math.max(0, Math.min(100, Number(selectedProduct?.metadata?.subscribeDiscountPercent || 0)))
+    : 0;
+  const selectedProductPrice = Number(selectedProduct?.price || 0);
+  const selectedProductDiscountedPrice =
+    selectedPurchaseMode === "subscribe" && selectedProductSubscribeEnabled
+      ? selectedProductPrice * (1 - selectedProductSubscribeDiscount / 100)
+      : selectedProductPrice;
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1214,15 +1444,26 @@ export const PublicShop = () => {
     );
   };
 
-  const createCartItemId = (productId: string, selections: CartItem["selections"]) => {
+  const createCartItemId = (
+    productId: string,
+    selections: CartItem["selections"],
+    purchaseMode: CartItem["purchaseMode"] = "one_time",
+    cadence?: string
+  ) => {
     const selectionKey = [selections.size || "", selections.color || "", selections.texture || "", selections.length || ""].join("|");
-    return `${productId}:${selectionKey}`;
+    return `${productId}:${selectionKey}:${purchaseMode || "one_time"}:${String(cadence || "")}`;
   };
 
   const addToCart = (
     product: ShopProduct,
     selections?: CartItem["selections"],
-    quantityToAdd = 1
+    quantityToAdd = 1,
+    purchase?: {
+      mode?: "one_time" | "subscribe";
+      cadence?: "weekly" | "monthly" | "quarterly";
+      discountPercent?: number;
+      prepaidCycles?: number | null;
+    }
   ) => {
     if (product.inventory <= 0) {
       setNotice("This product is currently out of stock");
@@ -1230,7 +1471,23 @@ export const PublicShop = () => {
     }
     const safeQuantity = Math.max(1, Math.min(Math.floor(quantityToAdd || 1), 99));
     const selected = selections || {};
-    const itemId = createCartItemId(product.id, selected);
+    const productMeta = product.metadata || {};
+    const subscribeEnabled = Boolean(productMeta.subscribeEnabled);
+    const mode = subscribeEnabled && purchase?.mode === "subscribe" ? "subscribe" : "one_time";
+    const cadence = mode === "subscribe"
+      ? purchase?.cadence || productMeta.subscribeCadence || "monthly"
+      : undefined;
+    const discountPercent = mode === "subscribe"
+      ? Number(purchase?.discountPercent ?? productMeta.subscribeDiscountPercent ?? 0)
+      : 0;
+    const prepaidCycles = mode === "subscribe"
+      ? Number(purchase?.prepaidCycles ?? productMeta.subscribePrepaidCycles ?? 0) || null
+      : null;
+    const effectiveUnitPrice =
+      mode === "subscribe" && Number.isFinite(discountPercent) && discountPercent > 0
+        ? Number(product.price || 0) * (1 - discountPercent / 100)
+        : Number(product.price || 0);
+    const itemId = createCartItemId(product.id, selected, mode, cadence);
     const image = (product.metadata?.imageUrls || []).find(Boolean) || product.imageUrl || null;
     const categoryName = categoryNameById.get(product.categoryId || "");
 
@@ -1252,12 +1509,21 @@ export const PublicShop = () => {
           id: itemId,
           productId: product.id,
           name: product.name,
-          price: product.price,
+          price: Number(effectiveUnitPrice.toFixed(2)),
           currency: product.currency,
           quantity: safeQuantity,
           imageUrl: image,
           categoryName: categoryName || undefined,
-          selections: selected
+          selections: selected,
+          purchaseMode: mode,
+          subscription:
+            mode === "subscribe"
+              ? {
+                  cadence,
+                  discountPercent: Number.isFinite(discountPercent) ? discountPercent : 0,
+                  prepaidCycles
+                }
+              : undefined
         }
       ];
     });
@@ -1265,10 +1531,12 @@ export const PublicShop = () => {
     trackStorefrontEvent("add_to_cart", {
       productId: product.id,
       quantity: safeQuantity,
-      value: Number(product.price || 0) * safeQuantity,
+      value: Number(effectiveUnitPrice || 0) * safeQuantity,
       currency: product.currency,
       metadata: {
-        selections: selected
+        selections: selected,
+        purchaseMode: mode,
+        subscription: mode === "subscribe" ? { cadence, discountPercent, prepaidCycles } : null
       }
     }).catch(() => undefined);
   };
@@ -1306,6 +1574,7 @@ export const PublicShop = () => {
     setSelectedTexture("");
     setSelectedLength("");
     setSelectedQuantity(1);
+    setSelectedPurchaseMode("one_time");
     productPanelAnimationFrameRef.current = window.requestAnimationFrame(() => {
       setShowProductPanel(true);
       productPanelAnimationFrameRef.current = null;
@@ -1547,7 +1816,18 @@ export const PublicShop = () => {
             color: item.selections.color,
             texture: item.selections.texture,
             length: item.selections.length
-          }
+          },
+          purchaseMode: item.purchaseMode || "one_time",
+          subscription:
+            item.purchaseMode === "subscribe"
+              ? {
+                  cadence: item.subscription?.cadence || "monthly",
+                  prepaidCycles:
+                    typeof item.subscription?.prepaidCycles === "number"
+                      ? item.subscription.prepaidCycles
+                      : undefined
+                }
+              : undefined
         }))
       };
 
@@ -1679,7 +1959,21 @@ export const PublicShop = () => {
       color: selectedColor || undefined,
       texture: selectedTexture || undefined,
       length: selectedLength || undefined
-    }, selectedQuantity);
+    }, selectedQuantity, {
+      mode: selectedPurchaseMode,
+      cadence:
+        selectedPurchaseMode === "subscribe"
+          ? selectedProduct.metadata?.subscribeCadence || "monthly"
+          : undefined,
+      discountPercent:
+        selectedPurchaseMode === "subscribe"
+          ? Number(selectedProduct.metadata?.subscribeDiscountPercent || 0)
+          : undefined,
+      prepaidCycles:
+        selectedPurchaseMode === "subscribe"
+          ? Number(selectedProduct.metadata?.subscribePrepaidCycles || 0) || null
+          : undefined
+    });
     closeProductDetails();
   };
 
@@ -2222,6 +2516,8 @@ export const PublicShop = () => {
                         currency: product.currency,
                         imageUrl: product.imageUrl,
                         inventory: product.inventory,
+                        averageRating: product.averageRating,
+                        ratingCount: product.ratingCount,
                         categoryId: product.categoryId,
                         metadata: product.metadata
                       })
@@ -2307,6 +2603,12 @@ export const PublicShop = () => {
                         </div>
                       )}
                     </div>
+                    {Number(product.ratingCount || 0) > 0 && (
+                      <span className="absolute top-2 left-2 text-[10px] sm:text-xs font-semibold px-2 py-1 rounded-full shadow-sm bg-amber-100 text-amber-800">
+                        {formatRatingValue(Number(product.averageRating || 0))}★
+                        <span className="ml-1 opacity-80">({Number(product.ratingCount || 0)})</span>
+                      </span>
+                    )}
                     <span
                       className={`absolute top-2 right-2 text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full shadow-sm ${
                         product.inventory > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
@@ -2723,6 +3025,11 @@ export const PublicShop = () => {
                         <p className="text-sm sm:text-base font-semibold text-slate-900">{item.name}</p>
                         {item.categoryName && <p className="text-xs text-slate-500 mt-0.5">{item.categoryName}</p>}
                         <p className="text-xs text-slate-600 mt-1">{getSelectionText(item.selections).replace(/^\s*\(/, "").replace(/\)\s*$/, "") || "Standard option"}</p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {item.purchaseMode === "subscribe"
+                            ? `Subscribe (${String(item.subscription?.cadence || "monthly")}${item.subscription?.discountPercent ? `, ${item.subscription.discountPercent}% off` : ""})`
+                            : "One-time purchase"}
+                        </p>
                         <p className="text-sm font-semibold text-slate-900 mt-1">{formatPrice(item.price * item.quantity, item.currency)}</p>
                       </div>
                       <div className="flex items-center gap-1">
@@ -3302,6 +3609,107 @@ export const PublicShop = () => {
         </div>
       )}
 
+      {showReviewModal && (
+        <div
+          className="fixed inset-0 bg-black/55 z-[70] flex items-center justify-center p-4"
+          onClick={() => {
+            setShowReviewModal(false);
+            clearReviewTokenFromUrl();
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto p-5 sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Delivered Review</p>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {reviewInviteDetails?.product?.name || "Rate your product"}
+                </h3>
+                {reviewInviteDetails?.order?.orderNumber ? (
+                  <p className="text-xs text-slate-500 mt-1">Order {reviewInviteDetails.order.orderNumber}</p>
+                ) : null}
+              </div>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowReviewModal(false);
+                  clearReviewTokenFromUrl();
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {loadingReviewInvite ? (
+              <p className="text-sm text-slate-600 mt-4">Loading review form...</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="label">Your rating</label>
+                  <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 p-1.5 bg-slate-50">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={`review-star-${star}`}
+                        type="button"
+                        className={`h-8 w-8 rounded-md text-base ${
+                          reviewForm.rating >= star
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-white text-slate-400 border border-slate-200"
+                        }`}
+                        onClick={() => setReviewForm((prev) => ({ ...prev, rating: star }))}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Review title (optional)</label>
+                  <input
+                    className="input"
+                    placeholder="Short summary"
+                    maxLength={120}
+                    value={reviewForm.title}
+                    onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label">Comments (optional)</label>
+                  <textarea
+                    className="input min-h-[110px]"
+                    placeholder="Share your experience with this product"
+                    maxLength={2000}
+                    value={reviewForm.comment}
+                    onChange={(e) => setReviewForm((prev) => ({ ...prev, comment: e.target.value }))}
+                  />
+                </div>
+                <div className="pt-1 flex justify-end gap-2">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setShowReviewModal(false);
+                      clearReviewTokenFromUrl();
+                    }}
+                    disabled={submittingReview}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={submitProductReview}
+                    disabled={submittingReview}
+                  >
+                    {submittingReview ? "Submitting..." : "Submit Review"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {selectedProduct && (
         <div className={`fixed inset-0 z-[140] isolate ${showProductPanel ? "pointer-events-auto" : "pointer-events-none"}`}>
           <button
@@ -3387,6 +3795,12 @@ export const PublicShop = () => {
 
                 <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
+                    {selectedProductRatingCount > 0 && (
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                        {formatRatingValue(selectedProductAverageRating)}★
+                        <span className="ml-1 opacity-80">({selectedProductRatingCount})</span>
+                      </span>
+                    )}
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
                         selectedProduct.inventory > 0
@@ -3415,9 +3829,108 @@ export const PublicShop = () => {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                     <p className="text-sm uppercase tracking-wide text-slate-500">Price</p>
                     <p className="text-xl sm:text-3xl font-bold text-slate-900 mt-1">
-                      {selectedProduct.currency} {selectedProduct.price.toFixed(2)}
+                      {selectedProduct.currency} {selectedProductDiscountedPrice.toFixed(2)}
                     </p>
+                    {selectedPurchaseMode === "subscribe" && selectedProductSubscribeEnabled && selectedProductSubscribeDiscount > 0 && (
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Includes {selectedProductSubscribeDiscount}% subscribe discount.
+                      </p>
+                    )}
                     <p className="text-sm text-slate-600 mt-1">Available stock: {selectedProduct.inventory}</p>
+                  </div>
+
+                  {selectedProductSubscribeEnabled && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                      <p className="text-sm uppercase tracking-wide text-slate-500">Purchase Mode</p>
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPurchaseMode("one_time")}
+                          className={`rounded-lg border px-3 py-2 text-sm ${
+                            selectedPurchaseMode === "one_time"
+                              ? "border-slate-800 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          One-time purchase
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPurchaseMode("subscribe")}
+                          className={`rounded-lg border px-3 py-2 text-sm ${
+                            selectedPurchaseMode === "subscribe"
+                              ? "border-emerald-700 bg-emerald-700 text-white"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          Subscribe & Save
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-600">
+                        Cadence: {String(selectedProduct.metadata?.subscribeCadence || "monthly")}
+                        {selectedProduct.metadata?.subscribePrepaidCycles
+                          ? ` • Prepaid bundle: ${selectedProduct.metadata.subscribePrepaidCycles} cycle(s)`
+                          : ""}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                    <p className="text-sm uppercase tracking-wide text-slate-500">Ratings & Reviews</p>
+                    {loadingReviewProductId === selectedProduct.id ? (
+                      <p className="text-sm text-slate-600 mt-2">Loading reviews...</p>
+                    ) : selectedProductRatingCount > 0 ? (
+                      <>
+                        <p className="text-base font-semibold text-slate-900 mt-2">
+                          {formatRatingValue(selectedProductAverageRating)} out of 5
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {selectedProductRatingCount} verified rating
+                          {selectedProductRatingCount === 1 ? "" : "s"}
+                        </p>
+                        {selectedProductReviewDetails?.summary?.breakdown && (
+                          <div className="mt-3 space-y-1.5">
+                            {[5, 4, 3, 2, 1].map((star) => {
+                              const count = Number(selectedProductReviewDetails.summary.breakdown?.[star] || 0);
+                              const total = Math.max(1, selectedProductRatingCount);
+                              const percent = Math.round((count / total) * 100);
+                              return (
+                                <div key={`breakdown-${star}`} className="flex items-center gap-2 text-xs">
+                                  <span className="w-8 text-slate-600">{star}★</span>
+                                  <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full bg-amber-400" style={{ width: `${percent}%` }} />
+                                  </div>
+                                  <span className="w-8 text-right text-slate-500">{count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {(selectedProductReviewDetails?.reviews || []).slice(0, 5).map((review) => (
+                            <div key={review.id} className="rounded-lg border border-slate-200 p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold text-slate-900">
+                                  {review.customerName}
+                                  {review.verifiedBuyer ? (
+                                    <span className="ml-1.5 text-[10px] text-emerald-700">Verified buyer</span>
+                                  ) : null}
+                                </p>
+                                <span className="text-xs font-semibold text-amber-700">{review.rating}★</span>
+                              </div>
+                              {review.title ? (
+                                <p className="text-xs font-semibold text-slate-800 mt-1">{review.title}</p>
+                              ) : null}
+                              {review.comment ? (
+                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">{review.comment}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-600 mt-2">No ratings yet.</p>
+                    )}
                   </div>
 
                   {(selectedProduct.metadata?.colorOptions || []).length > 0 && (
@@ -3505,7 +4018,11 @@ export const PublicShop = () => {
                   disabled={selectedProduct.inventory <= 0}
                   onClick={addSelectedProductToCart}
                 >
-                  {selectedProduct.inventory > 0 ? `Add ${selectedQuantity} to Cart` : "Out of Stock"}
+                  {selectedProduct.inventory > 0
+                    ? selectedPurchaseMode === "subscribe" && selectedProductSubscribeEnabled
+                      ? `Subscribe (${selectedQuantity})`
+                      : `Add ${selectedQuantity} to Cart`
+                    : "Out of Stock"}
                 </button>
                 <button
                   className={`h-11 w-11 rounded-lg border flex items-center justify-center ${

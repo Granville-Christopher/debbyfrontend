@@ -736,12 +736,6 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
                     <p className="text-xs text-red-600 mt-1">
                       Kindly upgrade your plan to get more {label.toLowerCase()}.
                     </p>
-                    <button
-                      onClick={() => setActiveTab("plans")}
-                      className="mt-2 text-xs font-semibold text-red-700 hover:text-red-900 underline"
-                    >
-                      View upgrade options →
-                    </button>
                   </div>
                 ) : isApproaching ? (
                   <div className={`mt-3 p-3 rounded-lg ${

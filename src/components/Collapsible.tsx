@@ -12,7 +12,7 @@ export const Collapsible: React.FC<CollapsibleProps> = ({ title, children, defau
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className={`bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl shadow-gray-200/50 overflow-hidden transition-all duration-300 hover:shadow-2xl ${className}`}>
+    <div className={`bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-gray-200/40 overflow-hidden transition-all duration-300 hover:-translate-y-1 ${className}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full px-6 py-5 bg-transparent hover:bg-white/50 flex items-center justify-between text-left transition-all duration-300"

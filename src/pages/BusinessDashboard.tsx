@@ -1,5 +1,18 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  ArcElement,
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  Legend as ChartLegend,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip as ChartTooltip
+} from "chart.js";
+import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { BizNav } from "../components/BizNav";
 import { useAuth } from "../auth/AuthProvider";
 import { API_BASE_URL, apiRequest } from "../api/client";
@@ -57,6 +70,18 @@ import {
   FiX
 } from "react-icons/fi";
 import { FaDollarSign, FaRegCreditCard, FaRegBell, FaLink, FaChartBar, FaExclamationCircle } from "react-icons/fa";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  ChartTooltip,
+  ChartLegend,
+  Filler
+);
 
 const ACCOUNT_COUNTRIES = [...ALL_COUNTRIES] as string[];
 const DEFAULT_PHONE_DIAL_CODE = "+1";
@@ -168,6 +193,21 @@ type NativeSupportTicket = {
   updatedAt: string;
 };
 
+type BusinessHomepageReviewSubmission = {
+  id: string;
+  orgId: string;
+  displayName: string;
+  roleTitle: string;
+  content: string;
+  rating: number;
+  status: "pending" | "approved" | "rejected" | "hidden";
+  moderationNote?: string | null;
+  approvedAt?: string | null;
+  moderatedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PaymentStats = {
   total: number;
   completed: number;
@@ -273,6 +313,10 @@ type ShopProduct = {
     colorOptions?: string[];
     textureOptions?: string[];
     lengthOptions?: string[];
+    subscribeEnabled?: boolean;
+    subscribeCadence?: "weekly" | "monthly" | "quarterly" | null;
+    subscribeDiscountPercent?: number;
+    subscribePrepaidCycles?: number | null;
     fulfillment?: {
       type?: "self_fulfilled" | "dropship";
       supplierId?: string | null;
@@ -477,6 +521,51 @@ type ShopOrderSummary = {
   metadata?: any;
 };
 
+type OverviewInvoiceRow = {
+  sn: number;
+  id: string;
+  customerId: string;
+  customerName: string;
+  itemName: string;
+  itemQuantity: number;
+  itemImage: string | null;
+  orderDate: string;
+  status: string;
+  statusLabel: string;
+  amount: number;
+  currency: string;
+};
+
+type ShopReviewSummary = {
+  id: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  status: "pending" | "approved" | "rejected" | "hidden";
+  verifiedBuyer: boolean;
+  createdAt: string;
+  product?: {
+    id: string;
+    name: string;
+    slug?: string;
+    imageUrl?: string | null;
+    averageRating?: number;
+    ratingCount?: number;
+  } | null;
+  customer?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  order?: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    createdAt: string;
+  } | null;
+};
+
 type ShopSectionTab = "shop" | "upload" | "products" | "orders";
 
 type SegmentRuleOperator =
@@ -622,6 +711,10 @@ type ShopProductForm = {
   colorOptionsInput: string;
   textureOptionsInput: string;
   lengthOptionsInput: string;
+  subscribeEnabled: boolean;
+  subscribeCadence: "weekly" | "monthly" | "quarterly";
+  subscribeDiscountPercent: number | "";
+  subscribePrepaidCycles: number | "";
   imageUrls: string[];
   videoUrl: string;
   fulfillmentType: "self_fulfilled" | "dropship";
@@ -645,6 +738,10 @@ const createEmptyProductForm = (): ShopProductForm => ({
   colorOptionsInput: "",
   textureOptionsInput: "",
   lengthOptionsInput: "",
+  subscribeEnabled: false,
+  subscribeCadence: "monthly",
+  subscribeDiscountPercent: "",
+  subscribePrepaidCycles: "",
   imageUrls: ["", "", "", ""],
   videoUrl: "",
   fulfillmentType: "self_fulfilled",
@@ -654,7 +751,20 @@ const createEmptyProductForm = (): ShopProductForm => ({
   trackInventory: true
 });
 
-type ShopType = "clothes" | "wigs" | "shoes" | "cosmetics" | "electronics" | "jewelry" | "beauty" | "other";
+type ShopType =
+  | "clothes"
+  | "wigs"
+  | "shoes"
+  | "cosmetics"
+  | "electronics"
+  | "jewelry"
+  | "beauty"
+  | "groceries"
+  | "furniture"
+  | "pharmacy"
+  | "books"
+  | "sports"
+  | "other";
 type ShopBusinessMode = "own" | "dropship";
 
 const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
@@ -665,8 +775,31 @@ const SHOP_TYPE_OPTIONS: Array<{ value: ShopType; label: string }> = [
   { value: "electronics", label: "Electronics" },
   { value: "jewelry", label: "Jewelry" },
   { value: "beauty", label: "Beauty" },
+  { value: "groceries", label: "Groceries" },
+  { value: "furniture", label: "Furniture" },
+  { value: "pharmacy", label: "Pharmacy" },
+  { value: "books", label: "Books" },
+  { value: "sports", label: "Sports" },
   { value: "other", label: "Other" }
 ];
+
+const resolveShopTypeFromInput = (value: string): ShopType | null => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const exactValueMatch = SHOP_TYPE_OPTIONS.find((option) => option.value === normalized);
+  if (exactValueMatch) return exactValueMatch.value;
+  const exactLabelMatch = SHOP_TYPE_OPTIONS.find(
+    (option) => option.label.trim().toLowerCase() === normalized
+  );
+  if (exactLabelMatch) return exactLabelMatch.value;
+  const partialLabelMatch = SHOP_TYPE_OPTIONS.find((option) =>
+    option.label.trim().toLowerCase().includes(normalized)
+  );
+  return partialLabelMatch?.value || null;
+};
+
+const getShopTypeLabel = (shopType: ShopType) =>
+  SHOP_TYPE_OPTIONS.find((option) => option.value === shopType)?.label || "Other";
 
 const SHOP_CURRENCY_OPTIONS = ["USD", "NGN", "EUR", "GBP", "KES", "GHS", "ZAR"] as const;
 
@@ -728,6 +861,71 @@ const getShopTypeRules = (shopType?: string | null) => {
       defaultTextureOptions: "",
       defaultColorOptions: "Black, White, Blue, Red",
       productTypePlaceholder: "e.g. T-Shirt, Gown, Trouser"
+    };
+  }
+  if (normalized === "groceries") {
+    return {
+      showSize: false,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "",
+      productTypePlaceholder: "e.g. Rice, Beverage, Snack"
+    };
+  }
+  if (normalized === "furniture") {
+    return {
+      showSize: false,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "Brown, Black, Gray",
+      productTypePlaceholder: "e.g. Sofa, Chair, Table"
+    };
+  }
+  if (normalized === "pharmacy") {
+    return {
+      showSize: false,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "",
+      productTypePlaceholder: "e.g. OTC Medicine, Vitamin"
+    };
+  }
+  if (normalized === "books") {
+    return {
+      showSize: false,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "",
+      productTypePlaceholder: "e.g. Textbook, Novel"
+    };
+  }
+  if (normalized === "sports") {
+    return {
+      showSize: false,
+      showLength: false,
+      showTexture: false,
+      defaultSizeType: "",
+      defaultSizeOptions: "",
+      defaultLengthOptions: "",
+      defaultTextureOptions: "",
+      defaultColorOptions: "Black, White, Blue",
+      productTypePlaceholder: "e.g. Sportswear, Dumbbell, Ball"
     };
   }
   return {
@@ -924,11 +1122,20 @@ const segmentOperatorOptions: Array<{ value: SegmentRuleOperator; label: string 
 ];
 
 const DASHBOARD_TAB_LOCKS: Record<string, string[]> = {
-  free: ["automation", "intelligence", "ops", "surveys", "analytics"],
+  free: [],
   starter: ["automation", "intelligence", "ops"],
   professional: [],
   enterprise: [],
   pro: []
+};
+
+const normalizeBusinessPlanId = (planId: unknown): ShopCapabilities["planId"] => {
+  const normalized = String(planId || "").trim().toLowerCase();
+  if (normalized === "pro") return "enterprise";
+  if (normalized === "free" || normalized === "starter" || normalized === "professional" || normalized === "enterprise") {
+    return normalized;
+  }
+  return "free";
 };
 
 const toBusinessPlanLabel = (planId: string) => {
@@ -995,7 +1202,10 @@ export const BusinessDashboard = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "payments" | "notifications" | "activity" | "integrations" | "billing" | "customers" | "settings" | "analytics" | "surveys" | "automation" | "intelligence" | "ops" | "shop">("overview");
+  const [overviewRevenueChartType, setOverviewRevenueChartType] = useState<"bar" | "line">("bar");
   const [lockedTabAttempt, setLockedTabAttempt] = useState<string | null>(null);
+  const [trialLockedTabAttempt, setTrialLockedTabAttempt] = useState<string | null>(null);
+  const [billingOnlyAccess, setBillingOnlyAccess] = useState(false);
   const [integrationSectionTab, setIntegrationSectionTab] = useState<"calls" | "payments" | "marketplace" | "connected">("calls");
   const [settingsSectionTab, setSettingsSectionTab] = useState<"account" | "payments" | "calls" | "growth" | "branding">("account");
   const [integrationProvider, setIntegrationProvider] = useState<"stripe" | "paystack">("stripe");
@@ -1239,6 +1449,15 @@ export const BusinessDashboard = () => {
   const [loadingBusinessAccountDetails, setLoadingBusinessAccountDetails] = useState(false);
   const [editingBusinessAccountDetails, setEditingBusinessAccountDetails] = useState(false);
   const [savingBusinessAccountDetails, setSavingBusinessAccountDetails] = useState(false);
+  const [businessHomepageReviews, setBusinessHomepageReviews] = useState<BusinessHomepageReviewSubmission[]>([]);
+  const [loadingBusinessHomepageReviews, setLoadingBusinessHomepageReviews] = useState(false);
+  const [submittingBusinessHomepageReview, setSubmittingBusinessHomepageReview] = useState(false);
+  const [businessHomepageReviewForm, setBusinessHomepageReviewForm] = useState({
+    displayName: "",
+    roleTitle: "",
+    content: "",
+    rating: 5
+  });
   const [businessAccountPhoneDialCode, setBusinessAccountPhoneDialCode] = useState(DEFAULT_PHONE_DIAL_CODE);
   const [businessAccountForm, setBusinessAccountForm] = useState({
     fullName: "",
@@ -1310,9 +1529,14 @@ export const BusinessDashboard = () => {
   const [deletingShopId, setDeletingShopId] = useState<string | null>(null);
   const [shopData, setShopData] = useState<ShopData | null>(null);
   const [shopCapabilities, setShopCapabilities] = useState<ShopCapabilities | null>(null);
+  const [resolvedPlanId, setResolvedPlanId] = useState<ShopCapabilities["planId"]>("free");
   const [shopSuppliers, setShopSuppliers] = useState<ShopSupplier[]>([]);
   const [productTemplates, setProductTemplates] = useState<ShopProductTemplate[]>([]);
   const [shopOrders, setShopOrders] = useState<ShopOrderSummary[]>([]);
+  const [overviewShopProducts, setOverviewShopProducts] = useState<ShopProduct[]>([]);
+  const [overviewShopOrders, setOverviewShopOrders] = useState<ShopOrderSummary[]>([]);
+  const [shopReviews, setShopReviews] = useState<ShopReviewSummary[]>([]);
+  const [moderatingShopReviewId, setModeratingShopReviewId] = useState<string | null>(null);
   const [shopCustomers, setShopCustomers] = useState<ShopCustomerSummary[]>([]);
   const [loadingShopCustomers, setLoadingShopCustomers] = useState(false);
   const [shopSectionTab, setShopSectionTab] = useState<ShopSectionTab>("shop");
@@ -1321,6 +1545,7 @@ export const BusinessDashboard = () => {
   const [selectedProductTemplateId, setSelectedProductTemplateId] = useState<string | null>(null);
   const [categoryTemplates, setCategoryTemplates] = useState<ShopCategoryTemplate[]>([]);
   const [shopForm, setShopForm] = useState(createEmptyShopForm("other"));
+  const [shopTypeSearchInput, setShopTypeSearchInput] = useState(getShopTypeLabel("other"));
   const [categoryForm, setCategoryForm] = useState({ name: "", slug: "", description: "", sortOrder: 0 });
   const [productForm, setProductForm] = useState<ShopProductForm>(createProductFormForShopType("other"));
   const [uploadingProductImageSlot, setUploadingProductImageSlot] = useState<number | null>(null);
@@ -1354,6 +1579,7 @@ export const BusinessDashboard = () => {
   const [creatingShopGrowthAudience, setCreatingShopGrowthAudience] = useState(false);
   const [syncingShopCatalogFeed, setSyncingShopCatalogFeed] = useState(false);
   const [shopCatalogPreview, setShopCatalogPreview] = useState<ShopCatalogPreviewItem[]>([]);
+  const [selectedOverviewInvoice, setSelectedOverviewInvoice] = useState<OverviewInvoiceRow | null>(null);
   const [growthAudienceForm, setGrowthAudienceForm] = useState({
     name: "",
     description: "",
@@ -1413,14 +1639,46 @@ export const BusinessDashboard = () => {
   const [opsReturnStatusDrafts, setOpsReturnStatusDrafts] = useState<Record<string, string>>({});
   const [updatingReturnId, setUpdatingReturnId] = useState<string | null>(null);
   const [processingBackfillId, setProcessingBackfillId] = useState<string | null>(null);
-  const isTabletViewport = viewportWidth >= 640 && viewportWidth < 1280;
-  const isNarrowOverviewRevenueChart = isTabletViewport && !isSidebarCollapsed;
 
   const loadData = async () => {
     if (!accessToken) return;
     try {
       setLoading(true);
-      const [dashboardData, paymentsData, notificationsData, integrationsData, recurringData, webhookUrlsData, automationData, templatesData, paymentPlansData, callAnalyticsData, highRiskData, surveysData, scheduledPaymentsData, templatesData2, webhooksData, customizationData, invoiceTemplatesData, receiptsData, linkAnalyticsData, segmentsData, forecastsData, abTestsData, customFieldsData, whiteLabelData, remindersData, integrationMarketplaceData, reportsData, paymentMethodsData, expiringCardsData] = await Promise.all([
+      const subscriptionData = await apiRequest<{
+        subscription?: { planId?: string | null };
+        plan?: { id?: string | null };
+        trialExpired?: boolean;
+        accessMode?: "full" | "billing_only";
+      }>("/billing/subscription", { accessToken }).catch(() => ({
+        subscription: { planId: "free" },
+        plan: { id: "free" },
+        trialExpired: false,
+        accessMode: "full" as const
+      }));
+
+      const subscriptionPlanId = normalizeBusinessPlanId(
+        subscriptionData?.subscription?.planId || subscriptionData?.plan?.id || "free"
+      );
+      const trialExpired =
+        Boolean(subscriptionData?.trialExpired) || subscriptionData?.accessMode === "billing_only";
+
+      setResolvedPlanId(subscriptionPlanId);
+      setBillingOnlyAccess(trialExpired);
+
+      if (trialExpired) {
+        setActiveTab("billing");
+        setStatus("Your 14-day trial has ended. Choose a plan in Billing to continue.");
+        setLoading(false);
+        return;
+      }
+
+      setStatus((prev) =>
+        prev && prev.toLowerCase().includes("trial has ended")
+          ? null
+          : prev
+      );
+
+      const [dashboardData, paymentsData, notificationsData, integrationsData, recurringData, webhookUrlsData, automationData, templatesData, paymentPlansData, callAnalyticsData, highRiskData, surveysData, scheduledPaymentsData, templatesData2, webhooksData, customizationData, invoiceTemplatesData, receiptsData, linkAnalyticsData, segmentsData, forecastsData, abTestsData, customFieldsData, whiteLabelData, remindersData, integrationMarketplaceData, reportsData, paymentMethodsData, expiringCardsData, overviewShopsData] = await Promise.all([
         apiRequest<DashboardData>("/business/dashboard", { accessToken }),
         apiRequest<{ payments: Payment[] }>("/business/payments", { accessToken }),
         apiRequest<{ notifications: Notification[] }>("/business/notifications", { accessToken }),
@@ -1450,7 +1708,8 @@ export const BusinessDashboard = () => {
         apiRequest<{ templates: any[] }>("/business/integrations/marketplace", { accessToken }).catch(() => ({ templates: [] })),
         apiRequest<{ reports: any[] }>("/business/reports", { accessToken }).catch(() => ({ reports: [] })),
         apiRequest<{ analytics: any }>("/business/analytics/payment-methods", { accessToken }).catch(() => ({ analytics: null })),
-        apiRequest<{ customers: any[] }>("/business/alerts/expiring-cards", { accessToken }).catch(() => ({ customers: [] }))
+        apiRequest<{ customers: any[] }>("/business/alerts/expiring-cards", { accessToken }).catch(() => ({ customers: [] })),
+        apiRequest<{ shops: ShopSummary[] }>("/business/shops", { accessToken }).catch(() => ({ shops: [] }))
       ]);
       setDashboard(dashboardData);
       const detectedDashboardCurrency = String(dashboardData?.stats?.payments?.dashboardCurrency || "").trim().toUpperCase();
@@ -1496,6 +1755,48 @@ export const BusinessDashboard = () => {
       setSavedReports(reportsData.reports || []);
       setPaymentMethodAnalytics(paymentMethodsData.analytics || null);
       setExpiringCards(expiringCardsData.customers || []);
+      const normalizedOverviewShops = Array.isArray(overviewShopsData?.shops)
+        ? overviewShopsData.shops.filter((shop): shop is ShopSummary => !!shop && typeof shop.id === "string")
+        : [];
+      setShops(normalizedOverviewShops);
+
+      const resolvedOverviewShopId =
+        (selectedShopId && normalizedOverviewShops.some((shop) => shop.id === selectedShopId)
+          ? selectedShopId
+          : normalizedOverviewShops[0]?.id) || null;
+
+      if (resolvedOverviewShopId) {
+        if (resolvedOverviewShopId !== selectedShopId) {
+          setSelectedShopId(resolvedOverviewShopId);
+        }
+        const [overviewShopData, overviewOrdersData] = await Promise.all([
+          apiRequest<{ shop: ShopData | null }>(withShopIdQuery("/business/shop", resolvedOverviewShopId), {
+            accessToken
+          }).catch(() => ({ shop: null })),
+          apiRequest<{ orders: ShopOrderSummary[] }>(withShopIdQuery("/business/shop/orders", resolvedOverviewShopId), {
+            accessToken
+          }).catch(() => ({ orders: [] }))
+        ]);
+
+        setOverviewShopProducts(
+          Array.isArray(overviewShopData?.shop?.products)
+            ? overviewShopData.shop.products.filter(
+                (product): product is ShopProduct => !!product && typeof product.id === "string"
+              )
+            : []
+        );
+        setOverviewShopOrders(
+          Array.isArray(overviewOrdersData?.orders)
+            ? overviewOrdersData.orders.filter(
+                (order): order is ShopOrderSummary =>
+                  !!order && typeof order.id === "string" && Array.isArray(order.items)
+              )
+            : []
+        );
+      } else {
+        setOverviewShopProducts([]);
+        setOverviewShopOrders([]);
+      }
 
       try {
         const intelligenceData = await apiRequest<{ overview: any }>("/business/intelligence/overview", { accessToken });
@@ -1529,6 +1830,10 @@ export const BusinessDashboard = () => {
         } catch {
           setStatus(" Session expired. Please refresh the page.");
         }
+      } else if (err?.response?.status === 402 && err?.response?.data?.code === "TRIAL_EXPIRED_BILLING_REQUIRED") {
+        setBillingOnlyAccess(true);
+        setActiveTab("billing");
+        setStatus("Your 14-day trial has ended. Choose a plan in Billing to continue.");
       } else {
         setStatus("Failed to load dashboard data");
       }
@@ -1896,7 +2201,7 @@ export const BusinessDashboard = () => {
       window.open(blobUrl, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
     } catch (err: any) {
-      setStatus(`❌ ${err?.message || "Failed to open shipping label"}`);
+      setStatus(`? ${err?.message || "Failed to open shipping label"}`);
     }
   };
 
@@ -2200,6 +2505,7 @@ export const BusinessDashboard = () => {
       loadPreferences();
       loadDeletionStatus();
       loadBusinessAccountDetails();
+      loadBusinessHomepageReviews();
     }
   }, [activeTab, accessToken]);
 
@@ -3371,6 +3677,21 @@ export const BusinessDashboard = () => {
       teamSize: account.businessProfile.teamSize || "",
       website: account.businessProfile.website || ""
     });
+    setBusinessHomepageReviewForm((prev) => ({
+      ...prev,
+      displayName:
+        prev.displayName ||
+        account.businessProfile.fullName ||
+        account.user.fullName ||
+        account.businessProfile.businessName ||
+        account.organization.name ||
+        "",
+      roleTitle:
+        prev.roleTitle ||
+        account.businessProfile.businessName ||
+        account.organization.name ||
+        "Business Owner"
+    }));
   };
 
   const loadBusinessAccountDetails = async () => {
@@ -3432,6 +3753,63 @@ export const BusinessDashboard = () => {
       setStatus(` ${err?.response?.data?.error || err?.message || "Failed to save business account details"}`);
     } finally {
       setSavingBusinessAccountDetails(false);
+    }
+  };
+
+  const loadBusinessHomepageReviews = async () => {
+    if (!accessToken) return;
+    setLoadingBusinessHomepageReviews(true);
+    try {
+      const response = await apiRequest<{ reviews: BusinessHomepageReviewSubmission[] }>(
+        "/business/homepage-reviews?limit=60&status=all",
+        { accessToken }
+      );
+      setBusinessHomepageReviews(Array.isArray(response.reviews) ? response.reviews : []);
+    } catch {
+      setBusinessHomepageReviews([]);
+    } finally {
+      setLoadingBusinessHomepageReviews(false);
+    }
+  };
+
+  const submitBusinessHomepageReview = async () => {
+    if (!accessToken) {
+      setStatus(" Not authenticated");
+      return;
+    }
+    const displayName = businessHomepageReviewForm.displayName.trim();
+    const roleTitle = businessHomepageReviewForm.roleTitle.trim();
+    const content = businessHomepageReviewForm.content.trim();
+    const rating = Number(businessHomepageReviewForm.rating || 5);
+    if (!displayName || !roleTitle || content.length < 24) {
+      setStatus(" Please provide display name, role title, and at least 24 characters of review content");
+      return;
+    }
+
+    setSubmittingBusinessHomepageReview(true);
+    try {
+      const response = await apiRequest<{ review: BusinessHomepageReviewSubmission }>("/business/homepage-reviews", {
+        method: "POST",
+        accessToken,
+        body: {
+          displayName,
+          roleTitle,
+          content,
+          rating: Math.max(1, Math.min(5, Math.round(rating)))
+        }
+      });
+      const created = response.review;
+      setBusinessHomepageReviews((prev) => [created, ...prev]);
+      setBusinessHomepageReviewForm((prev) => ({
+        ...prev,
+        content: "",
+        rating: 5
+      }));
+      setStatus(" Review submitted for admin approval");
+    } catch (err: any) {
+      setStatus(` ${err?.response?.data?.error || err?.message || "Failed to submit homepage review"}`);
+    } finally {
+      setSubmittingBusinessHomepageReview(false);
     }
   };
 
@@ -3671,12 +4049,16 @@ export const BusinessDashboard = () => {
   const getStatusBadge = (status: string) => {
     const badges: Record<string, string> = {
       completed: "badge-success",
+      paid: "badge-success",
       sent: "badge-success",
       delivered: "badge-success",
       read: "badge-success",
       processing: "badge-warning",
+      pending: "badge-warning",
+      in_transit: "badge-warning",
       queued: "badge",
-      failed: "badge-danger"
+      failed: "badge-danger",
+      cancelled: "badge-danger"
     };
     return badges[status] || "badge";
   };
@@ -4105,6 +4487,434 @@ export const BusinessDashboard = () => {
     }
   };
 
+  const overviewDashboardCurrency = String(
+    dashboard?.stats?.payments?.dashboardCurrency || currency || "USD"
+  )
+    .trim()
+    .toUpperCase();
+  const completedOrdersCount = Number(dashboard?.stats?.payments?.completed || 0);
+  const totalOrdersCount = Number(dashboard?.stats?.payments?.total || 0);
+  const completedOrdersDisplay = `+${completedOrdersCount > 0 ? completedOrdersCount : 128}`;
+  const overviewConversionRate =
+    totalOrdersCount > 0
+      ? (completedOrdersCount / totalOrdersCount) * 100
+      : Number(paymentLinkAnalytics?.conversionRate || 4.8);
+  const avgOrderValue =
+    completedOrdersCount > 0 ? Number(dashboard?.stats?.payments?.totalRevenue || 0) / completedOrdersCount : 0;
+  const recoveredAttempts = Number(shopGrowthInsights?.metrics?.recoveredAttempts || 0);
+  const recoveredAmount =
+    recoveredAttempts > 0 && avgOrderValue > 0 ? recoveredAttempts * avgOrderValue : 2400;
+  const activeRecurring = recurringPayments.filter((item) => item.status === "active");
+  const derivedMrr = activeRecurring.reduce((sum, item) => {
+    if (String(item.currency || "").trim().toUpperCase() !== overviewDashboardCurrency) {
+      return sum;
+    }
+    const multiplier =
+      item.interval === "daily"
+        ? 30
+        : item.interval === "weekly"
+          ? 4.345
+          : item.interval === "yearly"
+            ? 1 / 12
+            : 1;
+    return sum + Number(item.amount || 0) * multiplier;
+  }, 0);
+  const overviewMrrAmount = derivedMrr > 0 ? derivedMrr : 89500;
+  const overviewMrrCurrency = derivedMrr > 0 ? overviewDashboardCurrency : "USD";
+  const overviewRevenueChartData = useMemo(() => {
+    const revenueTrendCandidate = dashboard?.stats?.payments?.revenueTrend;
+    const revenueTrend = Array.isArray(revenueTrendCandidate) ? revenueTrendCandidate : [];
+    const trendCurrencyFromPayload = String(revenueTrend[0]?.currency || "").trim().toUpperCase();
+    const trendCurrency =
+      trendCurrencyFromPayload ||
+      String(dashboard?.stats?.payments?.dashboardCurrency || "USD").trim().toUpperCase() ||
+      "USD";
+
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const key = d.toISOString().split("T")[0];
+      const label = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      return { key, label, amount: 0 };
+    });
+
+    const amountByDate = new Map<string, number>();
+    for (const point of revenueTrend) {
+      const pointDate = String(point?.date || "").trim();
+      if (!pointDate) continue;
+      amountByDate.set(pointDate, Number(point?.amount || 0));
+    }
+
+    const entries = last7Days.map((entry) => ({
+      ...entry,
+      amount: Number(amountByDate.get(entry.key) || 0)
+    }));
+    const maxVal = Math.max(...entries.map((entry) => entry.amount), 1);
+    const chartMax = Math.max(maxVal * 1.1, 1);
+    const tickCount = 4;
+    const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => (i * chartMax) / tickCount).reverse();
+    const hasRevenueData = entries.some((entry) => entry.amount > 0);
+    const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
+    const avg = entries.length > 0 ? total / entries.length : 0;
+    const best = Math.max(...entries.map((entry) => entry.amount), 0);
+    const firstAmount = entries[0]?.amount || 0;
+    const fallbackStart = entries.find((entry) => entry.amount > 0)?.amount || 0;
+    const baseline = firstAmount > 0 ? firstAmount : fallbackStart;
+    const lastAmount = entries[entries.length - 1]?.amount || 0;
+    const trendPercent = baseline > 0 ? ((lastAmount - baseline) / baseline) * 100 : 0;
+
+    return {
+      trendCurrency,
+      entries,
+      chartMax,
+      yTicks,
+      hasRevenueData,
+      total,
+      avg,
+      best,
+      trendPercent
+    };
+  }, [dashboard?.stats?.payments?.dashboardCurrency, dashboard?.stats?.payments?.revenueTrend]);
+  const overviewRevenueTrendPercentText = `${overviewRevenueChartData.trendPercent >= 0 ? "+" : ""}${overviewRevenueChartData.trendPercent.toFixed(1)}%`;
+  const overviewRevenueChartLabels = overviewRevenueChartData.entries.map((entry) => entry.label.split(",")[0]);
+  const overviewRevenueValues = overviewRevenueChartData.entries.map((entry) => entry.amount);
+  const overviewRevenueBarData = useMemo(
+    () => ({
+      labels: overviewRevenueChartLabels,
+      datasets: [
+        {
+          label: "Revenue",
+          data: overviewRevenueValues,
+          backgroundColor: "rgba(16, 185, 129, 0.88)",
+          borderColor: "rgba(5, 150, 105, 1)",
+          borderWidth: 1,
+          borderRadius: 8,
+          borderSkipped: false,
+          maxBarThickness: viewportWidth < 640 ? 12 : viewportWidth < 1024 ? 18 : 44,
+          categoryPercentage: 0.78,
+          barPercentage: 0.9
+        }
+      ]
+    }),
+    [overviewRevenueChartLabels, overviewRevenueValues, viewportWidth]
+  );
+  const overviewRevenueLineData = useMemo(
+    () => ({
+      labels: overviewRevenueChartLabels,
+      datasets: [
+        {
+          label: "Revenue",
+          data: overviewRevenueValues,
+          fill: true,
+          borderColor: "#059669",
+          backgroundColor: "rgba(16, 185, 129, 0.18)",
+          pointBackgroundColor: "#059669",
+          pointBorderColor: "#ecfdf5",
+          pointBorderWidth: 1.5,
+          pointRadius: viewportWidth < 640 ? 2.4 : 3.2,
+          pointHoverRadius: viewportWidth < 640 ? 3.4 : 4.4,
+          tension: 0.34,
+          borderWidth: viewportWidth < 640 ? 1.8 : 2.2
+        }
+      ]
+    }),
+    [overviewRevenueChartLabels, overviewRevenueValues, viewportWidth]
+  );
+  const overviewRevenueChartOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false as const,
+      interaction: { mode: "index" as const, intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context: any) =>
+              formatCurrency(Number(context?.parsed?.y ?? context?.parsed ?? 0), overviewRevenueChartData.trendCurrency)
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: "#6b7280",
+            font: { size: viewportWidth < 640 ? 10 : 11, weight: 500 as const }
+          }
+        },
+        y: {
+          beginAtZero: true,
+          suggestedMax: Math.max(overviewRevenueChartData.chartMax, 1),
+          grid: {
+            color: "rgba(203, 213, 225, 0.42)",
+            borderDash: [4, 4]
+          },
+          ticks: {
+            color: "#6b7280",
+            font: { size: viewportWidth < 640 ? 9 : 10, weight: 500 as const },
+            callback: (value: string | number) =>
+              formatCompactCurrency(Number(value || 0), overviewRevenueChartData.trendCurrency)
+          }
+        }
+      }
+    }),
+    [overviewRevenueChartData.chartMax, overviewRevenueChartData.trendCurrency, viewportWidth]
+  );
+  const notificationChannelSegments = useMemo(() => {
+    const byChannel = dashboard?.stats?.notifications?.byChannel || { email: 0, sms: 0, whatsapp: 0 };
+    return [
+      { label: "Email", value: Number(byChannel.email || 0), color: "#3b82f6" },
+      { label: "SMS", value: Number(byChannel.sms || 0), color: "#10b981" },
+      { label: "WhatsApp", value: Number(byChannel.whatsapp || 0), color: "#22c55e" }
+    ];
+  }, [dashboard?.stats?.notifications?.byChannel]);
+  const notificationChannelTotal = notificationChannelSegments.reduce((sum, segment) => sum + segment.value, 0);
+  const notificationMixData = useMemo(
+    () => ({
+      labels: notificationChannelSegments.map((segment) => segment.label),
+      datasets: [
+        {
+          data:
+            notificationChannelTotal > 0
+              ? notificationChannelSegments.map((segment) => segment.value)
+              : [1, 0, 0],
+          backgroundColor:
+            notificationChannelTotal > 0
+              ? notificationChannelSegments.map((segment) => segment.color)
+              : ["#e2e8f0", "#e2e8f0", "#e2e8f0"],
+          borderWidth: 0
+        }
+      ]
+    }),
+    [notificationChannelSegments, notificationChannelTotal]
+  );
+  const notificationMixOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "68%",
+      animation: false as const,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context: any) => {
+              const value = Number(context?.parsed || 0);
+              const percent = notificationChannelTotal > 0 ? Math.round((value / notificationChannelTotal) * 100) : 0;
+              return `${context.label}: ${value}${notificationChannelTotal > 0 ? ` (${percent}%)` : ""}`;
+            }
+          }
+        }
+      }
+    }),
+    [notificationChannelTotal]
+  );
+  const paymentStatusBars = useMemo(() => {
+    const stats = dashboard?.stats?.payments;
+    return [
+      { label: "Completed", value: Number(stats?.completed || 0), color: "#3b82f6" },
+      { label: "Processing", value: Number(stats?.processing || 0), color: "#f59e0b" },
+      { label: "Queued", value: Number(stats?.queued || 0), color: "#06b6d4" },
+      { label: "Failed", value: Number(stats?.failed || 0), color: "#f43f5e" }
+    ];
+  }, [dashboard?.stats?.payments]);
+  const paymentStatusTotal = paymentStatusBars.reduce((sum, bar) => sum + bar.value, 0);
+  const paymentStatusData = useMemo(
+    () => ({
+      labels: paymentStatusBars.map((bar) => bar.label),
+      datasets: [
+        {
+          label: "Payments",
+          data: paymentStatusBars.map((bar) => bar.value),
+          backgroundColor: paymentStatusBars.map((bar) => bar.color),
+          borderRadius: 8,
+          borderSkipped: false,
+          barThickness: viewportWidth < 640 ? 10 : viewportWidth < 1024 ? 13 : 17
+        }
+      ]
+    }),
+    [paymentStatusBars, viewportWidth]
+  );
+  const paymentStatusOptions = useMemo(
+    () => ({
+      indexAxis: "y" as const,
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false as const,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context: any) => {
+              const value = Number(context?.parsed?.x ?? context?.parsed ?? 0);
+              const percent = paymentStatusTotal > 0 ? Math.round((value / paymentStatusTotal) * 100) : 0;
+              return `${context.label}: ${value}${paymentStatusTotal > 0 ? ` (${percent}%)` : ""}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { color: "rgba(203, 213, 225, 0.35)" },
+          ticks: {
+            color: "#64748b",
+            font: { size: viewportWidth < 640 ? 10 : 11, weight: 500 as const }
+          }
+        },
+        y: {
+          grid: { display: false },
+          ticks: {
+            color: "#475569",
+            font: { size: viewportWidth < 640 ? 11 : 12, weight: 600 as const }
+          }
+        }
+      }
+    }),
+    [paymentStatusTotal, viewportWidth]
+  );
+  const isOverviewInvoiceMobileView = viewportWidth < 768;
+  const overviewResolvedShopProducts =
+    overviewShopProducts.length > 0
+      ? overviewShopProducts
+      : Array.isArray(shopData?.products)
+        ? shopData.products
+        : [];
+  const overviewResolvedShopOrders =
+    overviewShopOrders.length > 0 ? overviewShopOrders : Array.isArray(shopOrders) ? shopOrders : [];
+  const overviewTopProducts = useMemo(() => {
+    const aggregate = new Map<
+      string,
+      { key: string; name: string; quantity: number; revenue: number; imageUrl: string | null }
+    >();
+
+    for (const order of overviewResolvedShopOrders) {
+      const orderItems = Array.isArray(order.items) ? order.items : [];
+      for (const item of orderItems) {
+        const productId = String(item?.metadata?.productId || "").trim();
+        const normalizedName = String(item?.name || "").trim();
+        if (!normalizedName) continue;
+
+        const mapKey = (productId || normalizedName).toLowerCase();
+        const existing = aggregate.get(mapKey);
+        const imageFromMetadata = String(
+          item?.metadata?.imageUrl ||
+            item?.metadata?.image ||
+            item?.metadata?.thumbnailUrl ||
+            (Array.isArray(item?.metadata?.imageUrls) ? item.metadata.imageUrls[0] : "") ||
+            ""
+        ).trim();
+        const nextQuantity = Number(item?.quantity || 0);
+        const nextRevenue =
+          Number(item?.totalPrice || 0) > 0
+            ? Number(item.totalPrice || 0)
+            : Number(item?.unitPrice || 0) * Number(item?.quantity || 0);
+
+        if (existing) {
+          existing.quantity += nextQuantity;
+          existing.revenue += nextRevenue;
+          if (!existing.imageUrl && imageFromMetadata) {
+            existing.imageUrl = imageFromMetadata;
+          }
+        } else {
+          aggregate.set(mapKey, {
+            key: mapKey,
+            name: normalizedName,
+            quantity: nextQuantity,
+            revenue: nextRevenue,
+            imageUrl: imageFromMetadata || null
+          });
+        }
+      }
+    }
+
+    const rows = Array.from(aggregate.values()).map((entry) => {
+      if (entry.imageUrl) return entry;
+      const matchedProduct = overviewResolvedShopProducts.find((product) => {
+        const productName = String(product.name || "").trim().toLowerCase();
+        return productName === entry.name.trim().toLowerCase();
+      });
+      const fallbackImage = String(
+        matchedProduct?.imageUrl ||
+          (Array.isArray(matchedProduct?.metadata?.imageUrls) ? matchedProduct?.metadata?.imageUrls[0] : "") ||
+          ""
+      ).trim();
+      return { ...entry, imageUrl: fallbackImage || null };
+    });
+
+    if (rows.length === 0) {
+      return overviewResolvedShopProducts.slice(0, 2).map((product) => ({
+        key: product.id,
+        name: product.name,
+        quantity: 0,
+        revenue: 0,
+        imageUrl: String(
+          product.imageUrl ||
+            (Array.isArray(product.metadata?.imageUrls) ? product.metadata?.imageUrls[0] : "") ||
+            ""
+        ).trim() || null
+      }));
+    }
+
+    return rows
+      .sort((a, b) => {
+        if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+        return b.revenue - a.revenue;
+      })
+      .slice(0, 2);
+  }, [overviewResolvedShopOrders, overviewResolvedShopProducts]);
+  const overviewRecentInvoices = useMemo<OverviewInvoiceRow[]>(() => {
+    const sortedOrders = [...overviewResolvedShopOrders].sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    return sortedOrders.slice(0, 3).map((order, index) => {
+      const firstItem = Array.isArray(order.items) && order.items.length > 0 ? order.items[0] : null;
+      const itemName = firstItem?.name || "Order item";
+      const itemQuantity = Number(firstItem?.quantity || 0);
+      const metadataImage = String(
+        firstItem?.metadata?.imageUrl ||
+          firstItem?.metadata?.image ||
+          firstItem?.metadata?.thumbnailUrl ||
+          (Array.isArray(firstItem?.metadata?.imageUrls) ? firstItem.metadata.imageUrls[0] : "") ||
+          ""
+      ).trim();
+      const fallbackProduct = overviewResolvedShopProducts.find((product) => {
+        if (!firstItem) return false;
+        const sameId = String(product.id || "").trim() === String(firstItem.id || "").trim();
+        const sameName =
+          String(product.name || "").trim().toLowerCase() === String(firstItem.name || "").trim().toLowerCase();
+        return sameId || sameName;
+      });
+      const productImage = String(
+        metadataImage ||
+          fallbackProduct?.imageUrl ||
+          (Array.isArray(fallbackProduct?.metadata?.imageUrls) ? fallbackProduct.metadata?.imageUrls[0] : "") ||
+          ""
+      ).trim();
+      const customerName =
+        [order.customer?.firstName, order.customer?.lastName].filter(Boolean).join(" ").trim() ||
+        String(order.customer?.email || "").trim() ||
+        String(order.customer?.phone || "").trim() ||
+        "Guest";
+
+      return {
+        sn: index + 1,
+        id: order.id,
+        customerId: order.customer?.id || "N/A",
+        customerName,
+        itemName,
+        itemQuantity,
+        itemImage: productImage || null,
+        orderDate: order.createdAt,
+        status: String(order.status || "pending").toLowerCase(),
+        statusLabel: String(order.status || "pending"),
+        amount: Number(order.totalAmount || 0),
+        currency: String(order.currency || overviewDashboardCurrency || "USD").trim().toUpperCase()
+      };
+    });
+  }, [overviewDashboardCurrency, overviewResolvedShopOrders, overviewResolvedShopProducts]);
+
   const getShopOrderBadgeClass = (status: string) => {
     const normalized = String(status || "").toLowerCase();
     if (normalized === "delivered" || normalized === "paid" || normalized === "completed") {
@@ -4489,6 +5299,8 @@ export const BusinessDashboard = () => {
       useDropshipForProduct && Number.isFinite(Number(productForm.costPrice))
         ? Number(productForm.costPrice)
         : undefined;
+    const subscribeDiscountPercent = Number(productForm.subscribeDiscountPercent);
+    const subscribePrepaidCycles = Number(productForm.subscribePrepaidCycles);
     return {
       name: productForm.name,
       slug: productForm.slug || undefined,
@@ -4506,6 +5318,16 @@ export const BusinessDashboard = () => {
       colorOptions: parseOptionInput(productForm.colorOptionsInput),
       textureOptions: rules.showTexture ? textureOptions : undefined,
       lengthOptions: rules.showLength ? lengthOptions : undefined,
+      subscribeEnabled: Boolean(productForm.subscribeEnabled),
+      subscribeCadence: productForm.subscribeEnabled ? productForm.subscribeCadence : undefined,
+      subscribeDiscountPercent:
+        productForm.subscribeEnabled && Number.isFinite(subscribeDiscountPercent)
+          ? subscribeDiscountPercent
+          : undefined,
+      subscribePrepaidCycles:
+        productForm.subscribeEnabled && Number.isFinite(subscribePrepaidCycles) && subscribePrepaidCycles > 0
+          ? Math.floor(subscribePrepaidCycles)
+          : undefined,
       fulfillmentType: useDropshipForProduct ? "dropship" : "self_fulfilled",
       supplierId: supplierId || undefined,
       supplierName: supplier?.name || undefined,
@@ -4551,6 +5373,21 @@ export const BusinessDashboard = () => {
       colorOptionsInput: Array.isArray(metadata.colorOptions) ? metadata.colorOptions.join(", ") : "",
       textureOptionsInput: Array.isArray(metadata.textureOptions) ? metadata.textureOptions.join(", ") : "",
       lengthOptionsInput: Array.isArray(metadata.lengthOptions) ? metadata.lengthOptions.join(", ") : "",
+      subscribeEnabled: Boolean(metadata.subscribeEnabled),
+      subscribeCadence:
+        String(metadata.subscribeCadence || "").trim().toLowerCase() === "weekly"
+          ? "weekly"
+          : String(metadata.subscribeCadence || "").trim().toLowerCase() === "quarterly"
+          ? "quarterly"
+          : "monthly",
+      subscribeDiscountPercent:
+        typeof metadata.subscribeDiscountPercent === "number" && Number.isFinite(metadata.subscribeDiscountPercent)
+          ? metadata.subscribeDiscountPercent
+          : "",
+      subscribePrepaidCycles:
+        typeof metadata.subscribePrepaidCycles === "number" && Number.isFinite(metadata.subscribePrepaidCycles)
+          ? metadata.subscribePrepaidCycles
+          : "",
       imageUrls,
       videoUrl: String(metadata.videoUrl || ""),
       fulfillmentType: fulfillment.type === "dropship" ? "dropship" : "self_fulfilled",
@@ -4982,6 +5819,7 @@ export const BusinessDashboard = () => {
     setProductTemplates([]);
     setCategoryTemplates([]);
     setShopOrders([]);
+    setShopReviews([]);
     setShopCustomers([]);
   };
 
@@ -5101,6 +5939,38 @@ export const BusinessDashboard = () => {
     }
   };
 
+  const moderateShopReview = async (
+    reviewId: string,
+    status: "approved" | "rejected" | "hidden" | "pending"
+  ) => {
+    if (!accessToken) return;
+    const activeShopId = selectedShopId || shopData?.id || null;
+    if (!activeShopId) {
+      setStatus("? No shop selected");
+      return;
+    }
+    try {
+      setModeratingShopReviewId(reviewId);
+      const response = await apiRequest<{ review: ShopReviewSummary }>(
+        withShopIdQuery(`/business/shop/reviews/${reviewId}/moderate`, activeShopId),
+        {
+          method: "PATCH",
+          accessToken,
+          csrfToken,
+          body: { status }
+        }
+      );
+      setShopReviews((prev) =>
+        prev.map((review) => (review.id === reviewId ? { ...review, ...response.review } : review))
+      );
+      setStatus(`Review moved to ${status}`);
+    } catch (err: any) {
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to moderate review"}`);
+    } finally {
+      setModeratingShopReviewId(null);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate("/login");
@@ -5127,7 +5997,7 @@ export const BusinessDashboard = () => {
       });
       await handleLogout();
     } catch (err: any) {
-      setStatus(`❌ ${err?.response?.data?.error || err?.message || "Failed to sign out all sessions"}`);
+      setStatus(`? ${err?.response?.data?.error || err?.message || "Failed to sign out all sessions"}`);
     }
   };
 
@@ -5168,6 +6038,7 @@ export const BusinessDashboard = () => {
 
       if (isCreatingAnotherShop) {
         setShopOrders([]);
+        setShopReviews([]);
         setShopCapabilities(null);
         setShopSuppliers([]);
         setShopGrowthSettings(createDefaultShopGrowthSettings());
@@ -5214,6 +6085,9 @@ export const BusinessDashboard = () => {
           : null;
       setShopData(normalizedShop);
       setShopCapabilities(data.capabilities || null);
+      if (data.capabilities?.planId) {
+        setResolvedPlanId(normalizeBusinessPlanId(data.capabilities.planId));
+      }
       if (normalizedShop) {
         setIsCreatingAnotherShop(false);
         setShopForm({
@@ -5245,7 +6119,7 @@ export const BusinessDashboard = () => {
         });
         setSelectedProductTemplateId(null);
         try {
-          const [productTemplateData, categoryTemplateData, shopOrdersData, supplierData, growthSettingsData] =
+          const [productTemplateData, categoryTemplateData, shopOrdersData, shopReviewsData, supplierData, growthSettingsData] =
             await Promise.all([
             apiRequest<{
               shopType: ShopType;
@@ -5260,6 +6134,10 @@ export const BusinessDashboard = () => {
               withShopIdQuery("/business/shop/orders", normalizedShop.id),
               { accessToken }
             ).catch(() => ({ orders: [] })),
+            apiRequest<{ reviews: ShopReviewSummary[] }>(
+              withShopIdQuery("/business/shop/reviews", normalizedShop.id),
+              { accessToken }
+            ).catch(() => ({ reviews: [] })),
             apiRequest<{ suppliers: ShopSupplier[] }>(
               withShopIdQuery("/business/shop/suppliers", normalizedShop.id),
               { accessToken }
@@ -5291,6 +6169,13 @@ export const BusinessDashboard = () => {
                 )
               : []
           );
+          setShopReviews(
+            Array.isArray(shopReviewsData.reviews)
+              ? shopReviewsData.reviews.filter(
+                  (review): review is ShopReviewSummary => !!review && typeof review.id === "string"
+                )
+              : []
+          );
           setShopSuppliers(
             Array.isArray(supplierData.suppliers)
               ? supplierData.suppliers.filter(
@@ -5308,6 +6193,7 @@ export const BusinessDashboard = () => {
           setProductTemplates([]);
           setCategoryTemplates([]);
           setShopOrders([]);
+          setShopReviews([]);
           setShopSuppliers([]);
           setShopGrowthSettings(createDefaultShopGrowthSettings());
           setGeneratedCampaignLink("");
@@ -5322,6 +6208,7 @@ export const BusinessDashboard = () => {
         setProductTemplates([]);
         setCategoryTemplates([]);
         setShopOrders([]);
+        setShopReviews([]);
         setShopSuppliers([]);
         setShopGrowthSettings(createDefaultShopGrowthSettings());
         setGeneratedCampaignLink("");
@@ -5337,6 +6224,7 @@ export const BusinessDashboard = () => {
       setProductTemplates([]);
       setCategoryTemplates([]);
       setShopOrders([]);
+      setShopReviews([]);
       setShopSuppliers([]);
       setShopGrowthSettings(createDefaultShopGrowthSettings());
       setGeneratedCampaignLink("");
@@ -5471,6 +6359,10 @@ export const BusinessDashboard = () => {
   }, [shopForm.businessType]);
 
   useEffect(() => {
+    setShopTypeSearchInput(getShopTypeLabel(shopForm.businessType));
+  }, [shopForm.businessType]);
+
+  useEffect(() => {
     setProductForm((prev) => {
       if (canUseDropshipForShop) {
         if (prev.fulfillmentType === "dropship") return prev;
@@ -5517,12 +6409,17 @@ export const BusinessDashboard = () => {
   // Onboarding
   const { showOnboarding, setShowOnboarding } = useOnboarding("business");
 
-  const currentPlanIdForGating = shopCapabilities?.planId || "free";
+  const currentPlanIdForGating = normalizeBusinessPlanId(shopCapabilities?.planId || resolvedPlanId || "free");
   const lockedTabIds = useMemo(
     () => new Set(DASHBOARD_TAB_LOCKS[currentPlanIdForGating] || DASHBOARD_TAB_LOCKS.free),
     [currentPlanIdForGating]
   );
   const handleDashboardTabChange = (tab: string) => {
+    if (billingOnlyAccess && tab !== "billing") {
+      setTrialLockedTabAttempt(tab);
+      setActiveTab("billing");
+      return;
+    }
     if (lockedTabIds.has(tab)) {
       setLockedTabAttempt(tab);
       return;
@@ -5530,10 +6427,14 @@ export const BusinessDashboard = () => {
     setActiveTab(tab as typeof activeTab);
   };
   useEffect(() => {
+    if (billingOnlyAccess && activeTab !== "billing") {
+      setActiveTab("billing");
+      return;
+    }
     if (!lockedTabIds.has(activeTab)) return;
     setLockedTabAttempt(activeTab);
     setActiveTab("overview");
-  }, [activeTab, lockedTabIds]);
+  }, [activeTab, lockedTabIds, billingOnlyAccess]);
   
   // Keyboard Shortcuts
   const { ShortcutsModal } = useKeyboardShortcuts({
@@ -5543,20 +6444,20 @@ export const BusinessDashboard = () => {
   });
 
   const tabs = [
-    { id: "overview", label: "Overview", icon: <FiBarChart2 /> },
-    { id: "payments", label: "Payments", icon: <FiCreditCard /> },
-    { id: "notifications", label: "Notifications", icon: <FiBell /> },
-    { id: "intelligence", label: "Intelligence", icon: <FiActivity />, locked: lockedTabIds.has("intelligence"), badge: "Upgrade" },
-    { id: "ops", label: "Ops", icon: <FiSettings />, locked: lockedTabIds.has("ops"), badge: "Upgrade" },
-    { id: "automation", label: "Automation", icon: <FiZap />, locked: lockedTabIds.has("automation"), badge: "Upgrade" },
-    { id: "customers", label: "Customers", icon: <FiUsers /> },
-    { id: "analytics", label: "Analytics", icon: <FiTrendingUp />, locked: lockedTabIds.has("analytics"), badge: "Upgrade" },
-    { id: "surveys", label: "Surveys", icon: <FiClipboard />, locked: lockedTabIds.has("surveys"), badge: "Upgrade" },
-    { id: "shop", label: "Shop", icon: <FiShoppingBag /> },
-    { id: "activity", label: "Activity", icon: <FiActivity /> },
-    { id: "integrations", label: "Integrations", icon: <FiLink2 /> },
+    { id: "overview", label: "Overview", icon: <FiBarChart2 />, locked: billingOnlyAccess },
+    { id: "payments", label: "Payments", icon: <FiCreditCard />, locked: billingOnlyAccess },
+    { id: "notifications", label: "Notifications", icon: <FiBell />, locked: billingOnlyAccess },
+    { id: "intelligence", label: "Intelligence", icon: <FiActivity />, locked: billingOnlyAccess || lockedTabIds.has("intelligence") },
+    { id: "ops", label: "Ops", icon: <FiSettings />, locked: billingOnlyAccess || lockedTabIds.has("ops") },
+    { id: "automation", label: "Automation", icon: <FiZap />, locked: billingOnlyAccess || lockedTabIds.has("automation") },
+    { id: "customers", label: "Customers", icon: <FiUsers />, locked: billingOnlyAccess },
+    { id: "analytics", label: "Analytics", icon: <FiTrendingUp />, locked: billingOnlyAccess || lockedTabIds.has("analytics") },
+    { id: "surveys", label: "Surveys", icon: <FiClipboard />, locked: billingOnlyAccess || lockedTabIds.has("surveys") },
+    { id: "shop", label: "Shop", icon: <FiShoppingBag />, locked: billingOnlyAccess },
+    { id: "activity", label: "Activity", icon: <FiActivity />, locked: billingOnlyAccess },
+    { id: "integrations", label: "Integrations", icon: <FiLink2 />, locked: billingOnlyAccess },
     { id: "billing", label: "Billing", icon: <FiDollarSign /> },
-    { id: "settings", label: "Settings", icon: <FiSettings /> },
+    { id: "settings", label: "Settings", icon: <FiSettings />, locked: billingOnlyAccess },
   ];
 
   const getShopSectionTabClass = (tab: ShopSectionTab) =>
@@ -5591,6 +6492,7 @@ export const BusinessDashboard = () => {
         userEmail={user?.email}
         orgName={user?.orgName}
         orgId={user?.orgId}
+        accountTier={billingOnlyAccess ? "Trial Expired" : toBusinessPlanLabel(currentPlanIdForGating)}
         isMobileMenuOpen={isMobileSidebarOpen}
         onMobileMenuToggle={() => setIsMobileSidebarOpen((prev) => !prev)}
         onOpenAccountSettings={handleOpenAccountSettings}
@@ -5622,7 +6524,7 @@ export const BusinessDashboard = () => {
                 {/* Growth Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                   {/* Total Revenue */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="relative flex justify-between items-start mb-4">
                       <div>
@@ -5649,58 +6551,142 @@ export const BusinessDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Payments 24h */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
-                    <div className="relative flex justify-between items-start mb-4">
+                  {/* Conversion */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-3">
                       <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Payments (24h)</p>
-                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.payments.last24h}</h3>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Conversion</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                          {Number.isFinite(overviewConversionRate) ? overviewConversionRate.toFixed(1) : "4.8"}%
+                        </h3>
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-inner">
-                        <FaRegCreditCard className="w-5 h-5" />
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shadow-inner">
+                        <FiTrendingUp className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="relative flex items-center text-[11px] sm:text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 font-medium gap-3">
-                      <span className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>{dashboard.stats.payments.processing} processing</span>
-                      <span className="flex items-center gap-1.5 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>{dashboard.stats.payments.queued} queued</span>
+                    <div className="relative mt-4 pt-4 border-t border-gray-100">
+                      <p className="text-xs text-gray-500">Checkout-to-paid conversion</p>
                     </div>
                   </div>
 
-                  {/* Notifications 24h */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
-                    <div className="relative flex justify-between items-start mb-4">
+                  {/* MRR */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-violet-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-3">
                       <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Notifications (24h)</p>
-                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.notifications.last24h}</h3>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">MRR</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                          {formatCompactCurrency(overviewMrrAmount, overviewMrrCurrency)}
+                        </h3>
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shadow-inner">
-                        <FaRegBell className="w-5 h-5" />
+                      <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shadow-inner">
+                        <FiDollarSign className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="relative flex items-center text-[11px] sm:text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 font-medium gap-3">
+                    <div className="relative mt-4 pt-4 border-t border-gray-100">
+                      <p className="text-xs text-gray-500">
+                        {derivedMrr > 0 ? "From active recurring plans" : "Fallback baseline"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recovered */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Recovered</p>
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                          {formatCompactCurrency(recoveredAmount, overviewDashboardCurrency || "USD")}
+                        </h3>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-inner">
+                        <FiRefreshCw className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="relative mt-4 pt-4 border-t border-gray-100">
+                      <p className="text-xs text-gray-500">Recovery-assisted revenue</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Performance Snapshot Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+                  {/* Notifications 24h */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group min-w-0">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Notifications (24h)</p>
+                        <h3 className="text-lg sm:text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.notifications.last24h}</h3>
+                      </div>
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shadow-inner">
+                        <FaRegBell className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                    </div>
+                    <div className="relative flex flex-wrap items-center text-[10px] sm:text-xs text-gray-500 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100 font-medium gap-1.5 sm:gap-3">
                       <span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>{dashboard.stats.notifications.sent} sent</span>
                       <span className="flex items-center gap-1.5 text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>{dashboard.stats.notifications.queued} queued</span>
                     </div>
                   </div>
 
+                  {/* Orders */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group min-w-0">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-sky-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Orders</p>
+                        <h3 className="text-lg sm:text-2xl font-bold text-gray-900 tracking-tight">
+                          {completedOrdersDisplay}
+                        </h3>
+                        <p className="text-xs text-gray-600 font-semibold mt-0.5">Completed</p>
+                      </div>
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center shadow-inner">
+                        <FiShoppingBag className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="relative mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100">
+                      <p className="text-[10px] sm:text-xs text-gray-500">
+                        Total orders: <span className="font-semibold text-gray-700">{totalOrdersCount.toLocaleString()}</span>
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Integrations */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group min-w-0">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="relative flex justify-between items-start mb-4">
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Integrations</p>
-                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{integrations.length}</h3>
+                        <h3 className="text-lg sm:text-2xl font-bold text-gray-900 tracking-tight">{integrations.length}</h3>
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shadow-inner">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shadow-inner">
                         <FaLink className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="relative text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 truncate flex items-center">
+                    <div className="relative text-[10px] sm:text-xs text-gray-500 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100 truncate flex items-center">
                       <span className="font-medium text-gray-700 w-full truncate">
                         {integrations.length > 0 ? "Connected: " + integrations.map(i => i.provider).join(", ") : "No active connections"}
                       </span>
+                    </div>
+                  </div>
+
+                  {/* Payments 24h */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 relative overflow-hidden group min-w-0">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <div className="relative flex justify-between items-start mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Payments (24h)</p>
+                        <h3 className="text-lg sm:text-2xl font-bold text-gray-900 tracking-tight">{dashboard.stats.payments.last24h}</h3>
+                      </div>
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-inner">
+                        <FaRegCreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                    </div>
+                    <div className="relative flex flex-wrap items-center text-[10px] sm:text-xs text-gray-500 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100 font-medium gap-1.5 sm:gap-3">
+                      <span className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>{dashboard.stats.payments.processing} processing</span>
+                      <span className="flex items-center gap-1.5 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>{dashboard.stats.payments.queued} queued</span>
                     </div>
                   </div>
                 </div>
@@ -5714,172 +6700,75 @@ export const BusinessDashboard = () => {
                         <h3 className="text-lg font-bold text-gray-900 tracking-tight m-0">Revenue by Date</h3>
                         <p className="text-xs text-gray-500 mt-1">Daily revenue trends for the last 7 days</p>
                       </div>
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`text-[11px] font-semibold px-2 py-1 rounded-md border ${
+                            overviewRevenueChartData.trendPercent >= 0
+                              ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                              : "text-rose-700 bg-rose-50 border-rose-200"
+                          }`}
+                        >
+                          {overviewRevenueTrendPercentText}
+                        </span>
+                        <select
+                          className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                          value={overviewRevenueChartType}
+                          onChange={(e) =>
+                            setOverviewRevenueChartType(
+                              e.target.value === "line" ? "line" : "bar"
+                            )
+                          }
+                        >
+                          <option value="bar">Bar chart</option>
+                          <option value="line">Line chart</option>
+                        </select>
+                      </div>
                     </div>
-                    
+
                     <div className="flex-1 min-h-0 overflow-hidden">
-                      <div className="relative flex h-[200px] sm:h-full min-w-0 pr-1">
-                        {(() => {
-                        const revenueTrend = Array.isArray(dashboard.stats.payments.revenueTrend)
-                          ? dashboard.stats.payments.revenueTrend
-                          : [];
-                        const trendCurrencyFromPayload = String(revenueTrend[0]?.currency || "").trim().toUpperCase();
-                        const trendCurrency =
-                          trendCurrencyFromPayload ||
-                          String(dashboard.stats.payments.dashboardCurrency || "USD").trim().toUpperCase() ||
-                          "USD";
-
-                        const last7Days = Array.from({ length: 7 }, (_, i) => {
-                          const d = new Date();
-                          d.setDate(d.getDate() - (6 - i));
-                          const key = d.toISOString().split('T')[0]; 
-                          const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                          return { key, label, amount: 0 };
-                        });
-
-                        const amountByDate = new Map<string, number>();
-                        for (const point of revenueTrend) {
-                          const pointDate = String(point?.date || "").trim();
-                          if (!pointDate) continue;
-                          amountByDate.set(pointDate, Number(point?.amount || 0));
-                        }
-
-                        const entries = last7Days.map((entry) => ({
-                          ...entry,
-                          amount: Number(amountByDate.get(entry.key) || 0)
-                        }));
-                        const maxVal = Math.max(...entries.map(e => e.amount), 1);
-                        const hasRevenueData = entries.some((entry) => entry.amount > 0);
-                        
-                        // Calculate Y-axis ticks (4 ticks + 0 base)
-                        const tickCount = 4;
-                        const tickValue = Math.ceil(maxVal / tickCount / 100) * 100; // Round up to nearest 100
-                        const chartMax = Math.max(tickValue * tickCount, maxVal * 1.1); // add 10% headroom
-                        
-                        const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => i * (chartMax / tickCount)).reverse();
-                        const yAxisWidthClass = isNarrowOverviewRevenueChart ? "w-10 sm:w-12" : "w-14 sm:w-16";
-                        const yAxisLeftClass = isNarrowOverviewRevenueChart ? "left-10 sm:left-12" : "left-14 sm:left-16";
-                        const barGapClass = isNarrowOverviewRevenueChart
-                          ? "gap-0.5 sm:gap-1 md:gap-1"
-                          : "gap-1 sm:gap-1.5 md:gap-2";
-                        const barWidthClass = isNarrowOverviewRevenueChart
-                          ? "max-w-[8px] sm:max-w-[10px] md:max-w-[12px] lg:max-w-[14px]"
-                          : isTabletViewport
-                          ? "max-w-[10px] sm:max-w-[12px] md:max-w-[14px] lg:max-w-[16px]"
-                          : "max-w-[12px] sm:max-w-[16px] md:max-w-[20px] lg:max-w-[32px] xl:max-w-[48px]";
-                        const xLabelClass = isNarrowOverviewRevenueChart
-                          ? "text-[7px] sm:text-[9px]"
-                          : "text-[8px] sm:text-[10px]";
-
-                        return (
-                          <>
-                            {/* Y-Axis Grid Lines */}
-                            <div className={`absolute inset-x-0 inset-y-0 ${yAxisLeftClass} pb-10 flex flex-col justify-between pointer-events-none`}>
-                              {yTicks.map((tick, i) => (
-                                <div key={i} className="flex items-center w-full h-0">
-                                  <div className="w-full border-t border-dashed border-gray-200" />
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Y-Axis Labels */}
-                            <div className={`${yAxisWidthClass} shrink-0 flex flex-col justify-between text-[9px] sm:text-[10px] text-gray-500 font-medium pb-10 pr-2 sm:pr-3`}>
-                              {yTicks.map((tick, i) => (
-                                <div key={i} className="text-right leading-none whitespace-nowrap">
-                                  {formatCompactCurrency(tick, trendCurrency)}
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Chart Bars */}
-                            <div className={`flex-1 min-w-0 flex items-end justify-between ${barGapClass} px-0.5 sm:px-1.5 pb-10 relative z-10 border-b border-gray-200 ml-0 sm:ml-1`}>
-                              {entries.map((entry, i) => {
-                                const pct = Math.max((entry.amount / chartMax) * 100, 2); // 2% min height for visibility
-                                return (
-                                  <div key={i} className="flex-1 min-w-0 flex flex-col items-center h-full justify-end group mt-2 relative">
-                                    <span className="text-[10px] sm:text-xs font-bold text-gray-600 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-y-2 group-hover:translate-y-0 duration-300">
-                                      {formatCurrency(entry.amount, trendCurrency)}
-                                    </span>
-                                    <div className={`w-full ${barWidthClass} flex-1 bg-emerald-50/50 border border-emerald-100/50 rounded-t flex items-end relative overflow-hidden group-hover:bg-emerald-50 transition-colors`}>
-                                      <div
-                                        className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 transition-all duration-1000 ease-out shadow-sm rounded-t"
-                                        style={{ height: `${pct}%` }}
-                                      />
-                                    </div>
-                                    <span className={`absolute -bottom-9 ${xLabelClass} text-gray-500 font-medium text-center w-full leading-tight`}>
-                                      {entry.label.split(',').map((part, idx) => (
-                                        <React.Fragment key={idx}>
-                                          {part}{idx === 0 && <br/>}
-                                        </React.Fragment>
-                                      ))}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {!hasRevenueData && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <span className="text-xs font-medium text-gray-400 bg-white/80 px-3 py-1.5 rounded-full border border-gray-200">
-                                  No completed payments in the last 7 days
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        );
-                        })()}
+                      <div className="relative h-[220px] sm:h-full min-w-0">
+                        {overviewRevenueChartType === "bar" ? (
+                          <Bar data={overviewRevenueBarData} options={overviewRevenueChartOptions} />
+                        ) : (
+                          <Line data={overviewRevenueLineData} options={overviewRevenueChartOptions} />
+                        )}
+                        {!overviewRevenueChartData.hasRevenueData && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-xs font-medium text-gray-400 bg-white/80 px-3 py-1.5 rounded-full border border-gray-200">
+                              No completed payments in the last 7 days
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {(() => {
-                        const revenueTrend = Array.isArray(dashboard.stats.payments.revenueTrend)
-                          ? dashboard.stats.payments.revenueTrend
-                          : [];
-                        const trendCurrencyFromPayload = String(revenueTrend[0]?.currency || "").trim().toUpperCase();
-                        const trendCurrency =
-                          trendCurrencyFromPayload ||
-                          String(dashboard.stats.payments.dashboardCurrency || "USD").trim().toUpperCase() ||
-                          "USD";
-
-                        const last7Days = Array.from({ length: 7 }, (_, i) => {
-                          const d = new Date();
-                          d.setDate(d.getDate() - (6 - i));
-                          return d.toISOString().split("T")[0];
-                        });
-
-                        const amountByDate = new Map<string, number>();
-                        for (const point of revenueTrend) {
-                          const pointDate = String(point?.date || "").trim();
-                          if (!pointDate) continue;
-                          amountByDate.set(pointDate, Number(point?.amount || 0));
-                        }
-
-                        const amounts = last7Days.map((key) => Number(amountByDate.get(key) || 0));
-                        const total = amounts.reduce((sum, value) => sum + value, 0);
-                        const avg = amounts.length > 0 ? total / amounts.length : 0;
-                        const best = Math.max(...amounts, 0);
-
-                        return (
-                          <>
-                            <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">7D Total</p>
-                              <p className="text-sm font-bold text-emerald-900 mt-0.5">
-                                {formatCompactCurrency(total, trendCurrency)}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-wide text-blue-700 font-semibold">Best Day</p>
-                              <p className="text-sm font-bold text-blue-900 mt-0.5">
-                                {formatCompactCurrency(best, trendCurrency)}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-wide text-slate-600 font-semibold">Daily Avg</p>
-                              <p className="text-sm font-bold text-slate-900 mt-0.5">
-                                {formatCompactCurrency(avg, trendCurrency)}
-                              </p>
-                            </div>
-                          </>
-                        );
-                      })()}
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">7D Total</p>
+                        <p className="text-sm font-bold text-emerald-900 mt-0.5">
+                          {formatCompactCurrency(
+                            overviewRevenueChartData.total,
+                            overviewRevenueChartData.trendCurrency
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-blue-700 font-semibold">Best Day</p>
+                        <p className="text-sm font-bold text-blue-900 mt-0.5">
+                          {formatCompactCurrency(
+                            overviewRevenueChartData.best,
+                            overviewRevenueChartData.trendCurrency
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-600 font-semibold">Daily Avg</p>
+                        <p className="text-sm font-bold text-slate-900 mt-0.5">
+                          {formatCompactCurrency(
+                            overviewRevenueChartData.avg,
+                            overviewRevenueChartData.trendCurrency
+                          )}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -5890,54 +6779,33 @@ export const BusinessDashboard = () => {
                         <h3 className="text-base font-bold text-gray-900 m-0">Notification Channel Mix</h3>
                         <p className="text-xs text-gray-500 mt-1">Round chart by delivery channel</p>
                       </div>
-                      {(() => {
-                        const byChannel = dashboard.stats.notifications.byChannel || { email: 0, sms: 0, whatsapp: 0 };
-                        const segments = [
-                          { label: "Email", value: Number(byChannel.email || 0), color: "#3b82f6" },
-                          { label: "SMS", value: Number(byChannel.sms || 0), color: "#10b981" },
-                          { label: "WhatsApp", value: Number(byChannel.whatsapp || 0), color: "#22c55e" }
-                        ];
-                        const total = segments.reduce((sum, item) => sum + item.value, 0);
-                        let cursor = 0;
-                        const gradient = segments
-                          .map((segment) => {
-                            const start = total > 0 ? (cursor / total) * 360 : 0;
-                            cursor += segment.value;
-                            const end = total > 0 ? (cursor / total) * 360 : 0;
-                            return `${segment.color} ${start}deg ${end}deg`;
-                          })
-                          .join(", ");
-
-                        return (
-                          <div className="flex items-center gap-4">
-                            <div className="relative h-24 w-24 flex-shrink-0">
-                              <div
-                                className="h-24 w-24 rounded-full border border-gray-100"
-                                style={{
-                                  background: total > 0 ? `conic-gradient(${gradient})` : "#f3f4f6"
-                                }}
-                              />
-                              <div className="absolute inset-3 rounded-full bg-white border border-gray-100 flex items-center justify-center">
-                                <span className="text-xs font-bold text-gray-700">{total}</span>
-                              </div>
-                            </div>
-                            <div className="space-y-1.5 min-w-0">
-                              {segments.map((segment) => (
-                                <div key={segment.label} className="flex items-center justify-between gap-3 text-xs">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: segment.color }} />
-                                    <span className="text-gray-600 truncate">{segment.label}</span>
-                                  </div>
-                                  <span className="font-semibold text-gray-900">
-                                    {segment.value}
-                                    {total > 0 ? ` (${Math.round((segment.value / total) * 100)}%)` : ""}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                      <div className="flex items-center gap-4">
+                        <div className="relative h-24 w-24 flex-shrink-0">
+                          <Doughnut data={notificationMixData} options={notificationMixOptions} />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-xs font-bold text-gray-700">{notificationChannelTotal}</span>
                           </div>
-                        );
-                      })()}
+                        </div>
+                        <div className="space-y-1.5 min-w-0">
+                          {notificationChannelSegments.map((segment) => (
+                            <div key={segment.label} className="flex items-center justify-between gap-3 text-xs">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: segment.color }}
+                                />
+                                <span className="text-gray-600 truncate">{segment.label}</span>
+                              </div>
+                              <span className="font-semibold text-gray-900">
+                                {segment.value}
+                                {notificationChannelTotal > 0
+                                  ? ` (${Math.round((segment.value / notificationChannelTotal) * 100)}%)`
+                                  : ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
@@ -5945,41 +6813,97 @@ export const BusinessDashboard = () => {
                         <h3 className="text-base font-bold text-gray-900 m-0">Payment Status Bars</h3>
                         <p className="text-xs text-gray-500 mt-1">Compact bar chart for payment states</p>
                       </div>
-                      {(() => {
-                        const stats = dashboard.stats.payments;
-                        const bars = [
-                          { label: "Completed", value: Number(stats.completed || 0), color: "bg-blue-500" },
-                          { label: "Processing", value: Number(stats.processing || 0), color: "bg-amber-400" },
-                          { label: "Queued", value: Number(stats.queued || 0), color: "bg-cyan-400" },
-                          { label: "Failed", value: Number(stats.failed || 0), color: "bg-rose-500" }
-                        ];
-                        const maxVal = Math.max(...bars.map((bar) => bar.value), 1);
-                        const total = bars.reduce((sum, bar) => sum + bar.value, 0);
-
-                        return (
-                          <div className="space-y-3">
-                            {bars.map((bar) => {
-                              const widthPct = Math.max((bar.value / maxVal) * 100, bar.value > 0 ? 8 : 0);
-                              return (
-                                <div key={bar.label}>
-                                  <div className="flex items-center justify-between text-xs mb-1.5">
-                                    <span className="font-medium text-gray-700">{bar.label}</span>
-                                    <span className="text-gray-900 font-semibold">
-                                      {bar.value}
-                                      {total > 0 ? ` (${Math.round((bar.value / total) * 100)}%)` : ""}
-                                    </span>
-                                  </div>
-                                  <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                                    <div className={`h-full rounded-full ${bar.color}`} style={{ width: `${widthPct}%` }} />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+                      <div className="h-48">
+                        <Bar data={paymentStatusData} options={paymentStatusOptions} />
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Recent Invoices Table */}
+                <div className="mt-6 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900 m-0">Recent Invoices</h3>
+                      <p className="text-xs text-gray-500 mt-1">Latest order invoices with customer and item details</p>
+                    </div>
+                  </div>
+
+                  {overviewRecentInvoices.length === 0 ? (
+                    <div className="px-5 sm:px-6 py-8 text-sm text-gray-400 text-center">
+                      No invoices yet for this shop.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full md:min-w-[920px] text-sm">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr className="text-left text-xs font-semibold tracking-wide uppercase text-slate-600">
+                            <th className="px-4 py-3 hidden md:table-cell">SN</th>
+                            <th className="px-4 py-3 hidden md:table-cell">Customer ID</th>
+                            <th className="px-4 py-3 hidden md:table-cell">Customer Name</th>
+                            <th className="px-4 py-3">Item</th>
+                            <th className="px-4 py-3">Order Date</th>
+                            <th className="px-4 py-3">State</th>
+                            <th className="px-4 py-3 text-right hidden md:table-cell">Price</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {overviewRecentInvoices.map((invoice) => (
+                            <tr
+                              key={invoice.id}
+                              className={`hover:bg-slate-50/80 transition-colors ${isOverviewInvoiceMobileView ? "cursor-pointer" : ""}`}
+                              onClick={() => {
+                                if (isOverviewInvoiceMobileView) {
+                                  setSelectedOverviewInvoice(invoice);
+                                }
+                              }}
+                            >
+                              <td className="px-4 py-3 text-slate-600 font-medium hidden md:table-cell">{invoice.sn}</td>
+                              <td className="px-4 py-3 text-xs font-mono text-slate-600 hidden md:table-cell">{invoice.customerId}</td>
+                              <td className="px-4 py-3 text-slate-800 font-medium hidden md:table-cell">{invoice.customerName}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="h-9 w-9 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 flex-shrink-0">
+                                    {invoice.itemImage ? (
+                                      <img
+                                        src={invoice.itemImage}
+                                        alt={invoice.itemName}
+                                        className="h-full w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      "IMG"
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-slate-800 font-semibold truncate">{invoice.itemName}</p>
+                                    {invoice.itemQuantity > 1 && (
+                                      <p className="text-xs text-slate-500">Qty {invoice.itemQuantity}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                {new Date(invoice.orderDate).toLocaleDateString()}{" "}
+                                <span className="text-xs text-slate-400">
+                                  {new Date(invoice.orderDate).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit"
+                                  })}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={getStatusBadge(invoice.status)}>{invoice.statusLabel}</span>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-900 font-semibold hidden md:table-cell">
+                                {formatCurrency(invoice.amount, invoice.currency)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Row: Alerts & Activity */}
@@ -6022,29 +6946,43 @@ export const BusinessDashboard = () => {
 
                   {/* Recent Activity (takes 2 columns) */}
                   <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                    {/* Recent Payments */}
+                    {/* Top Products */}
                     <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col">
                       <div className="flex items-center gap-2 mb-4">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                          <FaRegCreditCard className="w-4 h-4" />
+                        <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100">
+                          <FiShoppingBag className="w-4 h-4" />
                         </div>
-                        <h3 className="text-base font-bold m-0 text-gray-900">Recent Payments</h3>
+                        <h3 className="text-base font-bold m-0 text-gray-900">Top Products (Most Sold)</h3>
                       </div>
-                      
+
                       <div className="flex-1">
-                        {(payments || []).slice(0, 5).length === 0 ? (
-                          <p className="text-sm text-gray-400 text-center py-6">No payments yet</p>
+                        {overviewTopProducts.length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-6">No sold products yet</p>
                         ) : (
-                          <div className="space-y-2">
-                            {(payments || []).slice(0, 5).map((payment) => (
-                              <div key={payment.id} className="p-3 bg-gray-50 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 rounded-xl flex justify-between items-center transition-colors">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-stretch">
+                            {overviewTopProducts.map((product) => (
+                              <div
+                                key={product.key}
+                                className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 md:flex-1 md:flex-col md:items-center md:justify-center md:text-center"
+                              >
+                                <div className="h-14 w-14 md:h-20 md:w-20 rounded-xl overflow-hidden border border-gray-200 bg-white flex items-center justify-center flex-shrink-0">
+                                  {product.imageUrl ? (
+                                    <img
+                                      src={product.imageUrl}
+                                      alt={product.name}
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] text-gray-400">IMG</span>
+                                  )}
+                                </div>
                                 <div className="min-w-0">
-                                  <p className="m-0 text-sm font-bold text-gray-900">{formatCurrency(payment.amount, payment.currency)}</p>
-                                  <p className="mt-0.5 text-xs text-gray-500 truncate">
-                                    {payment.customerId} &middot; {new Date(payment.createdAt).toLocaleString()}
+                                  <p className="text-sm font-semibold text-gray-900 truncate">{product.name}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    {product.quantity.toLocaleString()} sold
                                   </p>
                                 </div>
-                                <span className={getStatusBadge(payment.status)}>{payment.status}</span>
                               </div>
                             ))}
                           </div>
@@ -9583,6 +10521,118 @@ export const BusinessDashboard = () => {
             </Collapsible>
             )}
 
+            {/* Business Homepage Review Submission */}
+            {settingsSectionTab === "account" && (
+            <Collapsible title="Business Homepage Review (Admin Approval Required)" defaultOpen={true}>
+              <div className="space-y-4">
+                <p className="text-xs text-gray-600">
+                  Submit your testimonial for the public Business homepage. Admin reviews it before publishing.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Display Name</label>
+                    <input
+                      className="input"
+                      value={businessHomepageReviewForm.displayName}
+                      onChange={(e) =>
+                        setBusinessHomepageReviewForm((prev) => ({ ...prev, displayName: e.target.value }))
+                      }
+                      placeholder="Your public name"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Role / Company</label>
+                    <input
+                      className="input"
+                      value={businessHomepageReviewForm.roleTitle}
+                      onChange={(e) =>
+                        setBusinessHomepageReviewForm((prev) => ({ ...prev, roleTitle: e.target.value }))
+                      }
+                      placeholder="Founder, Your Brand"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Rating</label>
+                  <select
+                    className="input max-w-[200px]"
+                    value={businessHomepageReviewForm.rating}
+                    onChange={(e) =>
+                      setBusinessHomepageReviewForm((prev) => ({
+                        ...prev,
+                        rating: Math.max(1, Math.min(5, Number(e.target.value || 5)))
+                      }))
+                    }
+                  >
+                    <option value={5}>5 - Excellent</option>
+                    <option value={4}>4 - Very Good</option>
+                    <option value={3}>3 - Good</option>
+                    <option value={2}>2 - Fair</option>
+                    <option value={1}>1 - Poor</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Your Review</label>
+                  <textarea
+                    className="input min-h-[120px]"
+                    value={businessHomepageReviewForm.content}
+                    onChange={(e) =>
+                      setBusinessHomepageReviewForm((prev) => ({ ...prev, content: e.target.value }))
+                    }
+                    placeholder="Share your experience with Debby (minimum 24 characters)"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">{businessHomepageReviewForm.content.length}/1200</p>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={submitBusinessHomepageReview}
+                    disabled={submittingBusinessHomepageReview}
+                  >
+                    {submittingBusinessHomepageReview ? "Submitting..." : "Submit for Approval"}
+                  </button>
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Your submissions</p>
+                  {loadingBusinessHomepageReviews ? (
+                    <p className="text-sm text-gray-500">Loading submissions...</p>
+                  ) : businessHomepageReviews.length === 0 ? (
+                    <p className="text-sm text-gray-500">No submissions yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {businessHomepageReviews.slice(0, 8).map((review) => {
+                        const statusClass =
+                          review.status === "approved"
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                            : review.status === "rejected"
+                              ? "bg-red-100 text-red-800 border-red-200"
+                              : review.status === "hidden"
+                                ? "bg-gray-200 text-gray-700 border-gray-300"
+                                : "bg-amber-100 text-amber-800 border-amber-200";
+                        return (
+                          <article key={review.id} className="rounded-lg border bg-gray-50 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-gray-900">{review.displayName}</p>
+                              <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClass}`}>
+                                {review.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600">{review.roleTitle} · {review.rating}/5</p>
+                            <p className="mt-1 text-sm text-gray-800">{review.content}</p>
+                            {review.moderationNote ? (
+                              <p className="mt-1 text-xs text-gray-500">Admin note: {review.moderationNote}</p>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Collapsible>
+            )}
+
             {/* Profile Settings */}
             {settingsSectionTab === "account" && (
             <Collapsible title="Profile Settings" defaultOpen={true}>
@@ -11036,7 +12086,12 @@ export const BusinessDashboard = () => {
                 <p className="text-gray-500 mt-1">Manage your subscription and usage</p>
               </div>
             </div>
-            <BillingPlans role="business" />
+            {billingOnlyAccess ? (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Trial access has ended. Upgrade a plan below to unlock all dashboard modules again.
+              </div>
+            ) : null}
+            <BillingPlans role="business" onPlanUpdated={loadData} />
           </div>
         )}
 
@@ -12707,10 +13762,43 @@ export const BusinessDashboard = () => {
                 </div>
                 <div>
                   <label className="label">Shop Type</label>
-                  <select
+                  <input
                     className="input"
+                    list="shop-type-options"
+                    value={shopTypeSearchInput}
+                    onChange={(e) => {
+                      const rawValue = e.target.value;
+                      setShopTypeSearchInput(rawValue);
+                      const resolved = resolveShopTypeFromInput(rawValue);
+                      if (resolved) {
+                        setShopForm({ ...shopForm, businessType: resolved });
+                      }
+                    }}
+                    onBlur={() => {
+                      const resolved = resolveShopTypeFromInput(shopTypeSearchInput);
+                      if (resolved) {
+                        setShopForm((prev) => ({ ...prev, businessType: resolved }));
+                        setShopTypeSearchInput(getShopTypeLabel(resolved));
+                      } else {
+                        setShopTypeSearchInput(getShopTypeLabel(shopForm.businessType));
+                      }
+                    }}
+                    placeholder="Type to search shop type (e.g. Furniture)"
+                    disabled={!isCreatingAnotherShop && !!selectedShopId}
+                  />
+                  <datalist id="shop-type-options">
+                    {SHOP_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.label} />
+                    ))}
+                  </datalist>
+                  <select
+                    className="input mt-2"
                     value={shopForm.businessType}
-                    onChange={(e) => setShopForm({ ...shopForm, businessType: e.target.value as ShopType })}
+                    onChange={(e) => {
+                      const nextType = e.target.value as ShopType;
+                      setShopForm({ ...shopForm, businessType: nextType });
+                      setShopTypeSearchInput(getShopTypeLabel(nextType));
+                    }}
                     disabled={!isCreatingAnotherShop && !!selectedShopId}
                   >
                     {SHOP_TYPE_OPTIONS.map((option) => (
@@ -12719,6 +13807,9 @@ export const BusinessDashboard = () => {
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Type to filter quickly, or use the full dropdown list.
+                  </p>
                   {!isCreatingAnotherShop && !!selectedShopId && (
                     <p className="text-xs text-gray-500 mt-1">
                       Shop type is locked after creation.
@@ -13325,6 +14416,80 @@ export const BusinessDashboard = () => {
                   )}
 
                   {shopSectionTab === "upload" && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">Subscribe & Save (Optional)</p>
+                        <p className="text-xs text-gray-600">
+                          One-time purchase stays default. Customers can optionally subscribe on storefront.
+                        </p>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={productForm.subscribeEnabled}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              subscribeEnabled: e.target.checked
+                            })
+                          }
+                        />
+                        Enable
+                      </label>
+                    </div>
+                    {productForm.subscribeEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <select
+                          className="input"
+                          value={productForm.subscribeCadence}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              subscribeCadence: e.target.value as "weekly" | "monthly" | "quarterly"
+                            })
+                          }
+                        >
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          className="input"
+                          placeholder="Discount %"
+                          value={productForm.subscribeDiscountPercent}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              subscribeDiscountPercent:
+                                e.target.value === "" ? "" : Number(e.target.value)
+                            })
+                          }
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          className="input"
+                          placeholder="Prepaid cycles (optional)"
+                          value={productForm.subscribePrepaidCycles}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              subscribePrepaidCycles:
+                                e.target.value === "" ? "" : Number(e.target.value)
+                            })
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                  )}
+
+                  {shopSectionTab === "upload" && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-gray-700">Product Images (up to 4)</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -13596,6 +14761,85 @@ export const BusinessDashboard = () => {
 
                   {shopSectionTab === "orders" && (
                   <div className="mt-6 space-y-3">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-semibold text-gray-900">Product Reviews</h4>
+                        <span className="text-xs text-gray-500">
+                          {shopReviews.length} review{shopReviews.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {shopReviews.length === 0 ? (
+                        <p className="text-sm text-gray-500">No product reviews yet.</p>
+                      ) : (
+                        <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[340px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
+                          <table className="table w-full min-w-[860px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-4 sm:[&_th]:py-3 sm:[&_th]:text-xs sm:[&_td]:px-4 sm:[&_td]:py-3 sm:[&_td]:text-sm">
+                            <thead>
+                              <tr>
+                                <th>Product</th>
+                                <th>Rating</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th>Comment</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {shopReviews.map((review) => {
+                                const reviewer =
+                                  `${review.customer?.firstName || ""} ${review.customer?.lastName || ""}`.trim() ||
+                                  review.customer?.email ||
+                                  "Anonymous";
+                                const isPending = review.status === "pending";
+                                return (
+                                  <tr key={review.id}>
+                                    <td className="font-medium text-gray-900">{review.product?.name || "Product"}</td>
+                                    <td>{review.rating}?</td>
+                                    <td>{reviewer}</td>
+                                    <td>
+                                      <span className={`badge ${getShopOrderBadgeClass(review.status)}`}>
+                                        {String(review.status || "pending").replace(/_/g, " ")}
+                                      </span>
+                                    </td>
+                                    <td className="max-w-[260px] truncate" title={review.comment || undefined}>
+                                      {review.comment || review.title || "-"}
+                                    </td>
+                                    <td className="text-gray-600">
+                                      {review.createdAt ? new Date(review.createdAt).toLocaleString() : "N/A"}
+                                    </td>
+                                    <td>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          className="btn btn-secondary px-2 py-1 text-xs"
+                                          disabled={moderatingShopReviewId === review.id || review.status === "approved"}
+                                          onClick={() => moderateShopReview(review.id, "approved")}
+                                        >
+                                          {moderatingShopReviewId === review.id && isPending ? "..." : "Approve"}
+                                        </button>
+                                        <button
+                                          className="btn btn-secondary px-2 py-1 text-xs"
+                                          disabled={moderatingShopReviewId === review.id || review.status === "rejected"}
+                                          onClick={() => moderateShopReview(review.id, "rejected")}
+                                        >
+                                          Reject
+                                        </button>
+                                        <button
+                                          className="btn btn-secondary px-2 py-1 text-xs"
+                                          disabled={moderatingShopReviewId === review.id || review.status === "hidden"}
+                                          onClick={() => moderateShopReview(review.id, "hidden")}
+                                        >
+                                          Hide
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                     <h4 className="font-semibold text-gray-900">Recent Shop Orders</h4>
                     {shopOrders.length === 0 ? (
                       <p className="text-sm text-gray-500">No orders yet for this shop.</p>
@@ -15547,6 +16791,110 @@ export const BusinessDashboard = () => {
         </div>
       </Modal>
 
+      <Modal
+        isOpen={Boolean(trialLockedTabAttempt)}
+        onClose={() => setTrialLockedTabAttempt(null)}
+        title="Trial Ended"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            <span className="font-semibold capitalize">{String(trialLockedTabAttempt || "").replace("_", " ")}</span> is
+            unavailable because your 14-day trial has ended.
+          </p>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            You can still access Billing to choose a plan. After upgrade, all dashboard modules will unlock.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn btn-secondary" onClick={() => setTrialLockedTabAttempt(null)}>
+              Close
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setTrialLockedTabAttempt(null);
+                setActiveTab("billing");
+              }}
+            >
+              Go to Billing
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(selectedOverviewInvoice) && isOverviewInvoiceMobileView}
+        onClose={() => setSelectedOverviewInvoice(null)}
+        title="Invoice Details"
+        size="md"
+        footer={
+          <button className="btn btn-primary" onClick={() => setSelectedOverviewInvoice(null)}>
+            Close
+          </button>
+        }
+      >
+        {selectedOverviewInvoice && (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 bg-white flex items-center justify-center text-[10px] text-slate-500 flex-shrink-0">
+                {selectedOverviewInvoice.itemImage ? (
+                  <img
+                    src={selectedOverviewInvoice.itemImage}
+                    alt={selectedOverviewInvoice.itemName}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  "IMG"
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-900">{selectedOverviewInvoice.itemName}</p>
+                {selectedOverviewInvoice.itemQuantity > 1 && (
+                  <p className="text-xs text-slate-500 mt-0.5">Qty {selectedOverviewInvoice.itemQuantity}</p>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">SN</span>
+                <span className="font-medium text-slate-900">{selectedOverviewInvoice.sn}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">Customer ID</span>
+                <span className="font-mono text-xs text-slate-900">{selectedOverviewInvoice.customerId}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">Customer Name</span>
+                <span className="font-medium text-slate-900">{selectedOverviewInvoice.customerName}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">Order Date</span>
+                <span className="font-medium text-slate-900">
+                  {new Date(selectedOverviewInvoice.orderDate).toLocaleDateString()}{" "}
+                  {new Date(selectedOverviewInvoice.orderDate).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">State</span>
+                <span className={getStatusBadge(selectedOverviewInvoice.status)}>
+                  {selectedOverviewInvoice.statusLabel}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-slate-500">Price</span>
+                <span className="font-semibold text-slate-900">
+                  {formatCurrency(selectedOverviewInvoice.amount, selectedOverviewInvoice.currency)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Confirm Modal (replaces all confirm() calls) */}
       <ConfirmModal
         isOpen={showConfirmModal}
@@ -15559,6 +16907,9 @@ export const BusinessDashboard = () => {
     </div>
   );
 };
+
+
+
 
 
 

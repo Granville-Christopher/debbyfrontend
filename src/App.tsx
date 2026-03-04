@@ -4,9 +4,8 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { RoleGate } from "./auth/RoleGate";
 import { AdminProtectedRoute } from "./auth/AdminProtectedRoute";
 import { useAuth } from "./auth/AuthProvider";
-import { Home } from "./pages/Home";
-import { Login } from "./pages/Login";
-import { Signup } from "./pages/Signup";
+import { BusinessLogin } from "./pages/BusinessLogin";
+import { BusinessSignup } from "./pages/BusinessSignup";
 
 const DeveloperDashboard = lazy(() =>
   import("./pages/DeveloperDashboard").then((module) => ({ default: module.DeveloperDashboard }))
@@ -74,7 +73,7 @@ const HomeRedirect = () => {
   }
 
   if (!isAuthenticated) {
-    return <Home />;
+    return <BusinessHome />;
   }
   if (role === "developer") {
     return <Navigate to="/developer" replace />;
@@ -85,7 +84,7 @@ const HomeRedirect = () => {
   if (role === "creator") {
     return <Navigate to="/creator" replace />;
   }
-  return <Home />;
+  return <BusinessHome />;
 };
 
 export const App = () => {
@@ -99,8 +98,10 @@ export const App = () => {
     <Suspense fallback={routeFallback}>
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<BusinessLogin />} />
+        <Route path="/signup" element={<BusinessSignup />} />
+        <Route path="/business/login" element={<BusinessLogin />} />
+        <Route path="/business/signup" element={<BusinessSignup />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -110,7 +111,6 @@ export const App = () => {
         <Route path="/solutions" element={<Solutions />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/pitch-deck" element={<PitchDeck />} />
-        <Route path="/business-home" element={<BusinessHome />} />
         <Route path="/shop/:slug" element={<PublicShop />} />
         <Route path="/api/oauth/:provider/callback" element={<OAuthCallback />} />
         <Route

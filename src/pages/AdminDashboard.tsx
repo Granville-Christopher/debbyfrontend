@@ -1,9 +1,32 @@
 import React, { useEffect, useMemo, useState } from "react";
+import {
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  Legend as ChartLegend,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip as ChartTooltip
+} from "chart.js";
+import { Bar, Line } from "react-chartjs-2";
 import { FiAlertTriangle, FiBarChart2, FiCreditCard, FiDollarSign, FiInfo, FiLogOut, FiMenu, FiMessageSquare, FiRefreshCw, FiSettings, FiShield, FiUsers } from "react-icons/fi";
 import { apiRequest } from "../api/client";
 import { useAdminAuth } from "../auth/AdminAuthProvider";
 import { Sidebar } from "../components/Sidebar";
 import { ConfirmModal } from "../components/Modal";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ChartTooltip,
+  ChartLegend,
+  Filler
+);
 
 type AdminTab = "overview" | "payments" | "revenue" | "risk" | "ops" | "support" | "reliability" | "audit" | "access";
 type FxPayload = {
@@ -68,6 +91,8 @@ type PlatformUserRow = {
   orgName: string;
   createdAt: string;
   shopCount: number;
+  planId?: string;
+  subscriptionStatus?: string;
 };
 type LiveSnapshot = { at: string; payments: { attemptsLastHour: number; successRateLastHour: number; failureRateLastHour: number }; ops: { notificationLag: number; unresolvedFraudFlags: number } };
 type WaitlistEntry = { id: string; email: string; createdAt: string; updatedAt: string };
@@ -260,6 +285,42 @@ type SupportEmailConfig = {
   updatedAt: string | null;
 };
 
+type AdminHomepageReview = {
+  id: string;
+  orgId: string;
+  org: { id: string; name: string } | null;
+  submittedByUserId: string;
+  submittedByUser: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null;
+  displayName: string;
+  roleTitle: string;
+  content: string;
+  rating: number;
+  status: "pending" | "approved" | "rejected" | "hidden";
+  moderationNote?: string | null;
+  moderatedByUserId?: string | null;
+  moderatedByUser?: { id: string; email: string } | null;
+  approvedAt?: string | null;
+  moderatedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AdminHomepageReviewsPayload = {
+  summary: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    hidden: number;
+  };
+  reviews: AdminHomepageReview[];
+};
+
 const defaultCmdConfig: CmdConfig = { providerPriority: ["paystack", "stripe"], fallbackEnabled: true, platformFeePercent: 2.5, fixedFeeMinor: 0, settlementSchedule: "daily" };
 const fallbackProviderOrder: PaymentProvider[] = ["paystack", "stripe"];
 const money = (v: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v || 0);
@@ -359,126 +420,80 @@ const MetricSwitchChart = ({
   if (!data.length) {
     return <div className="h-56 rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">No data</div>;
   }
-
-  const [hoveredPoint, setHoveredPoint] = useState<MetricPoint & { x: number; y: number } | null>(null);
-
-  const width = 700;
-  const height = 300;
-  const margin = { top: 18, right: 16, bottom: 58, left: 62 };
-  const chartWidth = width - margin.left - margin.right;
-  const chartHeight = height - margin.top - margin.bottom;
-  const maxValue = Math.max(...data.map((point) => point.value), 1);
-  const safeMax = maxValue <= 0 ? 1 : maxValue;
-
-  const points = data.map((point, index) => {
-    const x = margin.left + (index * chartWidth) / Math.max(data.length - 1, 1);
-    const y = margin.top + chartHeight - (Math.max(point.value, 0) / safeMax) * chartHeight;
-    return { ...point, x, y };
-  });
-
-  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
-  const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${(margin.top + chartHeight).toFixed(2)} L ${points[0].x.toFixed(2)} ${(margin.top + chartHeight).toFixed(2)} Z`;
-  const barStep = chartWidth / Math.max(data.length, 1);
-  const barWidth = Math.max(14, Math.min(52, barStep * 0.56));
-  const yTickRatios = [1, 0.75, 0.5, 0.25, 0];
-  const tooltipPaddingX = 10;
-  const tooltipWidth = 160;
-  const tooltipX = hoveredPoint
-    ? Math.max(margin.left, Math.min(hoveredPoint.x - tooltipWidth / 2, width - margin.right - tooltipWidth))
-    : 0;
-  const tooltipY = hoveredPoint ? Math.max(margin.top, hoveredPoint.y - 44) : 0;
+  const labels = data.map((point) => point.label);
+  const values = data.map((point) => point.value);
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    interaction: { mode: "index" as const, intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context: any) => valueFormatter(Number(context?.parsed?.y ?? context?.parsed ?? 0))
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: "rgba(51, 65, 85, 0.42)" },
+        ticks: { color: "#94a3b8", font: { size: 11, weight: 500 as const } }
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: "rgba(31, 41, 55, 0.72)" },
+        ticks: {
+          color: "#64748b",
+          font: { size: 11, weight: 500 as const },
+          callback: (value: number | string) => valueFormatter(Number(value || 0))
+        }
+      }
+    }
+  };
+  const barData = {
+    labels,
+    datasets: [
+      {
+        label: "Value",
+        data: values,
+        backgroundColor: color.bar,
+        borderRadius: 8,
+        borderSkipped: false,
+        maxBarThickness: 42,
+        categoryPercentage: 0.78
+      }
+    ]
+  };
+  const lineData = {
+    labels,
+    datasets: [
+      {
+        label: "Value",
+        data: values,
+        fill: true,
+        borderColor: color.line,
+        backgroundColor: color.fill,
+        pointBackgroundColor: color.line,
+        pointBorderColor: "#0f172a",
+        pointBorderWidth: 1.6,
+        pointRadius: 3.2,
+        pointHoverRadius: 4.8,
+        tension: 0.34,
+        borderWidth: 2.4
+      }
+    ]
+  };
 
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-2">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full" onMouseLeave={() => setHoveredPoint(null)}>
-        {yTickRatios.map((ratio) => {
-          const y = margin.top + chartHeight - ratio * chartHeight;
-          const value = safeMax * ratio;
-          return (
-            <g key={ratio}>
-              <line x1={margin.left} y1={y} x2={margin.left + chartWidth} y2={y} stroke="#1f2937" strokeWidth="1" />
-              <text x={margin.left - 10} y={y + 4} textAnchor="end" fill="#64748b" fontSize="11">
-                {valueFormatter(value)}
-              </text>
-            </g>
-          );
-        })}
-        <line x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + chartHeight} stroke="#334155" strokeWidth="1.2" />
-        <line x1={margin.left} y1={margin.top + chartHeight} x2={margin.left + chartWidth} y2={margin.top + chartHeight} stroke="#334155" strokeWidth="1.2" />
-
+      <div className="h-56">
         {chartType === "line" ? (
-          <>
-            <path d={areaPath} fill={color.fill} />
-            <path d={linePath} fill="none" stroke={color.line} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            {points.map((point) => (
-              <g
-                key={`dot-${point.label}`}
-                onMouseEnter={() => setHoveredPoint(point)}
-                onFocus={() => setHoveredPoint(point)}
-                onClick={() => setHoveredPoint(point)}
-              >
-                <circle cx={point.x} cy={point.y} r="4.5" fill={color.line} />
-                <circle cx={point.x} cy={point.y} r="14" fill="transparent" />
-              </g>
-            ))}
-          </>
+          <Line data={lineData} options={options} />
         ) : (
-          points.map((point) => {
-            const barHeight = margin.top + chartHeight - point.y;
-            return (
-              <g key={`bar-${point.label}`}>
-                <rect
-                  x={point.x - barWidth / 2}
-                  y={point.y}
-                  width={barWidth}
-                  height={Math.max(barHeight, 2)}
-                  fill={color.bar}
-                  rx="6"
-                  onMouseEnter={() => setHoveredPoint(point)}
-                  onFocus={() => setHoveredPoint(point)}
-                  onClick={() => setHoveredPoint(point)}
-                />
-                <rect
-                  x={point.x - barWidth / 2}
-                  y={margin.top}
-                  width={barWidth}
-                  height={chartHeight}
-                  fill="transparent"
-                  onMouseEnter={() => setHoveredPoint(point)}
-                  onFocus={() => setHoveredPoint(point)}
-                  onClick={() => setHoveredPoint(point)}
-                />
-              </g>
-            );
-          })
+          <Bar data={barData} options={options} />
         )}
-
-        {points.map((point) => (
-          <text key={`label-${point.label}`} x={point.x} y={height - 24} textAnchor="middle" fill="#94a3b8" fontSize="11">
-            {point.label}
-          </text>
-        ))}
-        {hoveredPoint && (
-          <g pointerEvents="none">
-            <line
-              x1={hoveredPoint.x}
-              y1={margin.top}
-              x2={hoveredPoint.x}
-              y2={margin.top + chartHeight}
-              stroke="#334155"
-              strokeDasharray="4 4"
-              strokeWidth="1"
-            />
-            <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height="34" rx="8" fill="#0f172a" stroke="#334155" />
-            <text x={tooltipX + tooltipPaddingX} y={tooltipY + 14} fill="#cbd5e1" fontSize="11">
-              {hoveredPoint.label}
-            </text>
-            <text x={tooltipX + tooltipPaddingX} y={tooltipY + 27} fill="#f8fafc" fontSize="12" fontWeight="600">
-              {valueFormatter(hoveredPoint.value)}
-            </text>
-          </g>
-        )}
-      </svg>
+      </div>
     </div>
   );
 };
@@ -505,6 +520,8 @@ export const AdminDashboard = () => {
   const [feePolicyVersions, setFeePolicyVersions] = useState<FeePolicyVersion[]>([]);
   const [adminRoles, setAdminRoles] = useState<RoleRow[]>([]);
   const [platformUsers, setPlatformUsers] = useState<PlatformUserRow[]>([]);
+  const [platformUserPlanDrafts, setPlatformUserPlanDrafts] = useState<Record<string, string>>({});
+  const [updatingPlatformUserPlanId, setUpdatingPlatformUserPlanId] = useState<string | null>(null);
   const [deletingPlatformUserId, setDeletingPlatformUserId] = useState<string | null>(null);
   const [pendingDeleteUser, setPendingDeleteUser] = useState<PlatformUserRow | null>(null);
   const [supportEmailConfig, setSupportEmailConfig] = useState<SupportEmailConfig>({ supportEmail: null, updatedAt: null });
@@ -522,6 +539,12 @@ export const AdminDashboard = () => {
   const [supportReply, setSupportReply] = useState("");
   const [sendingSupportReply, setSendingSupportReply] = useState(false);
   const [updatingSupportStatus, setUpdatingSupportStatus] = useState(false);
+  const [homepageReviews, setHomepageReviews] = useState<AdminHomepageReview[]>([]);
+  const [homepageReviewSummary, setHomepageReviewSummary] = useState<AdminHomepageReviewsPayload["summary"] | null>(null);
+  const [homepageReviewStatusFilter, setHomepageReviewStatusFilter] = useState<
+    "all" | "pending" | "approved" | "rejected" | "hidden"
+  >("pending");
+  const [moderatingHomepageReviewId, setModeratingHomepageReviewId] = useState<string | null>(null);
   const [entitlementMatrix, setEntitlementMatrix] = useState<EntitlementMatrix | null>(null);
   const [activeProvider, setActiveProvider] = useState<"stripe" | "paystack" | null>(null);
   const [commandConfig, setCommandConfig] = useState<CmdConfig>(defaultCmdConfig);
@@ -543,6 +566,24 @@ export const AdminDashboard = () => {
   });
   const [roleForm, setRoleForm] = useState({ userId: "", role: "support_admin" });
 
+  useEffect(() => {
+    setPlatformUserPlanDrafts((prev) => {
+      const next = { ...prev };
+      platformUsers.forEach((row) => {
+        if (row.role !== "business") return;
+        if (!next[row.id]) {
+          next[row.id] = toCanonicalPlanId(row.planId || "free");
+        }
+      });
+      Object.keys(next).forEach((userId) => {
+        if (!platformUsers.some((row) => row.id === userId && row.role === "business")) {
+          delete next[userId];
+        }
+      });
+      return next;
+    });
+  }, [platformUsers]);
+
   const supportNotificationCount = useMemo(() => {
     const moduleCount = Number(modules?.merchantOps?.supportSla?.openOrInProgress);
     if (Number.isFinite(moduleCount) && moduleCount > 0) return moduleCount;
@@ -550,7 +591,6 @@ export const AdminDashboard = () => {
   }, [modules, supportTickets]);
   const supportNotificationBadge =
     supportNotificationCount > 0 ? (supportNotificationCount > 99 ? "99+" : String(supportNotificationCount)) : undefined;
-
   const tabs = useMemo(() => [
     { id: "overview", label: "Overview", icon: <FiBarChart2 /> },
     { id: "payments", label: "Payments", icon: <FiCreditCard /> },
@@ -643,6 +683,10 @@ export const AdminDashboard = () => {
           `/admin/support/tickets?limit=80${supportStatusFilter === "all" ? "" : `&status=${supportStatusFilter}`}`,
           { accessToken }
         ),
+        apiRequest<AdminHomepageReviewsPayload>(
+          `/admin/homepage-reviews?limit=180${homepageReviewStatusFilter === "all" ? "" : `&status=${homepageReviewStatusFilter}`}`,
+          { accessToken }
+        ),
         apiRequest<{ owners: BusinessOwnerRow[] }>("/admin/business-owners?limit=200&days=30&fresh=1", { accessToken }),
         apiRequest<SplitHealth>("/admin/payments/split-health?days=30", { accessToken }),
         apiRequest<{ policies: FeePolicyRow[]; versions: FeePolicyVersion[] }>("/admin/fee-policies", { accessToken }),
@@ -693,30 +737,37 @@ export const AdminDashboard = () => {
         setSupportTickets([]);
       }
       if (optional[7].status === "fulfilled") {
-        setBusinessOwners(optional[7].value.owners || []);
-        nextFx = pickFreshFx(nextFx, (optional[7].value as any)?.fx as FxPayload | undefined);
+        setHomepageReviews(optional[7].value.reviews || []);
+        setHomepageReviewSummary(optional[7].value.summary || null);
+      } else {
+        setHomepageReviews([]);
+        setHomepageReviewSummary(null);
+      }
+      if (optional[8].status === "fulfilled") {
+        setBusinessOwners(optional[8].value.owners || []);
+        nextFx = pickFreshFx(nextFx, (optional[8].value as any)?.fx as FxPayload | undefined);
       } else {
         setBusinessOwners([]);
       }
-      if (optional[8].status === "fulfilled") {
-        setSplitHealth(optional[8].value);
+      if (optional[9].status === "fulfilled") {
+        setSplitHealth(optional[9].value);
       } else {
         setSplitHealth(null);
       }
-      if (optional[9].status === "fulfilled") {
-        setFeePolicies(optional[9].value.policies || []);
-        setFeePolicyVersions(optional[9].value.versions || []);
+      if (optional[10].status === "fulfilled") {
+        setFeePolicies(optional[10].value.policies || []);
+        setFeePolicyVersions(optional[10].value.versions || []);
       } else {
         setFeePolicies([]);
         setFeePolicyVersions([]);
       }
-      if (optional[10].status === "fulfilled") {
-        setEntitlementMatrix(optional[10].value);
+      if (optional[11].status === "fulfilled") {
+        setEntitlementMatrix(optional[11].value);
       } else {
         setEntitlementMatrix(null);
       }
-      if (optional[11].status === "fulfilled") {
-        const config = optional[11].value;
+      if (optional[12].status === "fulfilled") {
+        const config = optional[12].value;
         setSupportEmailConfig(config);
         setSupportEmailForm(config.supportEmail || "");
       }
@@ -725,11 +776,59 @@ export const AdminDashboard = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [accessToken, supportStatusFilter]);
+  useEffect(() => { load(); }, [accessToken, supportStatusFilter, homepageReviewStatusFilter]);
 
   const chart = overview?.trends.revenueByDay || [];
-  const max = Math.max(...chart.map((d) => d.amount), 1);
-  const ticks = [1, 0.75, 0.5, 0.25, 0].map((r) => Math.round(max * r));
+  const overviewTrendChartData = useMemo(
+    () => ({
+      labels: chart.map((d) => d.date.slice(5)),
+      datasets: [
+        {
+          label: "Revenue",
+          data: chart.map((d) => Number(d.amount || 0)),
+          backgroundColor: "rgba(52, 211, 153, 0.88)",
+          borderColor: "rgba(16, 185, 129, 1)",
+          borderWidth: 1,
+          borderRadius: 8,
+          borderSkipped: false,
+          maxBarThickness: 20,
+          categoryPercentage: 0.78
+        }
+      ]
+    }),
+    [chart]
+  );
+  const overviewTrendChartOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false as const,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context: any) => money(Number(context?.parsed?.y ?? context?.parsed ?? 0))
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: "#94a3b8", font: { size: 10, weight: 500 as const } }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: "rgba(51, 65, 85, 0.45)", borderDash: [4, 4] },
+          ticks: {
+            color: "#64748b",
+            font: { size: 10, weight: 500 as const },
+            callback: (value: number | string) => compact(Number(value || 0))
+          }
+        }
+      }
+    }),
+    []
+  );
 
   const saveCommandConfig = async () => {
     if (!accessToken || !csrfToken) return;
@@ -896,6 +995,58 @@ export const AdminDashboard = () => {
     setPendingDeleteUser(target);
   };
 
+  const savePlatformUserPlan = async (target: PlatformUserRow) => {
+    if (!accessToken || !csrfToken) return;
+    if (target.role !== "business") {
+      setStatus("Only business users can have tiers changed.");
+      return;
+    }
+    const nextPlanId = toCanonicalPlanId(platformUserPlanDrafts[target.id] || target.planId || "free");
+    const currentPlanId = toCanonicalPlanId(target.planId || "free");
+    if (nextPlanId === currentPlanId) {
+      setStatus("No tier change detected.");
+      return;
+    }
+
+    setUpdatingPlatformUserPlanId(target.id);
+    try {
+      const response = await apiRequest<{ planId: string; status: string; message?: string }>(
+        `/admin/users/${encodeURIComponent(target.id)}/plan`,
+        {
+          method: "PUT",
+          accessToken,
+          csrfToken,
+          body: { planId: nextPlanId }
+        }
+      );
+
+      const resolvedPlanId = toCanonicalPlanId(response.planId || nextPlanId);
+      const resolvedStatus = String(response.status || "active");
+
+      setPlatformUsers((prev) =>
+        prev.map((row) =>
+          row.id === target.id
+            ? { ...row, planId: resolvedPlanId, subscriptionStatus: resolvedStatus }
+            : row
+        )
+      );
+      setBusinessOwners((prev) =>
+        prev.map((row) =>
+          row.orgId === target.orgId
+            ? { ...row, tier: resolvedPlanId, subscriptionStatus: resolvedStatus }
+            : row
+        )
+      );
+      setPlatformUserPlanDrafts((prev) => ({ ...prev, [target.id]: resolvedPlanId }));
+      setStatus(response.message || `Updated tier to ${toPlanLabel(resolvedPlanId)}.`);
+      void refreshPlatformUsersInBackground();
+    } catch (e) {
+      setStatus((e as Error).message || "Failed to update business tier");
+    } finally {
+      setUpdatingPlatformUserPlanId(null);
+    }
+  };
+
   const confirmDeletePlatformUser = async () => {
     const target = pendingDeleteUser;
     if (!target) return;
@@ -1004,6 +1155,31 @@ export const AdminDashboard = () => {
       setStatus((e as Error).message || "Failed to update support ticket status");
     } finally {
       setUpdatingSupportStatus(false);
+    }
+  };
+
+  const moderateHomepageReview = async (
+    reviewId: string,
+    status: "pending" | "approved" | "rejected" | "hidden"
+  ) => {
+    if (!accessToken || !csrfToken) return;
+    setModeratingHomepageReviewId(reviewId);
+    try {
+      const response = await apiRequest<{ review: AdminHomepageReview }>(`/admin/homepage-reviews/${reviewId}/status`, {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: { status }
+      });
+      setHomepageReviews((prev) =>
+        prev.map((row) => (row.id === reviewId ? { ...row, ...response.review } : row))
+      );
+      setStatus(`Homepage review marked ${status}.`);
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message || "Failed to update homepage review status");
+    } finally {
+      setModeratingHomepageReviewId(null);
     }
   };
 
@@ -1235,9 +1411,8 @@ export const AdminDashboard = () => {
           </section>
           <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
             <h2 className="text-sm uppercase tracking-[0.14em] text-slate-400">Revenue Trend (14 Days)</h2>
-            <div className="mt-4 flex min-w-0 gap-3">
-              <div className="w-12 flex flex-col justify-between text-[10px] text-slate-500">{ticks.map((t) => <span key={t}>{compact(t)}</span>)}</div>
-              <div className="flex-1 min-w-0"><div className="h-44 sm:h-56 border-l border-b border-slate-700 pl-2 pr-1"><div className="h-full flex items-end justify-between gap-1 sm:gap-2">{chart.map((d) => <div key={d.date} className="flex-1 min-w-0 flex flex-col items-center justify-end"><div className="w-full max-w-[10px] sm:max-w-[14px] lg:max-w-[18px] rounded-t bg-emerald-400/85" style={{ height: `${Math.max((d.amount / max) * 100, 2)}%` }} /><span className="mt-2 text-[9px] sm:text-[10px] text-slate-500">{d.date.slice(5)}</span></div>)}</div></div></div>
+            <div className="mt-4 h-44 sm:h-56">
+              <Bar data={overviewTrendChartData} options={overviewTrendChartOptions} />
             </div>
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
@@ -2161,7 +2336,6 @@ export const AdminDashboard = () => {
         </div>
       );
     }
-
     if (activeTab === "support") {
       return (
         <div className="space-y-4">
@@ -2191,6 +2365,112 @@ export const AdminDashboard = () => {
               Active: {supportEmailConfig.supportEmail || "Not set"}{" "}
               {supportEmailConfig.updatedAt ? `| Updated ${new Date(supportEmailConfig.updatedAt).toLocaleString()}` : ""}
             </p>
+          </section>
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Business Homepage Review Approvals</h3>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">
+                  Pending: {homepageReviewSummary?.pending || 0}
+                </span>
+                <select
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 [color-scheme:dark]"
+                  value={homepageReviewStatusFilter}
+                  onChange={(e) =>
+                    setHomepageReviewStatusFilter(
+                      e.target.value as "all" | "pending" | "approved" | "rejected" | "hidden"
+                    )
+                  }
+                >
+                  <option className="bg-slate-900 text-slate-100" value="all">All</option>
+                  <option className="bg-slate-900 text-slate-100" value="pending">Pending</option>
+                  <option className="bg-slate-900 text-slate-100" value="approved">Approved</option>
+                  <option className="bg-slate-900 text-slate-100" value="rejected">Rejected</option>
+                  <option className="bg-slate-900 text-slate-100" value="hidden">Hidden</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-slate-800">
+              {homepageReviews.length === 0 ? (
+                <p className="p-3 text-sm text-slate-400">No homepage reviews found.</p>
+              ) : (
+                <table className="min-w-full text-xs text-slate-200">
+                  <thead className="sticky top-0 z-10 bg-slate-900/95 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Business Owner</th>
+                      <th className="px-3 py-2 text-left font-medium">Review</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-left font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {homepageReviews.map((review) => {
+                      const statusClass =
+                        review.status === "approved"
+                          ? "bg-emerald-500/20 text-emerald-200 border-emerald-400/30"
+                          : review.status === "rejected"
+                            ? "bg-rose-500/20 text-rose-200 border-rose-400/30"
+                            : review.status === "hidden"
+                              ? "bg-slate-700 text-slate-200 border-slate-600"
+                              : "bg-amber-500/20 text-amber-200 border-amber-400/30";
+                      return (
+                        <tr key={review.id} className="border-t border-slate-800/80">
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-slate-100">{review.displayName}</p>
+                            <p className="text-[11px] text-slate-400">{review.roleTitle}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {review.org?.name || "Unknown org"} | {review.submittedByUser?.email || "Unknown user"}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2">
+                            <p className="line-clamp-3">{review.content}</p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {review.rating}/5 | {new Date(review.createdAt).toLocaleString()}
+                            </p>
+                            {review.moderationNote ? (
+                              <p className="mt-1 text-[11px] text-slate-500">Note: {review.moderationNote}</p>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusClass}`}>
+                              {review.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                disabled={moderatingHomepageReviewId === review.id || review.status === "approved"}
+                                onClick={() => moderateHomepageReview(review.id, "approved")}
+                                className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-200 disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={moderatingHomepageReviewId === review.id || review.status === "rejected"}
+                                onClick={() => moderateHomepageReview(review.id, "rejected")}
+                                className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                disabled={moderatingHomepageReviewId === review.id || review.status === "hidden"}
+                                onClick={() => moderateHomepageReview(review.id, "hidden")}
+                                className="rounded-md border border-slate-600 px-2 py-1 text-[11px] text-slate-300 disabled:opacity-50"
+                              >
+                                Hide
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </section>
           {renderSupportInboxSection()}
         </div>
@@ -2254,6 +2534,7 @@ export const AdminDashboard = () => {
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">Email</th>
                       <th className="px-3 py-2 text-left font-medium">Role</th>
+                      <th className="px-3 py-2 text-left font-medium">Tier</th>
                       <th className="px-3 py-2 text-left font-medium">Org</th>
                       <th className="px-3 py-2 text-left font-medium">Shops</th>
                       <th className="px-3 py-2 text-left font-medium">Created</th>
@@ -2271,20 +2552,62 @@ export const AdminDashboard = () => {
                           {row.role} / {row.teamRole}
                         </td>
                         <td className="px-3 py-2">
+                          {row.role === "business" ? (
+                            <div className="min-w-[170px] space-y-1">
+                              <select
+                                className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-slate-100 [color-scheme:dark]"
+                                value={toCanonicalPlanId(platformUserPlanDrafts[row.id] || row.planId || "free")}
+                                onChange={(e) =>
+                                  setPlatformUserPlanDrafts((prev) => ({
+                                    ...prev,
+                                    [row.id]: toCanonicalPlanId(e.target.value)
+                                  }))
+                                }
+                              >
+                                <option className="bg-slate-900 text-slate-100" value="free">Free</option>
+                                <option className="bg-slate-900 text-slate-100" value="starter">Starter</option>
+                                <option className="bg-slate-900 text-slate-100" value="professional">Growth</option>
+                                <option className="bg-slate-900 text-slate-100" value="enterprise">Scale</option>
+                              </select>
+                              <p className="text-[10px] text-slate-500">
+                                {String(row.subscriptionStatus || "none").replace("_", " ")}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-500">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
                           <p className="text-slate-200">{row.orgName}</p>
                           <p className="text-[11px] text-slate-500">{row.orgId}</p>
                         </td>
                         <td className="px-3 py-2">{row.shopCount}</td>
                         <td className="px-3 py-2">{new Date(row.createdAt).toLocaleDateString()}</td>
                         <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            disabled={row.role === "admin" || deletingPlatformUserId === row.id}
-                            onClick={() => requestDeletePlatformUser(row)}
-                            className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {deletingPlatformUserId === row.id ? "Deleting..." : row.role === "admin" ? "Protected" : "Delete"}
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {row.role === "business" ? (
+                              <button
+                                type="button"
+                                disabled={
+                                  updatingPlatformUserPlanId === row.id ||
+                                  toCanonicalPlanId(platformUserPlanDrafts[row.id] || row.planId || "free") ===
+                                    toCanonicalPlanId(row.planId || "free")
+                                }
+                                onClick={() => savePlatformUserPlan(row)}
+                                className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {updatingPlatformUserPlanId === row.id ? "Saving..." : "Save Tier"}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={row.role === "admin" || deletingPlatformUserId === row.id}
+                              onClick={() => requestDeletePlatformUser(row)}
+                              className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingPlatformUserId === row.id ? "Deleting..." : row.role === "admin" ? "Protected" : "Delete"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

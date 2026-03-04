@@ -5,6 +5,7 @@ interface BizNavProps {
   userEmail?: string;
   orgName?: string;
   orgId?: string;
+  accountTier?: string;
   isMobileMenuOpen?: boolean;
   onMobileMenuToggle?: () => void;
   onOpenAccountSettings?: () => void;
@@ -16,6 +17,7 @@ export const BizNav: React.FC<BizNavProps> = ({
   userEmail,
   orgName,
   orgId,
+  accountTier,
   isMobileMenuOpen,
   onMobileMenuToggle,
   onOpenAccountSettings,
@@ -92,6 +94,11 @@ export const BizNav: React.FC<BizNavProps> = ({
                   <p className="text-[11px] uppercase tracking-wide text-slate-500">Signed in as</p>
                   <p className="text-sm font-semibold text-slate-800 break-all">{userEmail || "-"}</p>
                   {orgId ? <p className="text-[11px] text-slate-500 mt-1">Org: {orgId}</p> : null}
+                  {accountTier ? (
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Tier: <span className="font-semibold text-slate-800">{accountTier}</span>
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"

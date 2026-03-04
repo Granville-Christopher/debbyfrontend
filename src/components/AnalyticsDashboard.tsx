@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from "react";
+import {
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Legend as ChartLegend,
+  LinearScale,
+  Tooltip as ChartTooltip
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
 import { FiTrendingUp, FiTrendingDown, FiActivity, FiDollarSign, FiBell, FiZap } from "react-icons/fi";
 import { apiRequest } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, ChartTooltip, ChartLegend);
 
 type Period = "24h" | "7d" | "30d" | "90d";
 
@@ -356,33 +367,68 @@ const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ data, valueKey = "count
   if (!data || data.length === 0) {
     return <p className="text-gray-500 text-sm text-center py-8">No data available for this period</p>;
   }
-  
-  const maxValue = Math.max(...data.map((d) => d[valueKey] || 0));
-  
+
+  const rows = (data || []).slice(-30);
+  const labels = rows.map((item) => item.hour?.slice(11, 16) || item.day?.slice(5) || "");
+  const values = rows.map((item) => Number(item[valueKey] || 0));
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: isCurrency ? "Revenue" : "Count",
+        data: values,
+        backgroundColor: "rgba(59, 130, 246, 0.82)",
+        borderColor: "rgba(37, 99, 235, 1)",
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 18,
+        categoryPercentage: 0.82
+      }
+    ]
+  };
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context: any) => {
+            const value = Number(context?.parsed?.y ?? context?.parsed ?? 0);
+            return isCurrency
+              ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value)
+              : value.toLocaleString();
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: "#64748b", font: { size: 10, weight: 500 as const }, maxRotation: 0, autoSkip: true }
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: "rgba(203, 213, 225, 0.5)", borderDash: [4, 4] },
+        ticks: {
+          color: "#64748b",
+          font: { size: 10, weight: 500 as const },
+          callback: (value: number | string) =>
+            isCurrency
+              ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+                  Number(value || 0)
+                )
+              : Number(value || 0).toLocaleString()
+        }
+      }
+    }
+  };
+
   return (
-    <div className="h-48 flex items-end gap-1">
-      {(data || []).slice(-30).map((item, index) => {
-        const value = item[valueKey] || 0;
-        const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
-        const label = item.hour?.slice(11, 16) || item.day?.slice(5) || "";
-        
-        return (
-          <div key={index} className="flex-1 flex flex-col items-center group relative">
-            <div
-              className="w-full bg-blue-500/80 rounded-t hover:bg-blue-600 transition-colors cursor-pointer"
-              style={{ height: `${Math.max(height, 2)}%` }}
-            />
-            {/* Tooltip */}
-            <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-              {isCurrency
-                ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value)
-                : value.toLocaleString()}
-              <br />
-              <span className="text-gray-400">{label}</span>
-            </div>
-          </div>
-        );
-      })}
+    <div className="h-56">
+      <Bar data={chartData} options={chartOptions} />
     </div>
   );
 };

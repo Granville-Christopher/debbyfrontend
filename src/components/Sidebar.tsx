@@ -171,7 +171,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : isDark
                       ? "text-slate-300 hover:bg-slate-900/80"
                       : "text-gray-600 hover:bg-white/80 hover:shadow-md"
-                  }`}
+                  } ${tab.locked ? "opacity-80" : ""}`}
+                  aria-disabled={tab.locked ? true : undefined}
                   title={isCollapsed && !isMobileHiddenMode ? tab.label : undefined}
                 >
                   <span className="relative text-lg flex-shrink-0 flex items-center justify-center">
@@ -193,17 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <span className={`capitalize truncate ${compactLinkDensity ? "text-sm" : ""}`}>
                         {tab.label.replace("-", " ")}
                       </span>
-                      {tab.locked ? (
-                        <span
-                          className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${
-                            isDark
-                              ? "border-amber-400/40 bg-amber-500/20 text-amber-200"
-                              : "border-amber-300 bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {tab.badge || "Locked"}
-                        </span>
-                      ) : tab.badge ? (
+                      {tab.badge ? (
                         <span
                           className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                             isDark
