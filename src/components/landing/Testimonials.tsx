@@ -90,14 +90,14 @@ export default function Testimonials() {
   }, [apiReviews]);
 
   return (
-    <section ref={ref} id="testimonials" className="py-24">
+    <section ref={ref} id="testimonials" className="scroll-mt-28 py-16 md:py-20">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          className="mb-16 text-center"
+          className="mb-10 text-center md:mb-12"
         >
-          <h2 className="mb-4 text-3xl font-bold text-slate-900 dark:text-slate-100 sm:text-4xl">
+          <h2 className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl md:text-4xl">
             Loved by <span className="bh-gradient-text">operators</span>
           </h2>
         </motion.div>

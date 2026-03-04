@@ -11,7 +11,7 @@ export default function Footer() {
   return (
     <footer
       id="footer"
-      className="border-t border-slate-200/70 bg-slate-100/60 py-16 dark:border-slate-800 dark:bg-slate-900/40"
+      className="scroll-mt-28 border-t border-slate-200/70 bg-slate-100/60 py-16 dark:border-slate-800 dark:bg-slate-900/40"
     >
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-5">

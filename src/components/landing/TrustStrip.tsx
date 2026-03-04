@@ -9,7 +9,7 @@ export default function TrustStrip() {
   return (
     <section
       ref={ref}
-      className="border-y border-slate-200/70 bg-slate-100/60 py-16 dark:border-slate-800 dark:bg-slate-900/40"
+      className="border-y border-slate-200/70 bg-slate-100/60 py-12 dark:border-slate-800 dark:bg-slate-900/40 md:py-14"
     >
       <div className="mx-auto w-full max-w-7xl px-4 text-center sm:px-6 lg:px-8">
         <motion.p
@@ -38,4 +38,3 @@ export default function TrustStrip() {
     </section>
   );
 }
-

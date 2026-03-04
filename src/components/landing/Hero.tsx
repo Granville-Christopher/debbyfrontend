@@ -79,8 +79,18 @@ const heroRevenueOptions = {
   responsive: true,
   maintainAspectRatio: false,
   animation: {
-    duration: 1700,
-    easing: "easeOutQuart" as const
+    duration: 2300,
+    easing: "easeOutCubic" as const
+  },
+  animations: {
+    y: {
+      from: (ctx: any) => {
+        const yScale = ctx?.chart?.scales?.y;
+        return yScale ? yScale.getPixelForValue(0) : undefined;
+      },
+      duration: 2300,
+      easing: "easeOutCubic" as const
+    }
   },
   plugins: { legend: { display: false }, tooltip: { enabled: false } },
   scales: { x: { display: false }, y: { display: false } }
@@ -114,28 +124,31 @@ function KPICard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.8 + delay * 0.1, duration: 0.45 }}
-      className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white/65 p-4 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/55"
+      className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white/65 p-3 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/55 lg:p-6"
     >
-      <div className={`rounded-xl bg-slate-100 p-2.5 dark:bg-slate-800 ${accent}`}>
+      <div className={`rounded-xl bg-slate-100 p-2 dark:bg-slate-800 md:p-2 lg:p-2.5 ${accent}`}>
         <Icon size={18} />
       </div>
       <div>
-        <p ref={ref} className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+        <p ref={ref} className="text-xs font-semibold tracking-tight text-slate-900 dark:text-slate-100 md:text-xs lg:text-base">
           {prefix}
           {formatNumber(count)}
         </p>
-        <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+        <p className="text-[8px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
       </div>
-      <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400/90" />
+      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
     </motion.div>
   );
 }
 
 export default function Hero() {
   return (
-    <section id="top" className="bh-hero-bg relative min-h-screen overflow-hidden py-28 sm:py-32">
+    <section
+      id="top"
+      className="bh-hero-bg relative min-h-screen scroll-mt-28 overflow-hidden py-28 sm:py-32 md:py-36 lg:py-32"
+    >
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="grid items-center gap-10 md:grid-cols-2 md:gap-8 lg:gap-16">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -146,17 +159,17 @@ export default function Hero() {
               Live commerce command center
             </div>
 
-            <h1 className="mb-6 text-4xl font-bold leading-tight text-slate-900 dark:text-slate-100 sm:text-5xl lg:text-6xl">
+            <h1 className="mb-5 text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 sm:text-3xl md:text-[2.35rem] lg:text-6xl">
               Run your entire commerce operation{" "}
               <span className="bh-gradient-text">from one dashboard.</span>
             </h1>
 
-            <p className="mb-8 max-w-xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="mb-7 max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base md:text-base lg:text-lg">
               Debby unifies storefront, CRM, billing, automations, and analytics so your team can
               scale without juggling disconnected tools.
             </p>
 
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4 md:gap-3 lg:gap-4">
               <LandingButton to="/signup" size="lg">
                 Start 14-Day Trial
               </LandingButton>
@@ -175,11 +188,11 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative"
         >
-            <div className="bh-glass-strong bh-water-highlight rounded-3xl p-6 shadow-2xl shadow-slate-900/10 dark:shadow-black/40">
+            <div className="bh-glass-strong bh-water-highlight rounded-3xl p-4 md:p-6 shadow-2xl shadow-slate-900/10 dark:shadow-black/40">
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Debby Control Tower
+                    Debby Business Dashboard
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
                     Live Commerce Snapshot

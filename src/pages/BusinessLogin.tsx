@@ -115,16 +115,16 @@ export const BusinessLogin = () => {
         </div>
       </div>
 
-      <div className="w-full lg:w-[56%] flex items-center justify-center p-6 lg:p-10">
-        <div className="w-full max-w-md">
+      <div className="w-full lg:w-[56%] flex items-center justify-center p-0 md:p-6 lg:p-10">
+        <div className="w-full md:max-w-md">
           <div className="bg-white/85 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-8 lg:p-10">
             <div className="text-center mb-8">
               <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 text-blue-700 px-3 py-1 text-xs font-semibold mb-4">
                 <FiBriefcase className="w-3.5 h-3.5" />
                 Business Account
               </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Sign in</h1>
-              <p className="text-gray-500">Access your Debby business dashboard</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Sign in</h1>
+              <p className="text-sm sm:text-base text-gray-500">Access your Debby business dashboard</p>
             </div>
 
             <form onSubmit={handleSubmit}>
@@ -160,14 +160,14 @@ export const BusinessLogin = () => {
 
               <button
                 type="submit"
-                className="w-full text-base py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-600 via-indigo-600 to-slate-700 hover:from-blue-700 hover:via-indigo-700 hover:to-slate-800 shadow-blue-500/30"
+                className="w-full text-sm sm:text-base py-3.5 sm:py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-600 via-indigo-600 to-slate-700 hover:from-blue-700 hover:via-indigo-700 hover:to-slate-800 shadow-blue-500/30"
                 disabled={loading}
               >
                 {loading ? "Signing in..." : "Sign In"}
               </button>
             </form>
 
-            <p className="text-center text-gray-500 mt-8">
+            <p className="text-center text-sm sm:text-base text-gray-500 mt-8">
               Don&apos;t have a business account?{" "}
               <Link to="/business/signup" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
                 Sign up

@@ -96,6 +96,22 @@ type PlatformUserRow = {
 };
 type LiveSnapshot = { at: string; payments: { attemptsLastHour: number; successRateLastHour: number; failureRateLastHour: number }; ops: { notificationLag: number; unresolvedFraudFlags: number } };
 type WaitlistEntry = { id: string; email: string; createdAt: string; updatedAt: string };
+type BookDemoRequestEntry = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  companyName?: string | null;
+  roleTitle?: string | null;
+  country?: string | null;
+  website?: string | null;
+  monthlyVolume?: string | null;
+  message?: string | null;
+  status: string;
+  contactedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 type BusinessOwnerRow = {
   ownerId: string;
   ownerEmail: string;
@@ -504,6 +520,8 @@ export const AdminDashboard = () => {
     "w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/60";
   const darkSelectClass = `${darkInputClass} appearance-none [color-scheme:dark]`;
   const chartSelectClass = "rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 transition focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/60 [color-scheme:dark]";
+  const denseTableScopeClass =
+    "[&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap [&_table_th]:px-3 [&_table_td]:px-3 [&_table_th]:py-2 [&_table_td]:py-2";
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -529,6 +547,7 @@ export const AdminDashboard = () => {
   const [savingSupportEmail, setSavingSupportEmail] = useState(false);
   const [live, setLive] = useState<LiveSnapshot | null>(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
+  const [bookDemoRequests, setBookDemoRequests] = useState<BookDemoRequestEntry[]>([]);
   const [businessOwners, setBusinessOwners] = useState<BusinessOwnerRow[]>([]);
   const [selectedOwnerDetails, setSelectedOwnerDetails] = useState<BusinessOwnerDetails | null>(null);
   const [splitHealth, setSplitHealth] = useState<SplitHealth | null>(null);
@@ -691,7 +710,8 @@ export const AdminDashboard = () => {
         apiRequest<SplitHealth>("/admin/payments/split-health?days=30", { accessToken }),
         apiRequest<{ policies: FeePolicyRow[]; versions: FeePolicyVersion[] }>("/admin/fee-policies", { accessToken }),
         apiRequest<EntitlementMatrix>("/admin/access/entitlements/matrix", { accessToken }),
-        apiRequest<SupportEmailConfig>("/admin/config/support-email", { accessToken })
+        apiRequest<SupportEmailConfig>("/admin/config/support-email", { accessToken }),
+        apiRequest<{ entries: BookDemoRequestEntry[] }>("/admin/book-demo-requests?limit=200", { accessToken })
       ]);
       if (optional[0].status === "fulfilled") {
         setAuditLogs(optional[0].value.logs || []);
@@ -770,6 +790,11 @@ export const AdminDashboard = () => {
         const config = optional[12].value;
         setSupportEmailConfig(config);
         setSupportEmailForm(config.supportEmail || "");
+      }
+      if (optional[13].status === "fulfilled") {
+        setBookDemoRequests(optional[13].value.entries || []);
+      } else {
+        setBookDemoRequests([]);
       }
       setFxStatus(nextFx);
     } catch (e) { setStatus((e as Error).message || "Failed to load admin dashboard"); }
@@ -2310,6 +2335,50 @@ export const AdminDashboard = () => {
               )}
             </div>
           </section>
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm uppercase tracking-[0.14em] text-slate-400">Book Demo Requests</h3>
+              <span className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">
+                {bookDemoRequests.length} shown
+              </span>
+            </div>
+            <div className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-slate-800">
+              {bookDemoRequests.length === 0 ? (
+                <p className="p-3 text-sm text-slate-400">No book demo requests found.</p>
+              ) : (
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead className="sticky top-0 bg-slate-900/90 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Email</th>
+                      <th className="px-3 py-2 text-left font-medium">Company</th>
+                      <th className="px-3 py-2 text-left font-medium">Country</th>
+                      <th className="px-3 py-2 text-left font-medium">Monthly Volume</th>
+                      <th className="px-3 py-2 text-left font-medium">Submitted</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookDemoRequests.map((entry) => (
+                      <tr key={entry.id} className="border-t border-slate-800/80">
+                        <td className="px-3 py-2 text-slate-100">{entry.fullName}</td>
+                        <td className="px-3 py-2 text-slate-200">{entry.email}</td>
+                        <td className="px-3 py-2 text-slate-300">{entry.companyName || "-"}</td>
+                        <td className="px-3 py-2 text-slate-300">{entry.country || "-"}</td>
+                        <td className="px-3 py-2 text-slate-300">{entry.monthlyVolume || "-"}</td>
+                        <td className="px-3 py-2 text-slate-400">{new Date(entry.createdAt).toLocaleString()}</td>
+                        <td className="px-3 py-2">
+                          <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-xs text-cyan-200">
+                            {entry.status || "new"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
         </div>
       );
     }
@@ -2713,7 +2782,7 @@ export const AdminDashboard = () => {
           </div>
         </header>
         <main className="flex-1 transition-all duration-300 relative z-10 overflow-x-hidden" style={{ marginLeft: isMobileViewport ? "0px" : "var(--sidebar-width, 180px)", marginTop: "64px" }}>
-          <div className="max-w-[1760px] mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8">
+          <div className={`max-w-[1760px] mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8 ${denseTableScopeClass}`}>
             {status && <div className="mb-4 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">{status}</div>}
             {loading ? <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-400">Loading admin control tower...</div> : renderContent()}
           </div>

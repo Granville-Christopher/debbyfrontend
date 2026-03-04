@@ -40,10 +40,10 @@ function MetricCard({
       transition={{ delay, duration: 0.45 }}
       className="bh-glass-strong rounded-2xl p-6 text-center"
     >
-      <p ref={ref} className="mb-1 text-3xl font-bold text-slate-900 dark:text-slate-100">
+      <p ref={ref} className="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl">
         {display}
       </p>
-      <p className="text-sm text-slate-600 dark:text-slate-400">{label}</p>
+      <p className="text-xs text-slate-600 dark:text-slate-400 sm:text-sm">{label}</p>
       <div className="mt-4 flex h-8 items-end justify-center gap-0.5">
         {[30, 45, 35, 60, 50, 70, 55, 80, 75, 90, 85, 95].map((height, i) => (
           <motion.div
@@ -64,17 +64,17 @@ export default function RevenueIntelligence() {
   const { ref, isInView } = useScrollReveal();
 
   return (
-    <section ref={ref} className="bg-slate-100/60 py-24 dark:bg-slate-900/35">
+    <section ref={ref} className="bg-slate-100/60 py-16 dark:bg-slate-900/35 md:py-20">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          className="mb-16 text-center"
+          className="mb-10 text-center md:mb-12"
         >
-          <h2 className="mb-4 text-3xl font-bold text-slate-900 dark:text-slate-100 sm:text-4xl">
+          <h2 className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl md:text-4xl">
             Revenue intelligence, <span className="bh-gradient-text">at a glance</span>
           </h2>
-          <p className="mx-auto max-w-lg text-slate-600 dark:text-slate-400">
+          <p className="mx-auto max-w-lg text-sm text-slate-600 dark:text-slate-400 sm:text-base">
             Track financial momentum with clean, real-time metrics your team can act on.
           </p>
         </motion.div>
@@ -88,4 +88,3 @@ export default function RevenueIntelligence() {
     </section>
   );
 }
-

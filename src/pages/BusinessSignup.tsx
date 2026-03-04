@@ -201,12 +201,12 @@ export const BusinessSignup = () => {
         </div>
       </div>
 
-      <div className="w-full lg:w-[58%] flex items-center justify-center p-6 lg:p-4">
-        <div className="w-full max-w-[920px]">
+      <div className="w-full lg:w-[58%] flex items-center justify-center p-0 md:p-6 lg:p-4">
+        <div className="w-full md:max-w-[920px]">
           <div className="bg-white/85 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-6 lg:p-6">
             <div className="text-center mb-5">
-              <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-1">Create Business Account</h1>
-              <p className="text-gray-500">Set up your Debby business workspace</p>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-1">Create Business Account</h1>
+              <p className="text-sm sm:text-base text-gray-500">Set up your Debby business workspace</p>
             </div>
 
             <form onSubmit={handleSubmit}>
@@ -365,14 +365,14 @@ export const BusinessSignup = () => {
 
               <button
                 type="submit"
-                className="w-full text-base py-3.5 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-blue-400/30"
+                className="w-full text-sm sm:text-base py-3.5 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-blue-400/30"
                 disabled={loading}
               >
                 {loading ? "Creating account..." : "Create Account"}
               </button>
             </form>
 
-            <p className="text-center text-gray-500 mt-5">
+            <p className="text-center text-sm sm:text-base text-gray-500 mt-5">
               Already have an account?{" "}
               <Link to="/business/login" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
                 Sign in

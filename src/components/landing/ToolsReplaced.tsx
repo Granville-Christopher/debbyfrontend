@@ -64,42 +64,42 @@ export default function ToolsReplaced() {
   return (
     <section
       ref={ref}
-      className="bg-slate-100/60 py-24 dark:bg-slate-900/35"
+      className="bg-slate-100/60 py-16 dark:bg-slate-900/35 md:py-20"
       id="consolidates"
     >
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          className="mb-12 text-center"
+          className="mb-8 text-center md:mb-10"
         >
-          <h2 className="mb-4 text-3xl font-bold text-slate-900 dark:text-slate-100 sm:text-4xl">
+          <h2 className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl md:text-4xl">
             What Debby <span className="bh-gradient-text">consolidates</span>
           </h2>
-          <p className="mx-auto max-w-lg text-slate-600 dark:text-slate-400">
+          <p className="mx-auto max-w-lg text-sm text-slate-600 dark:text-slate-400 sm:text-base">
             Your team keeps provider ownership while Debby orchestrates execution and visibility.
           </p>
         </motion.div>
       </div>
 
-      <div className="overflow-hidden">
-        <div className="bh-marquee-track py-4">
+      <div className="overflow-hidden py-4 md:py-5">
+        <div className="bh-marquee-track py-1">
           {cards.map((card, index) => {
             const Icon = card.icon;
             return (
             <div
               key={`${card.title}-${index}`}
-              className="bh-glass-strong mx-3 min-w-[250px] rounded-2xl p-6"
+              className="bh-glass-strong mx-1.5 w-[38vw] min-w-[124px] max-w-[160px] rounded-xl p-3 shadow-[0_10px_22px_rgba(15,23,42,0.10)] dark:shadow-[0_12px_28px_rgba(2,6,23,0.42)] md:mx-3 md:w-auto md:min-w-[250px] md:max-w-none md:rounded-2xl md:p-6"
             >
               <div className="mb-4">
                 <div
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${card.iconBgClassName}`}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg md:h-10 md:w-10 md:rounded-xl ${card.iconBgClassName}`}
                 >
-                  <Icon className={`h-5 w-5 ${card.iconClassName}`} />
+                  <Icon className={`h-4 w-4 md:h-5 md:w-5 ${card.iconClassName}`} />
                 </div>
               </div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{card.title}</p>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 md:text-sm">{card.title}</p>
+              <p className="mt-1 text-[10px] text-slate-600 dark:text-slate-400 md:text-xs">
                 Unified in Debby Control Tower
               </p>
             </div>

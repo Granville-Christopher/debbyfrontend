@@ -39,13 +39,13 @@ export default function OperationsStream() {
   }, [isInView]);
 
   return (
-    <section ref={ref} id="operations" className="py-24">
+    <section ref={ref} id="operations" className="py-16 md:py-20">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-16 text-center">
+        <div className="mb-10 text-center md:mb-12">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
-            className="mb-4 text-3xl font-bold text-slate-900 dark:text-slate-100 sm:text-4xl"
+            className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl md:text-4xl"
           >
             Your operations, <span className="bh-gradient-text">streaming live</span>
           </motion.h2>
@@ -53,7 +53,7 @@ export default function OperationsStream() {
             initial={{ opacity: 0 }}
             animate={isInView ? { opacity: 1 } : {}}
             transition={{ delay: 0.15 }}
-            className="mx-auto max-w-lg text-slate-600 dark:text-slate-400"
+            className="mx-auto max-w-lg text-sm text-slate-600 dark:text-slate-400 sm:text-base"
           >
             Watch your events move automatically from checkout to fulfillment in one timeline.
           </motion.p>
@@ -85,4 +85,3 @@ export default function OperationsStream() {
     </section>
   );
 }
-

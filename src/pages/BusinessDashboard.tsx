@@ -67,7 +67,9 @@ import {
   FiXCircle,
   FiInfo,
   FiAlertCircle,
-  FiX
+  FiX,
+  FiSearch,
+  FiEye
 } from "react-icons/fi";
 import { FaDollarSign, FaRegCreditCard, FaRegBell, FaLink, FaChartBar, FaExclamationCircle } from "react-icons/fa";
 
@@ -528,12 +530,47 @@ type OverviewInvoiceRow = {
   customerName: string;
   itemName: string;
   itemQuantity: number;
+  additionalItemsCount: number;
   itemImage: string | null;
   orderDate: string;
   status: string;
   statusLabel: string;
   amount: number;
   currency: string;
+};
+
+type ReceiptTableRow = {
+  id: string;
+  sn: number;
+  receiptNumber: string;
+  orderReference: string;
+  customerId: string;
+  customerName: string;
+  itemLabel: string;
+  amount: number;
+  currency: string;
+  receiptState: "sent" | "pending";
+  sentAt: string | null;
+  createdAt: string | null;
+  pdfUrl: string | null;
+  paymentMethod: string;
+  raw: any;
+};
+
+type PaymentHistoryTableRow = {
+  id: string;
+  sn: number;
+  paymentReference: string;
+  customerId: string;
+  customerName: string;
+  itemLabel: string;
+  amount: number;
+  currency: string;
+  paymentState: "queued" | "processing" | "completed" | "failed";
+  createdAt: string | null;
+  paymentLink: string | null;
+  paymentMethod: string;
+  raw: Payment;
 };
 
 type ShopReviewSummary = {
@@ -1203,6 +1240,7 @@ export const BusinessDashboard = () => {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "payments" | "notifications" | "activity" | "integrations" | "billing" | "customers" | "settings" | "analytics" | "surveys" | "automation" | "intelligence" | "ops" | "shop">("overview");
   const [overviewRevenueChartType, setOverviewRevenueChartType] = useState<"bar" | "line">("bar");
+  const [hasOverviewRevenueChartAnimated, setHasOverviewRevenueChartAnimated] = useState(false);
   const [lockedTabAttempt, setLockedTabAttempt] = useState<string | null>(null);
   const [trialLockedTabAttempt, setTrialLockedTabAttempt] = useState<string | null>(null);
   const [billingOnlyAccess, setBillingOnlyAccess] = useState(false);
@@ -1233,6 +1271,11 @@ export const BusinessDashboard = () => {
   // New 15 features state
   const [invoiceTemplates, setInvoiceTemplates] = useState<any[]>([]);
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [paymentSearchQuery, setPaymentSearchQuery] = useState("");
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
+  const [showAllReceipts, setShowAllReceipts] = useState(false);
+  const [selectedReceiptPreview, setSelectedReceiptPreview] = useState<ReceiptTableRow | null>(null);
   const [paymentLinkAnalytics, setPaymentLinkAnalytics] = useState<any>(null);
   const [customerSegments, setCustomerSegments] = useState<any[]>([]);
   const [revenueForecasts, setRevenueForecasts] = useState<any[]>([]);
@@ -1619,6 +1662,8 @@ export const BusinessDashboard = () => {
   const [opsCertifications, setOpsCertifications] = useState<any[]>([]);
   const [opsAccounting, setOpsAccounting] = useState<{ summary: any; rows: any[] } | null>(null);
   const [opsAccountingSyncResult, setOpsAccountingSyncResult] = useState<any>(null);
+  const [opsAccountingSearchQuery, setOpsAccountingSearchQuery] = useState("");
+  const [showAllOpsAccountingRows, setShowAllOpsAccountingRows] = useState(false);
   const [opsFraudFlags, setOpsFraudFlags] = useState<any[]>([]);
   const [opsFraudRules, setOpsFraudRules] = useState<any[]>([]);
   const [opsFraudRulesDraft, setOpsFraudRulesDraft] = useState<string>("[]");
@@ -1633,6 +1678,8 @@ export const BusinessDashboard = () => {
   const [calculatingOpsTax, setCalculatingOpsTax] = useState(false);
   const [opsTaxResult, setOpsTaxResult] = useState<any>(null);
   const [opsShippingSummary, setOpsShippingSummary] = useState<any>(null);
+  const [opsShippingSearchQuery, setOpsShippingSearchQuery] = useState("");
+  const [showAllOpsShippingRows, setShowAllOpsShippingRows] = useState(false);
   const [creatingShippingLabelOrderId, setCreatingShippingLabelOrderId] = useState<string | null>(null);
   const [updatingShippingOrderId, setUpdatingShippingOrderId] = useState<string | null>(null);
   const [opsReturns, setOpsReturns] = useState<any[]>([]);
@@ -4053,6 +4100,9 @@ export const BusinessDashboard = () => {
       sent: "badge-success",
       delivered: "badge-success",
       read: "badge-success",
+      label_created: "badge-info",
+      shipped: "badge-info",
+      supplier_sent: "badge-info",
       processing: "badge-warning",
       pending: "badge-warning",
       in_transit: "badge-warning",
@@ -4060,7 +4110,9 @@ export const BusinessDashboard = () => {
       failed: "badge-danger",
       cancelled: "badge-danger"
     };
-    return badges[status] || "badge";
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    const variantClass = badges[normalizedStatus] || "";
+    return `badge px-2 py-0.5 ${variantClass}`.trim();
   };
 
   const getNotificationDeliverySourceLabel = (notification: Notification) => {
@@ -4576,15 +4628,20 @@ export const BusinessDashboard = () => {
     };
   }, [dashboard?.stats?.payments?.dashboardCurrency, dashboard?.stats?.payments?.revenueTrend]);
   const overviewRevenueTrendPercentText = `${overviewRevenueChartData.trendPercent >= 0 ? "+" : ""}${overviewRevenueChartData.trendPercent.toFixed(1)}%`;
-  const overviewRevenueChartLabels = overviewRevenueChartData.entries.map((entry) => entry.label.split(",")[0]);
-  const overviewRevenueValues = overviewRevenueChartData.entries.map((entry) => entry.amount);
+  const overviewRevenueSeries = useMemo(
+    () => ({
+      labels: overviewRevenueChartData.entries.map((entry) => entry.label.split(",")[0]),
+      values: overviewRevenueChartData.entries.map((entry) => entry.amount)
+    }),
+    [overviewRevenueChartData.entries]
+  );
   const overviewRevenueBarData = useMemo(
     () => ({
-      labels: overviewRevenueChartLabels,
+      labels: overviewRevenueSeries.labels,
       datasets: [
         {
           label: "Revenue",
-          data: overviewRevenueValues,
+          data: overviewRevenueSeries.values,
           backgroundColor: "rgba(16, 185, 129, 0.88)",
           borderColor: "rgba(5, 150, 105, 1)",
           borderWidth: 1,
@@ -4596,15 +4653,15 @@ export const BusinessDashboard = () => {
         }
       ]
     }),
-    [overviewRevenueChartLabels, overviewRevenueValues, viewportWidth]
+    [overviewRevenueSeries, viewportWidth]
   );
   const overviewRevenueLineData = useMemo(
     () => ({
-      labels: overviewRevenueChartLabels,
+      labels: overviewRevenueSeries.labels,
       datasets: [
         {
           label: "Revenue",
-          data: overviewRevenueValues,
+          data: overviewRevenueSeries.values,
           fill: true,
           borderColor: "#059669",
           backgroundColor: "rgba(16, 185, 129, 0.18)",
@@ -4618,13 +4675,31 @@ export const BusinessDashboard = () => {
         }
       ]
     }),
-    [overviewRevenueChartLabels, overviewRevenueValues, viewportWidth]
+    [overviewRevenueSeries, viewportWidth]
   );
   const overviewRevenueChartOptions = useMemo(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
-      animation: false as const,
+      animation: hasOverviewRevenueChartAnimated
+        ? false
+        : {
+            duration: 1800,
+            easing: "easeOutCubic" as const,
+            onComplete: () => setHasOverviewRevenueChartAnimated(true)
+          },
+      animations: hasOverviewRevenueChartAnimated
+        ? undefined
+        : {
+            y: {
+              from: (ctx: any) => {
+                const yScale = ctx?.chart?.scales?.y;
+                return yScale ? yScale.getPixelForValue(0) : undefined;
+              },
+              duration: 1800,
+              easing: "easeOutCubic" as const
+            }
+          },
       interaction: { mode: "index" as const, intersect: false },
       plugins: {
         legend: { display: false },
@@ -4659,7 +4734,12 @@ export const BusinessDashboard = () => {
         }
       }
     }),
-    [overviewRevenueChartData.chartMax, overviewRevenueChartData.trendCurrency, viewportWidth]
+    [
+      hasOverviewRevenueChartAnimated,
+      overviewRevenueChartData.chartMax,
+      overviewRevenueChartData.trendCurrency,
+      viewportWidth
+    ]
   );
   const notificationChannelSegments = useMemo(() => {
     const byChannel = dashboard?.stats?.notifications?.byChannel || { email: 0, sms: 0, whatsapp: 0 };
@@ -4870,6 +4950,7 @@ export const BusinessDashboard = () => {
     });
     return sortedOrders.slice(0, 3).map((order, index) => {
       const firstItem = Array.isArray(order.items) && order.items.length > 0 ? order.items[0] : null;
+      const totalItemsInInvoice = Array.isArray(order.items) ? order.items.length : 0;
       const itemName = firstItem?.name || "Order item";
       const itemQuantity = Number(firstItem?.quantity || 0);
       const metadataImage = String(
@@ -4905,6 +4986,7 @@ export const BusinessDashboard = () => {
         customerName,
         itemName,
         itemQuantity,
+        additionalItemsCount: Math.max(totalItemsInInvoice - 1, 0),
         itemImage: productImage || null,
         orderDate: order.createdAt,
         status: String(order.status || "pending").toLowerCase(),
@@ -4914,6 +4996,186 @@ export const BusinessDashboard = () => {
       };
     });
   }, [overviewDashboardCurrency, overviewResolvedShopOrders, overviewResolvedShopProducts]);
+
+  const paymentHistoryRows = useMemo<PaymentHistoryTableRow[]>(() => {
+    const sortedPayments = [...payments].sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    return sortedPayments.map((payment, index) => {
+      const matchedCustomer = customers.find((customer) => customer.id === payment.customerId);
+      const customerName =
+        matchedCustomer &&
+        ([
+          String(matchedCustomer.firstName || "").trim(),
+          String(matchedCustomer.lastName || "").trim()
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+          String(matchedCustomer.email || "").trim() ||
+          String(matchedCustomer.phone || "").trim());
+
+      return {
+        id: payment.id,
+        sn: index + 1,
+        paymentReference: `PAY-${String(payment.id || "").slice(0, 8).toUpperCase()}`,
+        customerId: String(payment.customerId || "N/A"),
+        customerName: customerName || "Guest customer",
+        itemLabel:
+          String(payment.description || "").trim() ||
+          `Payment ${String(payment.id || "").slice(0, 8).toUpperCase()}`,
+        amount: Number(payment.amount || 0),
+        currency: String(payment.currency || "USD").trim().toUpperCase(),
+        paymentState: payment.status,
+        createdAt: payment.createdAt || null,
+        paymentLink: payment.paymentLink ? String(payment.paymentLink) : null,
+        paymentMethod: String(payment.gatewayProvider || "Card").toUpperCase(),
+        raw: payment
+      };
+    });
+  }, [customers, payments]);
+
+  const normalizedPaymentSearchQuery = paymentSearchQuery.trim().toLowerCase();
+  const filteredPaymentHistoryRows = useMemo(() => {
+    if (!normalizedPaymentSearchQuery) return paymentHistoryRows;
+    return paymentHistoryRows.filter((row) =>
+      [row.paymentReference, row.customerId, row.customerName, row.itemLabel, row.paymentMethod]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(normalizedPaymentSearchQuery))
+    );
+  }, [normalizedPaymentSearchQuery, paymentHistoryRows]);
+
+  const PAYMENTS_TABLE_DEFAULT_LIMIT = 5;
+  const hasMorePaymentHistoryRows = filteredPaymentHistoryRows.length > PAYMENTS_TABLE_DEFAULT_LIMIT;
+  const visiblePaymentHistoryRows = showAllPayments
+    ? filteredPaymentHistoryRows
+    : filteredPaymentHistoryRows.slice(0, PAYMENTS_TABLE_DEFAULT_LIMIT);
+
+  const opsAccountingTableRows = useMemo(() => {
+    const rows = Array.isArray(opsAccounting?.rows) ? opsAccounting.rows : [];
+    return rows.map((row: any, index: number) => ({
+      id: String(row?.paymentId || `payment-${index}`),
+      sn: index + 1,
+      paymentReference: `PAY-${String(row?.paymentId || "").slice(0, 8).toUpperCase()}`,
+      paymentStatus: String(row?.paymentStatus || "unknown"),
+      accountingStatus: String(row?.accountingStatus || "unknown"),
+      ledgerEntryCount: Number(row?.ledgerEntryCount || 0),
+      drift: Boolean(row?.drift)
+    }));
+  }, [opsAccounting?.rows]);
+
+  const normalizedOpsAccountingSearchQuery = opsAccountingSearchQuery.trim().toLowerCase();
+  const filteredOpsAccountingRows = useMemo(() => {
+    if (!normalizedOpsAccountingSearchQuery) return opsAccountingTableRows;
+    return opsAccountingTableRows.filter((row) =>
+      [row.paymentReference, row.paymentStatus, row.accountingStatus]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(normalizedOpsAccountingSearchQuery))
+    );
+  }, [normalizedOpsAccountingSearchQuery, opsAccountingTableRows]);
+
+  const OPS_ACCOUNTING_DEFAULT_LIMIT = 5;
+  const hasMoreOpsAccountingRows = filteredOpsAccountingRows.length > OPS_ACCOUNTING_DEFAULT_LIMIT;
+  const visibleOpsAccountingRows = showAllOpsAccountingRows
+    ? filteredOpsAccountingRows
+    : filteredOpsAccountingRows.slice(0, OPS_ACCOUNTING_DEFAULT_LIMIT);
+
+  const opsShippingTableRows = useMemo(() => {
+    const recentRows = Array.isArray(opsShippingSummary?.recent) ? opsShippingSummary.recent : [];
+    return recentRows.map((entry: any, index: number) => ({
+      id: String(entry?.orderId || `shipping-${index}`),
+      sn: index + 1,
+      orderReference: String(entry?.orderNumber || entry?.orderId || "N/A"),
+      shipmentStatus: String(entry?.shipment?.shipmentStatus || entry?.status || "unknown"),
+      provider: String(entry?.shipment?.provider || "-"),
+      trackingNumber: String(entry?.shipment?.trackingNumber || "-"),
+      labelUrl: entry?.shipment?.labelUrl ? String(entry.shipment.labelUrl) : "",
+      orderId: String(entry?.orderId || "")
+    }));
+  }, [opsShippingSummary?.recent]);
+
+  const normalizedOpsShippingSearchQuery = opsShippingSearchQuery.trim().toLowerCase();
+  const filteredOpsShippingRows = useMemo(() => {
+    if (!normalizedOpsShippingSearchQuery) return opsShippingTableRows;
+    return opsShippingTableRows.filter((row) =>
+      [row.orderReference, row.shipmentStatus, row.provider, row.trackingNumber]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(normalizedOpsShippingSearchQuery))
+    );
+  }, [normalizedOpsShippingSearchQuery, opsShippingTableRows]);
+
+  const OPS_SHIPPING_DEFAULT_LIMIT = 5;
+  const hasMoreOpsShippingRows = filteredOpsShippingRows.length > OPS_SHIPPING_DEFAULT_LIMIT;
+  const visibleOpsShippingRows = showAllOpsShippingRows
+    ? filteredOpsShippingRows
+    : filteredOpsShippingRows.slice(0, OPS_SHIPPING_DEFAULT_LIMIT);
+
+  const receiptRows = useMemo<ReceiptTableRow[]>(() => {
+    return receipts.map((receipt: any, index: number) => {
+      const payment = receipt?.payment || {};
+      const customerName =
+        [payment?.customer?.firstName, payment?.customer?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+        String(payment?.customer?.email || "").trim() ||
+        String(payment?.customer?.phone || "").trim() ||
+        "Guest customer";
+      const customerId = String(payment?.customer?.id || "N/A");
+      const itemLabel =
+        String(payment?.description || "").trim() ||
+        `Payment ${String(payment?.id || "").slice(0, 8).toUpperCase()}`;
+      const receiptNumber =
+        String(receipt?.receiptNumber || "").trim() ||
+        `RCP-${String(receipt?.id || "").slice(0, 8).toUpperCase()}`;
+      const orderReference =
+        String(
+          payment?.metadata?.orderNumber ||
+            payment?.gatewayPaymentId ||
+            payment?.reference ||
+            payment?.id ||
+            receipt?.paymentId ||
+            "N/A"
+        ).trim() || "N/A";
+      const amount = Number(payment?.amount || 0);
+      const currencyCode = String(payment?.currency || "USD").trim().toUpperCase();
+
+      return {
+        id: String(receipt?.id || `receipt-${index}`),
+        sn: index + 1,
+        receiptNumber,
+        orderReference,
+        customerId,
+        customerName,
+        itemLabel,
+        amount,
+        currency: currencyCode,
+        receiptState: receipt?.sentAt ? "sent" : "pending",
+        sentAt: receipt?.sentAt || null,
+        createdAt: receipt?.createdAt || null,
+        pdfUrl: receipt?.pdfUrl ? String(receipt.pdfUrl) : null,
+        paymentMethod: String(payment?.gatewayProvider || "Card").toUpperCase(),
+        raw: receipt
+      };
+    });
+  }, [receipts]);
+
+  const normalizedReceiptSearchQuery = receiptSearchQuery.trim().toLowerCase();
+  const filteredReceiptRows = useMemo(() => {
+    if (!normalizedReceiptSearchQuery) return receiptRows;
+    return receiptRows.filter((row) =>
+      [row.orderReference, row.receiptNumber, row.customerName, row.customerId]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(normalizedReceiptSearchQuery))
+    );
+  }, [normalizedReceiptSearchQuery, receiptRows]);
+
+  const RECEIPTS_TABLE_DEFAULT_LIMIT = 3;
+  const hasMoreReceiptRows = filteredReceiptRows.length > RECEIPTS_TABLE_DEFAULT_LIMIT;
+  const visibleReceiptRows = showAllReceipts
+    ? filteredReceiptRows
+    : filteredReceiptRows.slice(0, RECEIPTS_TABLE_DEFAULT_LIMIT);
 
   const getShopOrderBadgeClass = (status: string) => {
     const normalized = String(status || "").toLowerCase();
@@ -6463,6 +6725,9 @@ export const BusinessDashboard = () => {
   const getShopSectionTabClass = (tab: ShopSectionTab) =>
     `btn ${shopSectionTab === tab ? "btn-primary" : "btn-secondary"}`;
 
+  const denseTableScopeClass =
+    "[&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap [&_table_th]:px-3 [&_table_td]:px-3 [&_table_th]:py-2 [&_table_td]:py-2";
+
   return (
     <div className="business-dashboard min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
       {/* Background decorations */}
@@ -6506,7 +6771,11 @@ export const BusinessDashboard = () => {
           marginTop: "64px"
         }}
       >
-        <div className="max-w-[1680px] mx-auto py-3 sm:py-8 px-5 lg:px-10">
+        <div
+          className={`max-w-[1680px] mx-auto py-3 sm:py-8 px-5 lg:px-10 ${
+            activeTab !== "overview" ? denseTableScopeClass : ""
+          }`}
+        >
         {loading && !dashboard ? (
           <div className="card">
             <p className="text-black font-semibold">Loading...</p>
@@ -6713,11 +6982,11 @@ export const BusinessDashboard = () => {
                         <select
                           className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
                           value={overviewRevenueChartType}
-                          onChange={(e) =>
-                            setOverviewRevenueChartType(
-                              e.target.value === "line" ? "line" : "bar"
-                            )
-                          }
+                          onChange={(e) => {
+                            const nextType = e.target.value === "line" ? "line" : "bar";
+                            setHasOverviewRevenueChartAnimated(false);
+                            setOverviewRevenueChartType(nextType);
+                          }}
                         >
                           <option value="bar">Bar chart</option>
                           <option value="line">Line chart</option>
@@ -6728,9 +6997,17 @@ export const BusinessDashboard = () => {
                     <div className="flex-1 min-h-0 overflow-hidden">
                       <div className="relative h-[220px] sm:h-full min-w-0">
                         {overviewRevenueChartType === "bar" ? (
-                          <Bar data={overviewRevenueBarData} options={overviewRevenueChartOptions} />
+                          <Bar
+                            key="overview-revenue-bar"
+                            data={overviewRevenueBarData}
+                            options={overviewRevenueChartOptions}
+                          />
                         ) : (
-                          <Line data={overviewRevenueLineData} options={overviewRevenueChartOptions} />
+                          <Line
+                            key="overview-revenue-line"
+                            data={overviewRevenueLineData}
+                            options={overviewRevenueChartOptions}
+                          />
                         )}
                         {!overviewRevenueChartData.hasRevenueData && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -6877,9 +7154,18 @@ export const BusinessDashboard = () => {
                                   </div>
                                   <div className="min-w-0">
                                     <p className="text-slate-800 font-semibold truncate">{invoice.itemName}</p>
-                                    {invoice.itemQuantity > 1 && (
-                                      <p className="text-xs text-slate-500">Qty {invoice.itemQuantity}</p>
-                                    )}
+                                    <div className="mt-0.5 flex items-center gap-1.5">
+                                      {invoice.itemQuantity > 1 && (
+                                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-500">
+                                          Qty {invoice.itemQuantity}
+                                        </span>
+                                      )}
+                                      {invoice.additionalItemsCount > 0 && (
+                                        <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                          +{invoice.additionalItemsCount}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -7210,67 +7496,151 @@ export const BusinessDashboard = () => {
 
                 {/* Row 2: Payment History + Recurring Payments List */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
-                  <div className="card min-w-0 overflow-hidden">
-                    <h3 className="text-lg font-semibold mb-4 text-gray-900">Payment History</h3>
-                    {payments.length === 0 ? (
-                      <p className="text-gray-500">No payments yet</p>
+                  <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base sm:text-lg font-bold text-gray-900 m-0 flex items-center gap-2">
+                          <FiCreditCard className="w-5 h-5" />
+                          Payment History
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Latest payment records with status and gateway details
+                        </p>
+                      </div>
+                      {paymentHistoryRows.length > 0 && (hasMorePaymentHistoryRows || showAllPayments) && (
+                        <button
+                          className="btn btn-sm btn-secondary shrink-0"
+                          onClick={() => setShowAllPayments((prev) => !prev)}
+                        >
+                          {showAllPayments ? "Show Less" : "View All"}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="px-5 sm:px-6 py-3 border-b border-gray-100 bg-slate-50/60">
+                      <div className="relative w-full max-w-md">
+                        <FiSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={paymentSearchQuery}
+                          onChange={(e) => {
+                            setPaymentSearchQuery(e.target.value);
+                            setShowAllPayments(false);
+                          }}
+                          placeholder="Search by payment number, customer ID/name, or method"
+                          className="input w-full pl-9 pr-9 h-10 text-sm"
+                        />
+                        {paymentSearchQuery.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentSearchQuery("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                            aria-label="Clear payment search"
+                          >
+                            <FiX className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {filteredPaymentHistoryRows.length === 0 ? (
+                      <div className="px-5 sm:px-6 py-8 text-sm text-gray-400 text-center">
+                        {payments.length === 0 ? "No payments yet." : "No payments match your search."}
+                      </div>
                     ) : (
-                      <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
-                        <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
-                          <thead className="sticky top-0 bg-gray-50">
-                            <tr>
-                              <th className="text-gray-700">Amount</th>
-                              <th className="text-gray-700">Customer</th>
-                              <th className="text-gray-700">Status</th>
-                              <th className="text-gray-700">Link</th>
-                              <th className="text-gray-700">Created</th>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1220px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+                          <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr className="text-left text-xs font-semibold tracking-wide uppercase text-slate-600">
+                              <th className="px-3 py-2">SN</th>
+                              <th className="px-3 py-2 whitespace-nowrap">Payment #</th>
+                              <th className="px-3 py-2">Customer ID</th>
+                              <th className="px-3 py-2">Customer Name</th>
+                              <th className="px-3 py-2">Item</th>
+                              <th className="px-3 py-2">Created Date</th>
+                              <th className="px-3 py-2">State</th>
+                              <th className="px-3 py-2">Payment Method</th>
+                              <th className="px-3 py-2 text-right">Amount</th>
+                              <th className="px-3 py-2 text-right">Actions</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            {payments.map((payment) => (
-                              <tr key={payment.id}>
-                                <td className="text-gray-900 font-medium">{formatCurrency(payment.amount, payment.currency)}</td>
-                                <td className="text-gray-700 text-sm">{payment.customerId?.slice(0, 12)}...</td>
-                                <td>
-                                  <span className={getStatusBadge(payment.status)}>{payment.status}</span>
-                                </td>
-                                <td>
-                                  {payment.paymentLink ? (
-                                    <div className="flex items-center gap-1">
-                                      <a
-                                        href={payment.paymentLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 hover:text-blue-800"
-                                        title="Open payment link"
-                                      >
-                                        <FiExternalLink className="w-4 h-4" />
-                                      </a>
+                          <tbody className="divide-y divide-slate-100">
+                            {visiblePaymentHistoryRows.map((payment) => {
+                              const createdAtDate = payment.createdAt ? new Date(payment.createdAt) : null;
+                              return (
+                                <tr key={payment.id} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="px-3 py-2 text-slate-600 font-medium">{payment.sn}</td>
+                                  <td className="px-3 py-2 text-slate-900 font-medium whitespace-nowrap">{payment.paymentReference}</td>
+                                  <td className="px-3 py-2 text-xs font-mono text-slate-600">{payment.customerId}</td>
+                                  <td className="px-3 py-2 text-slate-700">
+                                    <span className="block max-w-[180px] truncate">{payment.customerName}</span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <p className="text-slate-800 font-semibold truncate max-w-[260px]">
+                                      {payment.itemLabel}
+                                    </p>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
+                                    {createdAtDate ? (
+                                      <>
+                                        {createdAtDate.toLocaleDateString()}{" "}
+                                        <span className="text-xs text-slate-400">
+                                          {createdAtDate.toLocaleTimeString([], {
+                                            hour: "2-digit",
+                                            minute: "2-digit"
+                                          })}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      "N/A"
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span className={getStatusBadge(payment.paymentState)}>{payment.paymentState}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700 font-medium">{payment.paymentMethod}</td>
+                                  <td className="px-3 py-2 text-right text-slate-900 font-semibold">
+                                    {formatCurrency(payment.amount, payment.currency)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <div className="inline-flex items-center justify-end gap-2">
+                                      {payment.paymentLink && (
+                                        <>
+                                          <a
+                                            href={payment.paymentLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-xs btn-secondary inline-flex items-center gap-1.5"
+                                          >
+                                            <FiExternalLink className="h-3.5 w-3.5" />
+                                            Open Link
+                                          </a>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(payment.paymentLink || "");
+                                              setStatus(" Payment link copied!");
+                                            }}
+                                            className="btn btn-xs btn-secondary inline-flex items-center gap-1.5"
+                                          >
+                                            <FiCopy className="h-3.5 w-3.5" />
+                                            Copy
+                                          </button>
+                                        </>
+                                      )}
                                       <button
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(payment.paymentLink!);
-                                          setStatus(" Payment link copied!");
-                                        }}
-                                        className="text-gray-500 hover:text-gray-700"
-                                        title="Copy link"
-                                      >
-                                        <FiCopy className="w-4 h-4" />
-                                      </button>
-                                      <button
+                                        type="button"
                                         onClick={() => handleDeletePayment(payment.id)}
-                                        className="text-red-500 hover:text-red-700"
-                                        title="Delete payment record"
+                                        className="btn btn-xs btn-danger inline-flex items-center gap-1.5"
                                       >
-                                        <FiTrash2 className="w-4 h-4" />
+                                        <FiTrash2 className="h-3.5 w-3.5" />
+                                        Delete
                                       </button>
                                     </div>
-                                  ) : (
-                                    <span className="text-gray-400 text-xs">-</span>
-                                  )}
-                                </td>
-                                <td className="text-gray-500 text-xs">{new Date(payment.createdAt).toLocaleDateString()}</td>
-                              </tr>
-                            ))}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -7746,13 +8116,30 @@ export const BusinessDashboard = () => {
                       onClick={async (e) => {
                         e.preventDefault();
                         try {
-                          const csv = await apiRequest<string>("/business/bulk/customers/export", { accessToken });
+                          const response = await fetch(`${API_BASE_URL}/business/bulk/customers/export`, {
+                            method: "GET",
+                            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+                            credentials: "include"
+                          });
+                          if (!response.ok) {
+                            let errorMessage = "Failed";
+                            try {
+                              const jsonError = await response.json();
+                              errorMessage = jsonError?.error || errorMessage;
+                            } catch {
+                              const textError = await response.text();
+                              if (textError.trim()) errorMessage = textError;
+                            }
+                            throw new Error(errorMessage);
+                          }
+                          const csv = await response.text();
                           const blob = new Blob([csv], { type: "text/csv" });
                           const url = window.URL.createObjectURL(blob);
                           const a = document.createElement("a");
                           a.href = url;
                           a.download = `customers-${Date.now()}.csv`;
                           a.click();
+                          window.URL.revokeObjectURL(url);
                           setStatus(" Customers exported");
                         } catch (err: any) {
                           setStatus(` ${err?.message || "Failed"}`);
@@ -7766,61 +8153,180 @@ export const BusinessDashboard = () => {
                 </div>
 
                 {/* Receipts */}
-                <div className="card">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <FiFileText className="w-5 h-5" />
-                      Receipts
-                    </h3>
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900 m-0 flex items-center gap-2">
+                        <FiFileText className="w-5 h-5" />
+                        Receipts
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Latest generated receipts from completed payments
+                      </p>
+                    </div>
                     {receipts.length > 0 && (
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => {
-                          setConfirmModalData({
-                            title: "Clear Receipts",
-                            message: "Clear all receipts from view?",
-                            variant: "warning",
-                            onConfirm: () => {
-                              setShowConfirmModal(false);
-                              setReceipts([]);
-                              setStatus(" Receipts cleared");
-                            }
-                          });
-                          setShowConfirmModal(true);
-                        }}
-                      >
-                        <FiTrash2 className="mr-1" /> Clear
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {(hasMoreReceiptRows || showAllReceipts) && (
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setShowAllReceipts((prev) => !prev)}
+                          >
+                            {showAllReceipts ? "Show Less" : "View All"}
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            setConfirmModalData({
+                              title: "Clear Receipts",
+                              message: "Clear all receipts from view?",
+                              variant: "warning",
+                              onConfirm: () => {
+                                setShowConfirmModal(false);
+                                setReceipts([]);
+                                setStatus(" Receipts cleared");
+                              }
+                            });
+                            setShowConfirmModal(true);
+                          }}
+                        >
+                          <FiTrash2 className="mr-1" /> Clear
+                        </button>
+                      </div>
                     )}
                   </div>
-                  {receipts.length === 0 ? (
-                    <p className="text-gray-500">No receipts generated yet. Receipts are auto-generated when payments are completed.</p>
+
+                  <div className="px-5 sm:px-6 py-3 border-b border-gray-100 bg-slate-50/60">
+                    <div className="relative w-full max-w-md">
+                      <FiSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={receiptSearchQuery}
+                        onChange={(e) => {
+                          setReceiptSearchQuery(e.target.value);
+                          setShowAllReceipts(false);
+                        }}
+                        placeholder="Search by order number, receipt number, or customer name"
+                        className="input w-full pl-9 pr-9 h-10 text-sm"
+                      />
+                      {receiptSearchQuery.trim().length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setReceiptSearchQuery("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                          aria-label="Clear receipt search"
+                        >
+                          <FiX className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {filteredReceiptRows.length === 0 ? (
+                    <div className="px-5 sm:px-6 py-8 text-sm text-gray-400 text-center">
+                      {receipts.length === 0
+                        ? "No receipts generated yet. Receipts are auto-generated when payments are completed."
+                        : "No receipts match your search."}
+                    </div>
                   ) : (
-                    <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
-                      <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
-                        <thead>
-                          <tr>
-                            <th className="text-gray-700">Receipt #</th>
-                            <th className="text-gray-700">Payment</th>
-                            <th className="text-gray-700">Sent</th>
-                            <th className="text-gray-700">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {receipts.map((r) => (
-                            <tr key={r.id}>
-                              <td className="text-gray-900 font-medium">{r.receiptNumber}</td>
-                              <td className="text-gray-700">{r.payment?.amount} {r.payment?.currency}</td>
-                              <td className="text-gray-600 text-sm">{r.sentAt ? new Date(r.sentAt).toLocaleString() : "Not sent"}</td>
-                              <td>
-                                {r.pdfUrl && (
-                                  <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="btn btn-xs btn-secondary">
-                                    <FiDownload className="mr-1" /> Download
-                                  </a>
-                                )}
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1320px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+                          <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr className="text-left text-xs font-semibold tracking-wide uppercase text-slate-600">
+                              <th className="px-3 py-2">SN</th>
+                              <th className="px-3 py-2 whitespace-nowrap">Receipt #</th>
+                              <th className="px-3 py-2">Order #</th>
+                              <th className="px-3 py-2">Customer ID</th>
+                              <th className="px-3 py-2">Customer Name</th>
+                              <th className="px-3 py-2">Item</th>
+                              <th className="px-3 py-2">Sent Date</th>
+                              <th className="px-3 py-2">State</th>
+                              <th className="px-3 py-2">Payment Method</th>
+                              <th className="px-3 py-2 text-right">Amount</th>
+                              <th className="px-3 py-2 text-right">Actions</th>
                             </tr>
-                          ))}
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                          {visibleReceiptRows.map((receipt) => {
+                            const timestamp = receipt.sentAt || receipt.createdAt;
+                            const timestampDate = timestamp ? new Date(timestamp) : null;
+                            return (
+                              <tr key={receipt.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="px-3 py-2 text-slate-600 font-medium">
+                                  {receipt.sn}
+                                </td>
+                                <td className="px-3 py-2 text-slate-900 font-medium whitespace-nowrap">
+                                  {receipt.receiptNumber}
+                                </td>
+                                <td className="px-3 py-2 text-slate-700 font-medium">{receipt.orderReference}</td>
+                                <td className="px-3 py-2 text-xs font-mono text-slate-600">{receipt.customerId}</td>
+                                <td className="px-3 py-2 text-slate-700">
+                                  <span className="block max-w-[180px] truncate">{receipt.customerName}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="h-9 w-9 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-500 flex-shrink-0">
+                                      <FiFileText className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-slate-800 font-semibold truncate max-w-[260px]">
+                                        {receipt.itemLabel}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
+                                  {timestampDate ? (
+                                    <>
+                                      {timestampDate.toLocaleDateString()}{" "}
+                                      <span className="text-xs text-slate-400">
+                                        {timestampDate.toLocaleTimeString([], {
+                                          hour: "2-digit",
+                                          minute: "2-digit"
+                                        })}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    "Not sent"
+                                  )}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={getStatusBadge(receipt.receiptState)}>
+                                    {receipt.receiptState === "sent" ? "Sent" : "Pending"}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-slate-700 font-medium">
+                                  {receipt.paymentMethod}
+                                </td>
+                                <td className="px-3 py-2 text-right text-slate-900 font-semibold">
+                                  {formatCurrency(receipt.amount, receipt.currency)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <div className="inline-flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-secondary inline-flex items-center gap-1.5"
+                                      onClick={() => setSelectedReceiptPreview(receipt)}
+                                    >
+                                      <FiEye className="h-3.5 w-3.5" />
+                                      View Receipt
+                                    </button>
+                                    {receipt.pdfUrl && (
+                                      <a
+                                        href={receipt.pdfUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn btn-xs btn-primary inline-flex items-center gap-1.5"
+                                      >
+                                        <FiDownload className="h-3.5 w-3.5" />
+                                        Download
+                                      </a>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -12129,7 +12635,7 @@ export const BusinessDashboard = () => {
                 <p className="text-sm text-gray-500">No checkout customers yet for this shop.</p>
               ) : (
                 <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[65vh] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
-                  <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                  <table className="table w-full min-w-[900px] table-auto text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-3 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap">
                     <thead>
                       <tr>
                         <th>Name</th>
@@ -12742,7 +13248,7 @@ export const BusinessDashboard = () => {
                           <td className="text-gray-900">{job.jobType}</td>
                           <td><span className={getStatusBadge(job.status)}>{job.status}</span></td>
                           <td className="text-gray-700">{job.priority}</td>
-                          <td className="text-gray-600 text-sm">{new Date(job.createdAt).toLocaleString()}</td>
+                          <td className="text-gray-600 text-xs whitespace-nowrap">{new Date(job.createdAt).toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -12813,61 +13319,116 @@ export const BusinessDashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="card">
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">Accounting Reconciliation</h3>
-                  <button className="btn btn-xs btn-secondary" onClick={runOpsAccountingSync}>
-                    Run Sync
-                  </button>
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 m-0">Accounting Reconciliation</h3>
+                    <p className="text-xs text-gray-500 mt-1">Payment/accounting sync status and drift check</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {(hasMoreOpsAccountingRows || showAllOpsAccountingRows) && (
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setShowAllOpsAccountingRows((prev) => !prev)}
+                      >
+                        {showAllOpsAccountingRows ? "Show Less" : "View All"}
+                      </button>
+                    )}
+                    <button className="btn btn-sm btn-secondary" onClick={runOpsAccountingSync}>
+                      Run Sync
+                    </button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                    <p className="text-[11px] text-gray-500">Total</p>
-                    <p className="text-lg font-bold text-gray-900">{opsAccounting?.summary?.total ?? 0}</p>
+
+                <div className="px-5 sm:px-6 py-3 border-b border-gray-100">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                      <p className="text-[11px] text-gray-500">Total</p>
+                      <p className="text-lg font-bold text-gray-900">{opsAccounting?.summary?.total ?? 0}</p>
+                    </div>
+                    <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                      <p className="text-[11px] text-gray-500">Synced</p>
+                      <p className="text-lg font-bold text-green-700">{opsAccounting?.summary?.synced ?? 0}</p>
+                    </div>
+                    <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                      <p className="text-[11px] text-gray-500">Drift</p>
+                      <p className="text-lg font-bold text-red-700">{opsAccounting?.summary?.drift ?? 0}</p>
+                    </div>
                   </div>
-                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                    <p className="text-[11px] text-gray-500">Synced</p>
-                    <p className="text-lg font-bold text-green-700">{opsAccounting?.summary?.synced ?? 0}</p>
-                  </div>
-                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                    <p className="text-[11px] text-gray-500">Drift</p>
-                    <p className="text-lg font-bold text-red-700">{opsAccounting?.summary?.drift ?? 0}</p>
+                  {opsAccountingSyncResult && (
+                    <p className="text-xs text-gray-600 mt-2">
+                      Last run: {opsAccountingSyncResult?.syncedPayments ?? 0} synced payments,{" "}
+                      {opsAccountingSyncResult?.indexedOrders ?? 0} indexed orders
+                    </p>
+                  )}
+                </div>
+
+                <div className="px-5 sm:px-6 py-3 border-b border-gray-100 bg-slate-50/60">
+                  <div className="relative w-full max-w-md">
+                    <FiSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={opsAccountingSearchQuery}
+                      onChange={(e) => {
+                        setOpsAccountingSearchQuery(e.target.value);
+                        setShowAllOpsAccountingRows(false);
+                      }}
+                      placeholder="Search by payment number, status, or accounting state"
+                      className="input w-full pl-9 pr-9 h-10 text-sm"
+                    />
+                    {opsAccountingSearchQuery.trim().length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOpsAccountingSearchQuery("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        aria-label="Clear accounting search"
+                      >
+                        <FiX className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
-                {opsAccountingSyncResult && (
-                  <p className="text-xs text-gray-600 mb-3">
-                    Last run: {opsAccountingSyncResult?.syncedPayments ?? 0} synced payments,{" "}
-                    {opsAccountingSyncResult?.indexedOrders ?? 0} indexed orders
-                  </p>
-                )}
-                <div className="w-full overflow-x-auto max-h-64 overflow-y-auto">
-                  <table className="table w-full min-w-[760px] text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50">
-                    <thead>
-                      <tr>
-                        <th>Payment</th>
-                        <th>Status</th>
-                        <th>Accounting</th>
-                        <th>Ledger</th>
-                        <th>Drift</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(opsAccounting?.rows || []).slice(0, 20).map((row: any) => (
-                        <tr key={row.paymentId}>
-                          <td className="font-mono text-[11px] text-gray-700">{String(row.paymentId || "").slice(0, 12)}...</td>
-                          <td>{row.paymentStatus}</td>
-                          <td>{row.accountingStatus}</td>
-                          <td>{row.ledgerEntryCount ?? 0}</td>
-                          <td>
-                            <span className={row.drift ? "badge badge-danger" : "badge badge-success"}>
-                              {row.drift ? "Yes" : "No"}
-                            </span>
-                          </td>
+
+                {filteredOpsAccountingRows.length === 0 ? (
+                  <div className="px-5 sm:px-6 py-8 text-sm text-gray-400 text-center">
+                    {opsAccountingTableRows.length === 0 ? "No reconciliation rows yet." : "No rows match your search."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                    <table className="w-full min-w-[980px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr className="text-left text-xs font-semibold tracking-wide uppercase text-slate-600">
+                          <th className="px-3 py-2">SN</th>
+                          <th className="px-3 py-2">Payment #</th>
+                          <th className="px-3 py-2">Payment Status</th>
+                          <th className="px-3 py-2">Accounting Status</th>
+                          <th className="px-3 py-2">Ledger Entries</th>
+                          <th className="px-3 py-2">Drift</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visibleOpsAccountingRows.map((row) => (
+                          <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-3 py-2 text-slate-600 font-medium">{row.sn}</td>
+                            <td className="px-3 py-2 text-slate-900 font-medium whitespace-nowrap">{row.paymentReference}</td>
+                            <td className="px-3 py-2">
+                              <span className={getStatusBadge(row.paymentStatus)}>{row.paymentStatus}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={getStatusBadge(row.accountingStatus)}>{row.accountingStatus}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-700 font-medium">{row.ledgerEntryCount}</td>
+                            <td className="px-3 py-2">
+                              <span className={row.drift ? "badge badge-danger" : "badge badge-success"}>
+                                {row.drift ? "Yes" : "No"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="card">
@@ -12991,89 +13552,151 @@ export const BusinessDashboard = () => {
               </div>
             </div>
 
-            <div className="card">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h3 className="text-lg font-semibold text-gray-900">Shipping Labels & Tracking</h3>
-                <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                  Debby Native Shipping
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                  <p className="text-[11px] text-gray-500">Orders</p>
-                  <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.totalOrders ?? 0}</p>
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900 m-0">Shipping Labels & Tracking</h3>
+                  <p className="text-xs text-gray-500 mt-1">Debby native shipping events and label actions</p>
                 </div>
-                <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                  <p className="text-[11px] text-gray-500">With Shipment</p>
-                  <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.withShipmentData ?? 0}</p>
-                </div>
-                <div className="p-2 rounded bg-gray-50 border border-gray-200">
-                  <p className="text-[11px] text-gray-500">Delivered</p>
-                  <p className="text-lg font-bold text-green-700">{opsShippingSummary?.statusCounts?.delivered ?? 0}</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  {(hasMoreOpsShippingRows || showAllOpsShippingRows) && (
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => setShowAllOpsShippingRows((prev) => !prev)}
+                    >
+                      {showAllOpsShippingRows ? "Show Less" : "View All"}
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="w-full overflow-x-auto max-h-72 overflow-y-auto">
-                <table className="table w-full min-w-[980px] text-xs [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50">
-                  <thead>
-                    <tr>
-                      <th>Order</th>
-                      <th>Status</th>
-                      <th>Provider</th>
-                      <th>Tracking</th>
-                      <th>Label</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(opsShippingSummary?.recent || []).slice(0, 30).map((entry: any) => (
-                      <tr key={entry.orderId}>
-                        <td className="font-medium text-gray-900">{entry.orderNumber}</td>
-                        <td>{entry.shipment?.shipmentStatus || entry.status}</td>
-                        <td>{entry.shipment?.provider || "-"}</td>
-                        <td className="font-mono">{entry.shipment?.trackingNumber || "-"}</td>
-                        <td>
-                          {entry.shipment?.labelUrl ? (
-                            <button
-                              type="button"
-                              className="text-blue-600 hover:underline"
-                              onClick={() => openOpsShippingLabel(entry.shipment.labelUrl)}
-                            >
-                              Open
-                            </button>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-1">
-                            <button
-                              className="btn btn-xs btn-secondary"
-                              disabled={creatingShippingLabelOrderId === entry.orderId}
-                              onClick={() => createOpsShippingLabel(entry.orderId)}
-                            >
-                              {creatingShippingLabelOrderId === entry.orderId ? "..." : "Label"}
-                            </button>
-                            <button
-                              className="btn btn-xs btn-warning"
-                              disabled={updatingShippingOrderId === entry.orderId}
-                              onClick={() => updateOpsShippingStatus(entry.orderId, "in_transit")}
-                            >
-                              Transit
-                            </button>
-                            <button
-                              className="btn btn-xs btn-success"
-                              disabled={updatingShippingOrderId === entry.orderId}
-                              onClick={() => updateOpsShippingStatus(entry.orderId, "delivered")}
-                            >
-                              Delivered
-                            </button>
-                          </div>
-                        </td>
+
+              <div className="px-5 sm:px-6 py-3 border-b border-gray-100">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">Orders</p>
+                    <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.totalOrders ?? 0}</p>
+                  </div>
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">With Shipment</p>
+                    <p className="text-lg font-bold text-gray-900">{opsShippingSummary?.withShipmentData ?? 0}</p>
+                  </div>
+                  <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                    <p className="text-[11px] text-gray-500">Delivered</p>
+                    <p className="text-lg font-bold text-green-700">{opsShippingSummary?.statusCounts?.delivered ?? 0}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-5 sm:px-6 py-3 border-b border-gray-100 bg-slate-50/60">
+                <div className="relative w-full max-w-md">
+                  <FiSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={opsShippingSearchQuery}
+                    onChange={(e) => {
+                      setOpsShippingSearchQuery(e.target.value);
+                      setShowAllOpsShippingRows(false);
+                    }}
+                    placeholder="Search by order, status, provider, or tracking"
+                    className="input w-full pl-9 pr-9 h-10 text-sm"
+                  />
+                  {opsShippingSearchQuery.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setOpsShippingSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      aria-label="Clear shipping search"
+                    >
+                      <FiX className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredOpsShippingRows.length === 0 ? (
+                <div className="px-5 sm:px-6 py-8 text-sm text-gray-400 text-center">
+                  {opsShippingTableRows.length === 0 ? "No shipping rows yet." : "No rows match your search."}
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                  <table className="w-full min-w-[1080px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+                    <thead className="sticky top-0 z-20 bg-slate-50 border-b border-slate-200">
+                      <tr className="text-left text-xs font-semibold tracking-wide uppercase text-slate-600">
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">SN</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">Order</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">Status</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">Provider</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">Tracking</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50">Label</th>
+                        <th className="px-3 py-2 sticky top-0 z-20 bg-slate-50 text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {visibleOpsShippingRows.map((row) => {
+                        const normalizedShippingStatus = String(row.shipmentStatus || "").trim().toLowerCase();
+                        const labelAlreadyCreated =
+                          Boolean(row.labelUrl) ||
+                          normalizedShippingStatus === "label_created";
+
+                        return (
+                          <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-3 py-2 text-slate-600 font-medium">{row.sn}</td>
+                            <td className="px-3 py-2 text-slate-900 font-medium">{row.orderReference}</td>
+                            <td className="px-3 py-2">
+                              <span className={getStatusBadge(row.shipmentStatus)}>{row.shipmentStatus}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">{row.provider}</td>
+                            <td className="px-3 py-2 text-slate-700 font-mono">{row.trackingNumber}</td>
+                            <td className="px-3 py-2">
+                              {row.labelUrl ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-secondary"
+                                  onClick={() => openOpsShippingLabel(row.labelUrl)}
+                                >
+                                  Open
+                                </button>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="inline-flex items-center justify-end gap-2 flex-nowrap">
+                                <button
+                                  className="btn btn-xs btn-secondary"
+                                  disabled={creatingShippingLabelOrderId === row.orderId || labelAlreadyCreated}
+                                  onClick={() => createOpsShippingLabel(row.orderId)}
+                                  title={labelAlreadyCreated ? "Label already created for this order" : "Create label"}
+                                >
+                                  {creatingShippingLabelOrderId === row.orderId
+                                    ? "..."
+                                    : labelAlreadyCreated
+                                      ? "Created"
+                                      : "Label"}
+                                </button>
+                                <button
+                                  className="btn btn-xs btn-warning"
+                                  disabled={updatingShippingOrderId === row.orderId}
+                                  onClick={() => updateOpsShippingStatus(row.orderId, "in_transit")}
+                                >
+                                  Transit
+                                </button>
+                                <button
+                                  className="btn btn-xs btn-success"
+                                  disabled={updatingShippingOrderId === row.orderId}
+                                  onClick={() => updateOpsShippingStatus(row.orderId, "delivered")}
+                                >
+                                  Delivered
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="card">
@@ -16890,6 +17513,96 @@ export const BusinessDashboard = () => {
                   {formatCurrency(selectedOverviewInvoice.amount, selectedOverviewInvoice.currency)}
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(selectedReceiptPreview)}
+        onClose={() => setSelectedReceiptPreview(null)}
+        title={selectedReceiptPreview ? `Receipt ${selectedReceiptPreview.receiptNumber}` : "Receipt"}
+        size="lg"
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            {selectedReceiptPreview?.pdfUrl && (
+              <a
+                href={selectedReceiptPreview.pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary inline-flex items-center gap-1.5"
+              >
+                <FiDownload className="h-4 w-4" />
+                Download PDF
+              </a>
+            )}
+            <button className="btn btn-primary" onClick={() => setSelectedReceiptPreview(null)}>
+              Close
+            </button>
+          </div>
+        }
+      >
+        {selectedReceiptPreview && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Receipt Number</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">{selectedReceiptPreview.receiptNumber}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Total Amount</p>
+                  <p className="text-xl font-extrabold text-slate-900 mt-1">
+                    {formatCurrency(selectedReceiptPreview.amount, selectedReceiptPreview.currency)}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className={getStatusBadge(selectedReceiptPreview.receiptState)}>
+                  {selectedReceiptPreview.receiptState === "sent" ? "Sent" : "Pending"}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+                  {selectedReceiptPreview.paymentMethod}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Order Number</p>
+                <p className="mt-1 font-semibold text-slate-900">{selectedReceiptPreview.orderReference}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Customer ID</p>
+                <p className="mt-1 font-mono text-xs sm:text-sm text-slate-900">{selectedReceiptPreview.customerId}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Customer Name</p>
+                <p className="mt-1 font-semibold text-slate-900">{selectedReceiptPreview.customerName}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Sent Date</p>
+                <p className="mt-1 font-semibold text-slate-900">
+                  {selectedReceiptPreview.sentAt
+                    ? `${new Date(selectedReceiptPreview.sentAt).toLocaleDateString()} ${new Date(
+                        selectedReceiptPreview.sentAt
+                      ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "Not sent yet"}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Receipt Item</p>
+              <p className="mt-1.5 text-sm sm:text-base font-semibold text-slate-900">
+                {selectedReceiptPreview.itemLabel}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Created{" "}
+                {selectedReceiptPreview.createdAt
+                  ? new Date(selectedReceiptPreview.createdAt).toLocaleString()
+                  : "N/A"}
+              </p>
             </div>
           </div>
         )}

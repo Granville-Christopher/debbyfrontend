@@ -132,12 +132,12 @@ export const Login = () => {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-md">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-0 md:p-6 lg:p-12">
+        <div className="w-full md:max-w-md">
           <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-8 lg:p-10">
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-              <p className="text-gray-500">Sign in to access your dashboard</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
+              <p className="text-sm sm:text-base text-gray-500">Sign in to access your dashboard</p>
             </div>
 
             <form onSubmit={handleSubmit}>
@@ -173,7 +173,7 @@ export const Login = () => {
 
               <button
                 type="submit"
-                className="w-full text-base py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 hover:from-slate-800 hover:via-slate-900 hover:to-black shadow-slate-500/30"
+                className="w-full text-sm sm:text-base py-3.5 sm:py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 hover:from-slate-800 hover:via-slate-900 hover:to-black shadow-slate-500/30"
                 disabled={loading}
               >
                 {loading ? "Signing in..." : "Sign In"}
@@ -184,7 +184,7 @@ export const Login = () => {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-300"></div>
               </div>
-              <div className="relative flex justify-center text-sm">
+              <div className="relative flex justify-center text-xs sm:text-sm">
                 <span className="px-4 bg-white/80 text-gray-500">Or continue with</span>
               </div>
             </div>
@@ -214,7 +214,7 @@ export const Login = () => {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
-                <span className="font-medium text-gray-700">
+                <span className="text-sm font-medium text-gray-700">
                   {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
                 </span>
               </button>
@@ -226,13 +226,13 @@ export const Login = () => {
                 className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-xl bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiGithub className="w-5 h-5 text-gray-900" />
-                <span className="font-medium text-gray-700">
+                <span className="text-sm font-medium text-gray-700">
                   {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
                 </span>
               </button>
             </div>
 
-            <p className="text-center text-gray-500 mt-8">
+            <p className="text-center text-sm sm:text-base text-gray-500 mt-8">
               Don't have an account?{" "}
               <Link to="/signup" className="text-slate-700 hover:text-slate-900 font-semibold transition-colors">
                 Sign up

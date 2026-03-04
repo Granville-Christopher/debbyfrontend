@@ -309,8 +309,8 @@ export const Signup = () => {
       </div>
 
       {/* Right Side - Signup Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-lg">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-0 md:p-6 lg:p-12">
+        <div className="w-full md:max-w-lg">
           <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-8 lg:p-10">
             {/* Role Tabs */}
             <div className="flex gap-1 mb-8 p-1 bg-gray-100 rounded-xl">
@@ -353,8 +353,8 @@ export const Signup = () => {
             </div>
 
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Your Account</h1>
-              <p className="text-gray-500">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Create Your Account</h1>
+              <p className="text-sm sm:text-base text-gray-500">
                 {role === "developer" && "Start building with our developer tools"}
                 {role === "business" && "Start automating your business operations"}
                 {role === "creator" && "Start growing your social media presence"}
@@ -521,7 +521,7 @@ export const Signup = () => {
 
               <button
                 type="submit"
-                className={`w-full text-base py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`w-full text-sm sm:text-base py-3.5 sm:py-4 mb-6 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed ${
                   role === "developer"
                     ? "bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black shadow-slate-400/30"
                     : role === "creator"
@@ -540,7 +540,7 @@ export const Signup = () => {
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-gray-300"></div>
                   </div>
-                  <div className="relative flex justify-center text-sm">
+                  <div className="relative flex justify-center text-xs sm:text-sm">
                     <span className="px-4 bg-white/80 text-gray-500">Or sign up with</span>
                   </div>
                 </div>
@@ -570,7 +570,7 @@ export const Signup = () => {
                         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                       />
                     </svg>
-                    <span className="font-medium text-gray-700">
+                    <span className="text-sm font-medium text-gray-700">
                       {oauthLoading === "google" ? "Connecting..." : "Sign up with Google"}
                     </span>
                   </button>
@@ -583,7 +583,7 @@ export const Signup = () => {
                       className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-xl bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FiGithub className="w-5 h-5 text-gray-900" />
-                      <span className="font-medium text-gray-700">
+                      <span className="text-sm font-medium text-gray-700">
                         {oauthLoading === "github" ? "Connecting..." : "Sign up with GitHub"}
                       </span>
                     </button>
@@ -598,7 +598,7 @@ export const Signup = () => {
               </p>
             )}
 
-            <p className="text-center text-gray-500 mt-8">
+            <p className="text-center text-sm sm:text-base text-gray-500 mt-8">
               Already have an account?{" "}
               <Link to="/login" className={`font-semibold transition-colors ${
                 role === "developer"

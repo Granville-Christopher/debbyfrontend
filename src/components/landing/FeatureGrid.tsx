@@ -46,17 +46,17 @@ export default function FeatureGrid() {
   const { ref, isInView } = useScrollReveal();
 
   return (
-    <section ref={ref} id="features" className="py-24">
+    <section ref={ref} id="features" className="scroll-mt-28 py-16 md:py-20">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          className="mb-16 text-center"
+          className="mb-10 text-center md:mb-12"
         >
-          <h2 className="mb-4 text-3xl font-bold text-slate-900 dark:text-slate-100 sm:text-4xl">
+          <h2 className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl md:text-4xl">
             Everything you need. <span className="bh-gradient-text">Nothing fragmented.</span>
           </h2>
-          <p className="mx-auto max-w-lg text-slate-600 dark:text-slate-400">
+          <p className="mx-auto max-w-lg text-sm text-slate-600 dark:text-slate-400 sm:text-base">
             Six core modules, one operating layer, no context switching.
           </p>
         </motion.div>
@@ -73,10 +73,10 @@ export default function FeatureGrid() {
               <div className="mb-4 w-fit rounded-xl bg-blue-100/80 p-3 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
                 <feature.icon size={22} />
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+              <h3 className="mb-2 text-base font-semibold text-slate-900 dark:text-slate-100 sm:text-lg">
                 {feature.title}
               </h3>
-              <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400 sm:text-sm">
                 {feature.desc}
               </p>
             </motion.div>
