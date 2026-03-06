@@ -7,7 +7,7 @@ import { LandingButton } from "./LandingButton";
 type BookDemoButtonProps = {
   label?: string;
   variant?: "primary" | "outline";
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
 };
 
@@ -231,12 +231,14 @@ export function BookDemoButton({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Website</label>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Website <span className="normal-case text-slate-400">(optional)</span>
+                    </label>
                     <input
                       className={fieldClass}
                       value={form.website}
                       onChange={(e) => setField("website", e.target.value)}
-                      placeholder="https://..."
+                      placeholder="https://... (optional)"
                     />
                   </div>
                   <div>

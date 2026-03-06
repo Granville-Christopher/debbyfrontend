@@ -1378,61 +1378,61 @@ export const AdminDashboard = () => {
     if (activeTab === "overview") {
       return (
         <div className="space-y-6">
-          <section className="grid gap-4 sm:grid-cols-3">
-            <article className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+          <section className="grid gap-3 sm:gap-4 sm:grid-cols-3">
+            <article className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 sm:p-4">
               <p className="text-xs uppercase tracking-[0.14em] text-cyan-200/80">Live Attempts (1h)</p>
-              <p className="mt-2 text-2xl font-semibold">{live?.payments?.attemptsLastHour || 0}</p>
+              <p className="mt-2 text-xl sm:text-2xl font-semibold">{live?.payments?.attemptsLastHour || 0}</p>
             </article>
-            <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+            <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 sm:p-4">
               <p className="text-xs uppercase tracking-[0.14em] text-emerald-200/80">Live Success (1h)</p>
-              <p className="mt-2 text-2xl font-semibold">{live?.payments?.successRateLastHour || 0}%</p>
+              <p className="mt-2 text-xl sm:text-2xl font-semibold">{live?.payments?.successRateLastHour || 0}%</p>
             </article>
-            <article className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+            <article className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 sm:p-4">
               <p className="text-xs uppercase tracking-[0.14em] text-amber-200/80">Notification Lag</p>
-              <p className="mt-2 text-2xl font-semibold">{live?.ops?.notificationLag || 0}</p>
+              <p className="mt-2 text-xl sm:text-2xl font-semibold">{live?.ops?.notificationLag || 0}</p>
             </article>
           </section>
           <section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs text-cyan-100">
             Reporting currency: <span className="font-semibold">USD</span>. Values are normalized from source
             currencies using live FX rates.
           </section>
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <section className="grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-400 uppercase">GMV (Sales Volume)</p>
                 <span title="Gross Merchandise Value: sum of all paid shop orders. This is sales volume, not Debby earnings.">
-                  <FiInfo className="text-slate-500" />
+                  <FiInfo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-500" />
                 </span>
               </div>
-              <p className="text-2xl font-semibold mt-2">{money(overview.metrics.totalGmv || 0)}</p>
+              <p className="text-xl sm:text-2xl font-semibold mt-2">{money(overview.metrics.totalGmv || 0)}</p>
               <p className="text-xs text-slate-500 mt-1">Take rate {overview.metrics.takeRate || 0}%</p>
             </article>
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-400 uppercase">Platform Fee Revenue</p>
                 <span title="Sum of platform transaction fees collected from successful/completed shop transactions.">
-                  <FiInfo className="text-slate-500" />
+                  <FiInfo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-500" />
                 </span>
               </div>
-              <p className="text-2xl font-semibold mt-2">{money(overview.metrics.platformFeeRevenue || 0)}</p>
+              <p className="text-xl sm:text-2xl font-semibold mt-2">{money(overview.metrics.platformFeeRevenue || 0)}</p>
               <p className="text-xs text-slate-500 mt-1">Take-rate numerator</p>
             </article>
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-400 uppercase">Net Revenue</p>
                 <span title="Net Revenue = Platform Fee Revenue + Subscription Revenue - Refunds - Chargeback Losses.">
-                  <FiInfo className="text-slate-500" />
+                  <FiInfo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-500" />
                 </span>
               </div>
-              <p className="text-2xl font-semibold mt-2">{money(overview.metrics.netRevenue || 0)}</p>
+              <p className="text-xl sm:text-2xl font-semibold mt-2">{money(overview.metrics.netRevenue || 0)}</p>
               <p className="text-xs text-slate-500 mt-1">
                 Fees {money(overview.metrics.platformFeeRevenue || 0)} + Subs {money(overview.metrics.subscriptionRevenue || 0)} - Losses {money(overview.metrics.refundAndChargebackLosses || 0)}
               </p>
             </article>
           </section>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400 uppercase">Active Businesses</p><p className="text-2xl font-semibold mt-2">{overview.metrics.activeBusinesses || 0}</p><p className="text-xs text-slate-500 mt-1">ARR {money(overview.metrics.arr || 0)}</p></article>
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400 uppercase">Churn</p><p className="text-2xl font-semibold mt-2">{overview.metrics.churnRate || 0}%</p><p className="text-xs text-slate-500 mt-1">MRR {money(overview.metrics.mrr || 0)} | Success {health.successRate || 0}%</p></article>
+            <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4"><p className="text-xs text-slate-400 uppercase">Active Businesses</p><p className="text-xl sm:text-2xl font-semibold mt-2">{overview.metrics.activeBusinesses || 0}</p><p className="text-xs text-slate-500 mt-1">ARR {money(overview.metrics.arr || 0)}</p></article>
+            <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4"><p className="text-xs text-slate-400 uppercase">Churn</p><p className="text-xl sm:text-2xl font-semibold mt-2">{overview.metrics.churnRate || 0}%</p><p className="text-xs text-slate-500 mt-1">MRR {money(overview.metrics.mrr || 0)} | Success {health.successRate || 0}%</p></article>
           </section>
           <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
             <h2 className="text-sm uppercase tracking-[0.14em] text-slate-400">Revenue Trend (14 Days)</h2>
@@ -2752,7 +2752,7 @@ export const AdminDashboard = () => {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex max-md:[&_.text-4xl]:text-3xl max-md:[&_.text-3xl]:text-2xl max-md:[&_.text-2xl]:text-xl max-md:[&_.text-xl]:text-lg max-md:[&_.text-lg]:text-base max-md:[&_.text-base]:text-sm max-md:[&_.text-sm]:text-xs">
         <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={(t) => setActiveTab(t as AdminTab)} onLogout={logout} isCollapsed={isSidebarCollapsed} onToggleCollapse={() => setIsSidebarCollapsed((p) => !p)} hideOnSmallScreens mobileMenuOpen={isMobileSidebarOpen} onMobileMenuOpenChange={setIsMobileSidebarOpen} showMobileToggleButton={false} showLogout={false} compactOpenWidthOnMobileMd compactLinkDensity theme="dark" />
         <header className="fixed top-0 left-0 right-0 z-20 border-b border-slate-800 bg-slate-950/90 backdrop-blur h-16 flex items-center">
           <div className="w-full px-3 sm:px-5 lg:px-8 flex items-center justify-between">

@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -22,6 +22,7 @@ import {
   FiShoppingBag,
   FiTrendingUp,
 } from "react-icons/fi";
+import { SiStripe, SiWhatsapp } from "react-icons/si";
 import type { ComponentType } from "react";
 import { LandingButton } from "./LandingButton";
 import { useCountUp } from "../../hooks/useCountUp";
@@ -36,12 +37,54 @@ const kpis = [
 ];
 
 const liveEvents = [
-  { title: "Order placed", detail: "2s ago", icon: FiShoppingBag },
-  { title: "Payment confirmed", detail: "12s ago", icon: FiCheckCircle },
-  { title: "Reminder sent", detail: "45s ago", icon: FiMessageSquare },
+  {
+    title: "Order placed",
+    detail: "Sneaker Drop x2",
+    time: "2s ago",
+    meta: "Checkout • #4821",
+    statusLabel: "Successful",
+    icon: FiShoppingBag
+  },
+  {
+    title: "Payment confirmed",
+    detail: "$247.00 via Stripe",
+    time: "12s ago",
+    meta: "Authorization cleared",
+    statusLabel: "Confirmed",
+    icon: FiCheckCircle
+  },
+  {
+    title: "Reminder sent",
+    detail: "Abandoned cart follow-up",
+    time: "45s ago",
+    meta: "WhatsApp + Email",
+    statusLabel: "Sent",
+    icon: FiMessageSquare
+  },
 ];
 
-const channels = ["Email", "SMS", "WhatsApp", "Stripe", "Paystack"];
+const channels: Array<{
+  label: string;
+  icon?: ComponentType<{ className?: string }>;
+  logoSrc?: string;
+  logoAlt?: string;
+  wideLogo?: boolean;
+  iconClassName: string;
+  fallback?: string;
+}> = [
+  { label: "Email", icon: FiMail, iconClassName: "text-slate-600 dark:text-slate-300" },
+  { label: "SMS", icon: FiMessageSquare, iconClassName: "text-slate-600 dark:text-slate-300" },
+  { label: "WhatsApp", icon: SiWhatsapp, iconClassName: "text-green-600 dark:text-green-400" },
+  { label: "Stripe", icon: SiStripe, iconClassName: "text-indigo-600 dark:text-indigo-400" },
+  {
+    label: "Paystack",
+    logoSrc: "/Paystack_idIi-h8rZ0_1.png",
+    logoAlt: "Paystack logo",
+    wideLogo: true,
+    iconClassName: "text-cyan-600 dark:text-cyan-400",
+    fallback: "P"
+  }
+];
 const heroRevenueLabels = [
   "D1",
   "D2",
@@ -102,6 +145,51 @@ function formatNumber(value: number) {
   return value.toLocaleString();
 }
 
+function SuccessStrokeBadge({ delay = 0, label }: { delay?: number; label: string }) {
+  return (
+    <div className="inline-flex items-center gap-2">
+      <motion.svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        className="shrink-0"
+        aria-hidden="true"
+      >
+        <motion.circle
+          cx="12"
+          cy="12"
+          r="9"
+          fill="rgba(16, 185, 129, 0.12)"
+          stroke="#10b981"
+          strokeWidth="2"
+          initial={{ pathLength: 0, opacity: 0.6 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ delay, duration: 0.52, ease: "easeOut" }}
+        />
+        <motion.path
+          d="M8.1 12.9L11.8 16.2L22.2 5.6"
+          fill="none"
+          stroke="#10b981"
+          strokeWidth="2.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ pathLength: 0, opacity: 0.75 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ delay: delay + 0.34, duration: 0.62, ease: "easeOut" }}
+        />
+      </motion.svg>
+      <motion.span
+        initial={{ opacity: 0, y: 2 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: delay + 1.01, duration: 0.22, ease: "easeOut" }}
+        className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400"
+      >
+        {label}
+      </motion.span>
+    </div>
+  );
+}
+
 function KPICard({
   label,
   end,
@@ -117,7 +205,7 @@ function KPICard({
   accent: string;
   delay: number;
 }) {
-  const { count, ref } = useCountUp(end, 2500);
+  const { count, ref } = useCountUp<HTMLParagraphElement>(end, 2500);
 
   return (
     <motion.div
@@ -154,30 +242,30 @@ export default function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-sky-200/60 bg-white/70 px-4 py-2 text-xs font-medium text-slate-700 bh-glass-card dark:border-sky-900/60 dark:text-slate-300">
+            <div className="mx-auto mb-6 flex w-fit items-center gap-2 rounded-full border border-sky-200/60 bg-white/70 px-4 py-2 text-xs font-medium text-slate-700 bh-glass-card md:mx-0 dark:border-sky-900/60 dark:text-slate-300">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
               Live commerce command center
             </div>
 
-            <h1 className="mb-5 text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 sm:text-3xl md:text-[2.35rem] lg:text-6xl">
+            <h1 className="mb-5 text-2xl text-center md:text-start font-bold leading-tight text-slate-900 dark:text-slate-100 sm:text-2xl md:text-[2.1rem] lg:text-5xl">
               Run your entire commerce operation{" "}
               <span className="bh-gradient-text">from one dashboard.</span>
             </h1>
 
-            <p className="mb-7 max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base md:text-base lg:text-lg">
+            <p className="mb-7 max-w-xl text-sm text-center md:text-start font-semibold leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base md:text-base lg:text-lg">
               Debby unifies storefront, CRM, billing, automations, and analytics so your team can
               scale without juggling disconnected tools.
             </p>
 
-            <div className="flex flex-wrap gap-4 md:gap-3 lg:gap-4">
-              <LandingButton to="/signup" size="lg">
+            <div className="flex flex-wrap gap-2 md:gap-3 lg:gap-4 items-center justify-center md:justify-start">
+              <LandingButton to="/signup" size="md">
                 Start 14-Day Trial
               </LandingButton>
-              <LandingButton href="#operations" variant="outline" size="lg">
+              <LandingButton href="#operations" variant="outline" size="md">
                 View Live Demo
               </LandingButton>
             </div>
-            <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">
+            <p className="mt-3 text-xs text-center md:text-start font-medium text-slate-500 dark:text-slate-400">
               Includes a 14-day free Starter trial before subscription.
             </p>
           </motion.div>
@@ -254,15 +342,24 @@ export default function Hero() {
           transition={{ duration: 0.55, delay: 0.75 }}
           className="mt-8 hidden grid-cols-2 gap-4 md:grid lg:grid-cols-5"
         >
-          {liveEvents.map((event) => (
+          {liveEvents.map((event, index) => (
             <div
               key={event.title}
               className="bh-glass-card flex items-center gap-3 rounded-xl px-4 py-3"
             >
               <event.icon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <div>
+              <div className="min-w-0">
+                <div className="mb-1 hidden md:block">
+                  <SuccessStrokeBadge delay={0.95 + index * 0.34} label={event.statusLabel} />
+                </div>
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{event.title}</p>
                 <p className="text-xs text-slate-600 dark:text-slate-400">{event.detail}</p>
+                <div className="mt-1 hidden items-center gap-1.5 md:flex">
+                  <span className="max-w-[130px] truncate rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                    {event.meta}
+                  </span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">{event.time}</span>
+                </div>
               </div>
             </div>
           ))}
@@ -279,6 +376,18 @@ export default function Hero() {
                 <FiClock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                 p95 response: 182ms
               </div>
+              <div className="hidden items-center gap-2 text-xs text-slate-700 dark:text-slate-300 md:flex">
+                <FiCheckCircle className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                error rate: 0.09%
+              </div>
+            </div>
+            <div className="mt-2 hidden grid-cols-2 gap-1.5 md:grid">
+              <span className="rounded-md border border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                queue lag: 4s
+              </span>
+              <span className="rounded-md border border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                webhooks: healthy
+              </span>
             </div>
           </div>
           <div className="bh-glass-card col-span-2 rounded-xl px-4 py-3 lg:col-span-1">
@@ -286,14 +395,37 @@ export default function Hero() {
               Connected channels
             </p>
             <div className="flex flex-wrap gap-2">
-              {channels.map((channel) => (
+              {channels.map((channel) => {
+                const ChannelIcon = channel.icon;
+                return (
                 <span
-                  key={channel}
+                  key={channel.label}
                   className="inline-flex items-center rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300"
                 >
-                  {channel}
+                  <span
+                    className={`mr-1.5 inline-flex items-center justify-center bg-slate-100 dark:bg-slate-800 ${
+                      channel.wideLogo ? "h-4 rounded-md px-1.5" : "h-4 w-4 rounded-full"
+                    }`}
+                  >
+                    {ChannelIcon ? (
+                      <ChannelIcon className={`h-2.5 w-2.5 ${channel.iconClassName}`} />
+                    ) : channel.logoSrc ? (
+                      <img
+                        src={channel.logoSrc}
+                        alt={channel.logoAlt ?? `${channel.label} logo`}
+                        className={channel.wideLogo ? "h-2.5 w-auto max-w-[34px] object-contain" : "h-2.5 w-2.5 object-contain"}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className={`text-[9px] font-bold ${channel.iconClassName}`}>
+                        {channel.fallback ?? channel.label.charAt(0)}
+                      </span>
+                    )}
+                  </span>
+                  {channel.label}
                 </span>
-              ))}
+                );
+              })}
             </div>
             <div className="mt-2 inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
               <FiMail className="h-3.5 w-3.5" />

@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 type LandingButtonVariant = "primary" | "outline";
-type LandingButtonSize = "sm" | "md" | "lg";
+type LandingButtonSize = "xs" | "sm" | "md" | "lg";
 
 type LandingButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
@@ -25,6 +25,7 @@ const variants: Record<LandingButtonVariant, string> = {
     "bg-white/70 text-slate-900 border border-slate-200/80 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-800/70",
 };
 const sizes: Record<LandingButtonSize, string> = {
+  xs: "h-8 px-3 text-xs",
   sm: "h-9 px-4 text-sm",
   md: "h-10 px-5 text-sm",
   lg: "h-11 px-8 text-base",

@@ -203,7 +203,7 @@ export const BusinessSignup = () => {
 
       <div className="w-full lg:w-[58%] flex items-center justify-center p-0 md:p-6 lg:p-4">
         <div className="w-full md:max-w-[920px]">
-          <div className="bg-white/85 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-6 lg:p-6">
+          <div className="bg-white/85 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-4 md:p-6 lg:p-6">
             <div className="text-center mb-5">
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-1">Create Business Account</h1>
               <p className="text-sm sm:text-base text-gray-500">Set up your Debby business workspace</p>
@@ -216,7 +216,7 @@ export const BusinessSignup = () => {
                 </div>
               )}
 
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3.5 mb-4 space-y-3">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3 md:p-3.5 mb-4 space-y-3">
                 <h3 className="text-sm font-semibold text-blue-900">Business Profile</h3>
                 <p className="text-xs text-blue-700">These details configure your business account and billing context.</p>
 
@@ -336,7 +336,7 @@ export const BusinessSignup = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 px-3 mb-4">
                 <div>
                   <label className="label">Email Address</label>
                   <input

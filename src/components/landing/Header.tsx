@@ -52,7 +52,7 @@ export default function Header() {
     >
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="shrink-0">
-          <Logo />
+          <Logo compactOnMobile />
         </div>
 
         <nav className="hidden items-center gap-8 lg:flex">
@@ -126,10 +126,10 @@ export default function Header() {
               <div className="flex items-center gap-3 md:hidden">
                 <BookDemoButton
                   variant="outline"
-                  size="sm"
+                  size="xs"
                   className="flex-1"
                 />
-                <LandingButton to="/signup" size="sm" className="flex-1">
+                <LandingButton to="/signup" size="xs" className="flex-1">
                   Start 14-Day Trial
                 </LandingButton>
               </div>

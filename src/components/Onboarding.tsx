@@ -8,6 +8,7 @@ interface OnboardingStep {
   icon: React.ReactNode;
   highlight?: string; // CSS selector to highlight
   action?: string;
+  details?: string[];
 }
 
 const developerSteps: OnboardingStep[] = [
@@ -56,43 +57,87 @@ const developerSteps: OnboardingStep[] = [
 const businessSteps: OnboardingStep[] = [
   {
     id: "welcome",
-    title: "Welcome to DEBBY!",
-    description: "Let's take a quick tour of your Business Dashboard. This will only take a minute.",
+    title: "Welcome to Debby for Business",
+    description: "This is your commerce control tower. In a few steps, you will connect payments, automate customer communication, and launch your storefront.",
     icon: <FiCheck className="w-6 h-6" />,
+    details: [
+      "Your first 14 days are a free trial.",
+      "After trial, Billing stays open so you can pick Starter, Growth, or Scale.",
+      "Most tabs can stay visible, but locked features will prompt upgrade."
+    ]
+  },
+  {
+    id: "billing",
+    title: "Confirm Your Plan and Billing",
+    description: "Open Billing to review your plan access, limits, and transaction fee policy.",
+    icon: <FiCreditCard className="w-6 h-6" />,
+    action: "billing",
+    details: [
+      "Nigeria accounts are billed in NGN; other countries are billed in USD.",
+      "Growth and Scale use platform transaction fees; Starter stays subscription-only.",
+      "You can always upgrade from Billing."
+    ]
   },
   {
     id: "integrations",
     title: "Connect Payment Gateway",
-    description: "Connect Stripe or Paystack to start accepting payments from your customers.",
+    description: "Connect Stripe or Paystack so customers can pay at checkout and your payment data syncs into Debby.",
     icon: <FiCreditCard className="w-6 h-6" />,
     action: "integrations",
+    details: [
+      "For paid tiers, use split-capable gateway setup so platform fees are captured correctly.",
+      "If a gateway is not fully connected, checkout operations can be restricted."
+    ]
+  },
+  {
+    id: "shop",
+    title: "Set Up Your Shop",
+    description: "Create your shop details, add products, and choose your checkout mode.",
+    icon: <FiSettings className="w-6 h-6" />,
+    action: "shop",
+    details: [
+      "WhatsApp order completion is only available where your plan allows it.",
+      "You can update shop setup later from Shop and Settings."
+    ]
   },
   {
     id: "notifications",
-    title: "Set Up Notifications",
-    description: "Configure Email, SMS, or WhatsApp to send notifications to your customers.",
+    title: "Enable Customer Notifications",
+    description: "Configure Email, SMS, and WhatsApp channels so Debby can send reminders, updates, and automation messages.",
     icon: <FiBell className="w-6 h-6" />,
     action: "notifications",
+    details: [
+      "You control your own provider credentials.",
+      "Debby orchestrates delivery status, retries, and reporting in one place."
+    ]
   },
   {
     id: "customers",
     title: "Manage Customers",
-    description: "Add and organize your customers. Create contact lists for targeted messaging.",
+    description: "Keep customer profiles, contact details, and segments organized for targeted engagement.",
     icon: <FiUsers className="w-6 h-6" />,
     action: "customers",
   },
   {
-    id: "payments",
-    title: "Process Payments",
-    description: "Queue payments and track their status in real-time. Set up recurring payments for subscriptions.",
-    icon: <FiCreditCard className="w-6 h-6" />,
-    action: "payments",
+    id: "ops",
+    title: "Operate and Monitor at Scale",
+    description: "Use Ops and Intelligence to monitor workflows, run recovery actions, and spot risk early.",
+    icon: <FiBarChart2 className="w-6 h-6" />,
+    action: "intelligence",
+    details: [
+      "Track risk, alerts, and retention workflows.",
+      "Run workflow actions and audit ops health from one dashboard."
+    ]
   },
   {
     id: "done",
     title: "You're All Set!",
-    description: "You're ready to start growing your business. Check out our help center for more tips.",
+    description: "You can reopen this onboarding tour anytime from Settings.",
     icon: <FiCheck className="w-6 h-6" />,
+    details: [
+      "Next best step: complete Billing and Integrations first.",
+      "Then configure Shop + Notifications before driving traffic."
+    ]
   },
 ];
 
@@ -225,6 +270,19 @@ export const Onboarding: React.FC<OnboardingProps> = ({ role, onComplete, onNavi
           <p className="text-gray-600 mb-8 max-w-sm mx-auto">
             {step.description}
           </p>
+
+          {Array.isArray(step.details) && step.details.length > 0 && (
+            <div className="mb-8 mx-auto max-w-md rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-left">
+              <ul className="space-y-1.5 text-sm text-blue-900">
+                {step.details.map((detail, idx) => (
+                  <li key={`${step.id}-detail-${idx}`} className="flex gap-2">
+                    <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
+                    <span>{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           
           {/* Step Indicators */}
           <div className="flex justify-center gap-2 mb-8">

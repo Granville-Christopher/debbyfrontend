@@ -55,17 +55,17 @@ export const BizNav: React.FC<BizNavProps> = ({
   }, [menuOpen]);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-20 bg-white/70 backdrop-blur-2xl shadow-lg shadow-gray-200/30 h-16 flex items-center">
+    <nav className="fixed top-0 left-0 right-0 z-20 bg-white/70 backdrop-blur-2xl shadow-lg shadow-gray-200/30 h-14 sm:h-16 flex items-center">
       <div className="flex items-center justify-between w-full px-2">
-        <div className="flex items-center gap-4">
-          <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">DEBBY</span>
-          <div className="w-px h-6 bg-gradient-to-b from-transparent via-gray-300 to-transparent"></div>
-          <span className="text-gray-600 font-medium">Business Dashboard</span>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <span className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">DEBBY</span>
+          <div className="w-px h-5 sm:h-6 bg-gradient-to-b from-transparent via-gray-300 to-transparent"></div>
+          <span className="text-[11px] sm:text-base text-gray-600 font-medium">Business Dashboard</span>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white/50 rounded-lg">
-            <FiBriefcase className="w-4 h-4 text-gray-500" />
+            <FiBriefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
             <div className="flex flex-col">
               <span className="text-xs text-gray-500">Organization</span>
               <span className="text-sm font-medium text-gray-800 truncate max-w-[180px]">{orgName || "-"}</span>
@@ -85,7 +85,7 @@ export const BizNav: React.FC<BizNavProps> = ({
                 {avatarLabel}
               </span>
               <span className="hidden sm:block text-xs font-medium text-gray-700">Account</span>
-              <FiChevronDown className={`h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+              <FiChevronDown className={`h-3 w-3 sm:h-4 sm:w-4 text-gray-500 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
             </button>
 
             {menuOpen && (
@@ -108,7 +108,7 @@ export const BizNav: React.FC<BizNavProps> = ({
                   }}
                   className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
                 >
-                  <FiSettings className="h-4 w-4" />
+                  <FiSettings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   Account Settings
                 </button>
                 <button
@@ -119,7 +119,7 @@ export const BizNav: React.FC<BizNavProps> = ({
                   }}
                   className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition"
                 >
-                  <FiShield className="h-4 w-4" />
+                  <FiShield className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   Sign out all sessions
                 </button>
                 <button
@@ -130,7 +130,7 @@ export const BizNav: React.FC<BizNavProps> = ({
                   }}
                   className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition"
                 >
-                  <FiLogOut className="h-4 w-4" />
+                  <FiLogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   Logout
                 </button>
               </div>
@@ -140,10 +140,10 @@ export const BizNav: React.FC<BizNavProps> = ({
           <button
             type="button"
             onClick={onMobileMenuToggle}
-            className="md:hidden p-2 rounded-lg bg-white/70 border border-gray-200 text-gray-700 hover:bg-white"
+            className="md:hidden p-1.5 sm:p-2 rounded-lg bg-white/70 border border-gray-200 text-gray-700 hover:bg-white"
             aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
           >
-            {isMobileMenuOpen ? <FiX className="w-5 h-5" /> : <FiMenu className="w-5 h-5" />}
+            {isMobileMenuOpen ? <FiX className="h-4 w-4 sm:h-5 sm:w-5" /> : <FiMenu className="h-4 w-4 sm:h-5 sm:w-5" />}
           </button>
         </div>
       </div>

@@ -25,7 +25,7 @@ function MetricCard({
   delay: number;
 }) {
   const normalized = type === "decimal" ? Math.round(value * 10) : value;
-  const { count, ref } = useCountUp(normalized, 2100);
+  const { count, ref } = useCountUp<HTMLParagraphElement>(normalized, 2100);
 
   let display = "";
   if (type === "million") display = `${prefix}${(count / 1_000_000).toFixed(1)}M${suffix}`;

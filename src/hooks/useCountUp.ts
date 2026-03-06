@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useCountUp(end: number, duration = 2000, startOnView = true) {
+export function useCountUp<TElement extends HTMLElement = HTMLElement>(
+  end: number,
+  duration = 2000,
+  startOnView = true
+) {
   const [count, setCount] = useState(0);
   const [started, setStarted] = useState(!startOnView);
-  const ref = useRef<HTMLElement | null>(null);
+  const ref = useRef<TElement | null>(null);
 
   useEffect(() => {
     if (!startOnView) {
@@ -57,4 +61,3 @@ export function useCountUp(end: number, duration = 2000, startOnView = true) {
 
   return { count, ref };
 }
-

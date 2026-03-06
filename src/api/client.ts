@@ -1,4 +1,5 @@
-export const API_BASE_URL = "https://debby-backend-production.up.railway.app";
+const ENV_API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+export const API_BASE_URL = (ENV_API_BASE_URL || "https://debby-backend-production.up.railway.app").replace(/\/+$/, "");
 const API_BASE = API_BASE_URL;
 console.log("API_BASE URL:", API_BASE); // Debug log
 

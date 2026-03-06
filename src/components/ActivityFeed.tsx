@@ -149,7 +149,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     <div className={`bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl shadow-gray-200/50 ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/50">
-        <h3 className="font-semibold text-gray-900">Activity Feed</h3>
+        <h3 className="font-semibold text-gray-900 text-base md:text-base">Activity Feed</h3>
         <button
           onClick={() => fetchActivities(false)}
           disabled={isRefreshing}
@@ -186,7 +186,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-gray-900 truncate">
+                  <span className="font-medium text-base text-gray-900 truncate">
                     {activity.type === "payment" 
                       ? `${activity.amount} ${activity.currency}` 
                       : activity.channel?.toUpperCase()}

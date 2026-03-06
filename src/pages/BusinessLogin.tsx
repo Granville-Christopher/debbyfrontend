@@ -115,7 +115,7 @@ export const BusinessLogin = () => {
         </div>
       </div>
 
-      <div className="w-full lg:w-[56%] flex items-center justify-center p-0 md:p-6 lg:p-10">
+      <div className="w-full lg:w-[56%] flex items-center justify-center p-2 md:p-6 lg:p-10">
         <div className="w-full md:max-w-md">
           <div className="bg-white/85 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-gray-300/40 p-8 lg:p-10">
             <div className="text-center mb-8">
