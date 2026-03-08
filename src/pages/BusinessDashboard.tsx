@@ -16188,7 +16188,7 @@ export const BusinessDashboard = () => {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-500">No call data available yet.</p>
+                  <p className="text-sm text-gray-500">No call data available yet.</p>
                 )}
               </div>
 
@@ -16237,7 +16237,7 @@ export const BusinessDashboard = () => {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-gray-500">
+                  <p className="text-sm text-gray-500">
                     No high-risk customers identified.
                   </p>
                 )}
@@ -16289,7 +16289,7 @@ export const BusinessDashboard = () => {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-500">
+                  <p className="text-sm text-gray-500">
                     No payment link analytics available yet.
                   </p>
                 )}
@@ -16319,7 +16319,7 @@ export const BusinessDashboard = () => {
                   </button>
                 </div>
                 {revenueForecasts.length === 0 ? (
-                  <p className="text-gray-500">
+                  <p className="text-sm text-gray-500">
                     No forecasts generated yet. Click "Generate Forecast" to
                     create one.
                   </p>
@@ -16400,13 +16400,13 @@ export const BusinessDashboard = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  className={`btn btn-sm ${intelligenceSection === "cashflow" ? "btn-primary" : "btn-secondary"}`}
+                  className={`btn btn-sm max-md:h-8 max-md:px-2.5 max-md:text-[11px] ${intelligenceSection === "cashflow" ? "btn-primary" : "btn-secondary"}`}
                   onClick={() => setIntelligenceSection("cashflow")}
                 >
                   Cash Flow
                 </button>
                 <button
-                  className={`btn btn-sm ${intelligenceSection === "customers" ? "btn-primary" : "btn-secondary"}`}
+                  className={`btn btn-sm max-md:h-8 max-md:px-2.5 max-md:text-[11px] ${intelligenceSection === "customers" ? "btn-primary" : "btn-secondary"}`}
                   onClick={() => setIntelligenceSection("customers")}
                 >
                   Customers
@@ -16419,8 +16419,8 @@ export const BusinessDashboard = () => {
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="card">
-                          <p className="text-sm text-gray-500">Runway (days)</p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-xs sm:text-sm text-gray-500">Runway (days)</p>
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {intelligenceOverview?.cashFlow?.runwayDays ?? 0}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
@@ -16428,10 +16428,10 @@ export const BusinessDashboard = () => {
                           </p>
                         </div>
                         <div className="card">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-500">
                             High Payment Risk Customers
                           </p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {intelligenceOverview?.cashFlow?.paymentRisk
                               ?.highRiskCount ?? 0}
                           </p>
@@ -16440,10 +16440,10 @@ export const BusinessDashboard = () => {
                           </p>
                         </div>
                         <div className="card">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-500">
                             30/60/90 Forecasts
                           </p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {
                               (intelligenceOverview?.cashFlow?.forecasts || [])
                                 .length
@@ -16457,12 +16457,12 @@ export const BusinessDashboard = () => {
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
                         <div className="card">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                             Recent Cash Gap Alerts
                           </h3>
                           {(intelligenceOverview?.cashFlow?.alerts || [])
                             .length === 0 ? (
-                            <p className="text-gray-500">No alerts available</p>
+                            <p className="text-sm text-gray-500">No alerts available</p>
                           ) : (
                             <div className="space-y-2 max-h-72 overflow-y-auto">
                               {intelligenceOverview.cashFlow.alerts.map(
@@ -16487,12 +16487,12 @@ export const BusinessDashboard = () => {
                         </div>
 
                         <div className="card">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                             Smart Reminders
                           </h3>
                           {(intelligenceOverview?.cashFlow?.reminders || [])
                             .length === 0 ? (
-                            <p className="text-gray-500">
+                            <p className="text-sm text-gray-500">
                               No smart reminders scheduled
                             </p>
                           ) : (
@@ -16527,10 +16527,10 @@ export const BusinessDashboard = () => {
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="card">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-500">
                             High Churn Risk
                           </p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {intelligenceOverview?.customers?.churn
                               ?.highRiskCount ?? 0}
                           </p>
@@ -16539,10 +16539,10 @@ export const BusinessDashboard = () => {
                           </p>
                         </div>
                         <div className="card">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-500">
                             Negative Sentiment
                           </p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {intelligenceOverview?.customers?.sentiment
                               ?.negative ?? 0}
                           </p>
@@ -16551,10 +16551,10 @@ export const BusinessDashboard = () => {
                           </p>
                         </div>
                         <div className="card">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-500">
                             Retention Workflows
                           </p>
-                          <p className="text-2xl font-bold text-gray-900">
+                          <p className="text-lg sm:text-2xl font-bold text-gray-900">
                             {
                               (
                                 (Array.isArray(
@@ -16574,7 +16574,7 @@ export const BusinessDashboard = () => {
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
                         <div className="card">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                             Actionable Customer Queue
                           </h3>
                           {(
@@ -16586,7 +16586,7 @@ export const BusinessDashboard = () => {
                               ? intelligenceActionableCustomers.riskLeaderboard
                               : intelligenceRiskLeaderboard) || []
                           ).length === 0 ? (
-                            <p className="text-gray-500">
+                            <p className="text-sm text-gray-500">
                               No actionable customers found.
                             </p>
                           ) : (
@@ -16639,12 +16639,12 @@ export const BusinessDashboard = () => {
 
                         <div className="card">
                           <div className="flex items-center justify-between gap-2 mb-3">
-                            <h3 className="text-lg font-semibold text-gray-900">
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                               Retention Workflows
                             </h3>
                             <div className="flex items-center gap-2">
                               <input
-                                className="input input-sm w-44"
+                                className="input input-sm w-44 max-md:h-8 max-md:px-2 max-md:text-[11px]"
                                 placeholder="New workflow name"
                                 value={newRetentionWorkflowName}
                                 onChange={(e) =>
@@ -16666,9 +16666,9 @@ export const BusinessDashboard = () => {
                             ? intelligenceRetentionWorkflows
                             : []
                           ).length === 0 ? (
-                            <p className="text-gray-500">
-                              No retention workflows configured.
-                            </p>
+                                <p className="text-sm text-gray-500">
+                                  No retention workflows configured.
+                                </p>
                           ) : (
                             <div className="space-y-2 max-h-72 overflow-y-auto">
                               {intelligenceRetentionWorkflows
@@ -16717,7 +16717,7 @@ export const BusinessDashboard = () => {
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
                         <div className="card">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                             Customer Risk Alerts
                           </h3>
                           {(
@@ -16730,7 +16730,7 @@ export const BusinessDashboard = () => {
                               : intelligenceOverview?.customers?.riskAlerts) ||
                             []
                           ).length === 0 ? (
-                            <p className="text-gray-500">
+                            <p className="text-sm text-gray-500">
                               No customer risk alerts available
                             </p>
                           ) : (
@@ -16762,7 +16762,7 @@ export const BusinessDashboard = () => {
                         </div>
 
                         <div className="card">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                             Risk Leaderboard
                           </h3>
                           {(
@@ -16772,12 +16772,12 @@ export const BusinessDashboard = () => {
                               : intelligenceOverview?.customers
                                   ?.riskLeaderboard) || []
                           ).length === 0 ? (
-                            <p className="text-gray-500">
+                            <p className="text-sm text-gray-500">
                               No leaderboard data available
                             </p>
                           ) : (
                             <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-72 pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
-                              <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                              <table className="table w-full min-w-[900px] table-auto text-[10px] sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[9px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-[10px] [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
                                 <thead>
                                   <tr>
                                     <th>Customer</th>
@@ -16835,7 +16835,7 @@ export const BusinessDashboard = () => {
                 </>
               ) : (
                 <div className="card">
-                  <p className="text-gray-600">
+                  <p className="text-sm text-gray-600">
                     Intelligence data is not available yet. Ensure the
                     intelligence migration is applied and data exists.
                   </p>
@@ -16843,14 +16843,14 @@ export const BusinessDashboard = () => {
               )}
 
               <div className="card">
-                <h3 className="text-lg font-semibold mb-3 text-gray-900">
+                <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">
                   Intelligence Jobs
                 </h3>
                 {intelligenceJobs.length === 0 ? (
-                  <p className="text-gray-500">No queued jobs</p>
+                  <p className="text-sm text-gray-500">No queued jobs</p>
                 ) : (
                   <div className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px] pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
-                    <table className="table w-full min-w-[900px] table-auto text-xs sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[10px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
+                    <table className="table w-full min-w-[900px] table-auto text-[10px] sm:text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-2 [&_th]:text-[9px] [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-2 [&_td]:text-[10px] [&_td]:whitespace-nowrap sm:[&_th]:px-5 sm:[&_th]:py-4 sm:[&_th]:text-xs sm:[&_td]:px-5 sm:[&_td]:py-4 sm:[&_td]:text-sm">
                       <thead>
                         <tr>
                           <th className="text-gray-700">Job Type</th>

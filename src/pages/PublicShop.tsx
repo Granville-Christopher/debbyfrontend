@@ -2387,19 +2387,20 @@ export const PublicShop = () => {
           )}
         </div>
 
+        <div className="lg:mx-auto lg:w-full lg:max-w-6xl">
         <div className="bg-white rounded-2xl border shadow-sm p-2 sm:p-4 md:p-5 space-y-2 sm:space-y-3 md:space-y-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_220px] gap-2 sm:gap-3">
             <div className="relative">
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none text-slate-400 w-4 h-4" />
               <input
-                className="input pl-10 text-[11px] sm:text-sm h-9 sm:h-10"
+                className="input pl-10 text-[11px] sm:text-sm h-9 sm:h-10 !py-0 leading-none"
                 placeholder="Search products..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <button
-              className={`sm:hidden h-9 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center gap-1.5 ${
+              className={`sm:hidden h-9 px-2.5 rounded-lg border text-[11px] font-semibold leading-none flex items-center justify-center gap-1.5 ${
                 showMobileFilters
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-700"
@@ -2411,7 +2412,7 @@ export const PublicShop = () => {
               Filters
             </button>
             <select
-              className="hidden sm:block input text-[11px] sm:text-sm h-9 sm:h-10"
+              className="hidden sm:block input text-[11px] sm:text-sm h-9 sm:h-10 !py-0 leading-none"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as "featured" | "price-asc" | "price-desc" | "name")}
               aria-label="Sort products"
@@ -2425,7 +2426,7 @@ export const PublicShop = () => {
 
           <div className={`${showMobileFilters ? "grid" : "hidden"} sm:hidden grid-cols-2 gap-2`}>
             <select
-              className="input text-[11px] h-9"
+              className="input text-[11px] h-9 !py-0 leading-none"
               value={activeCategoryId}
               onChange={(e) => setActiveCategoryId(e.target.value)}
               aria-label="Filter by category"
@@ -2438,7 +2439,7 @@ export const PublicShop = () => {
               ))}
             </select>
             <select
-              className="input text-[11px] h-9"
+              className="input text-[11px] h-9 !py-0 leading-none"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as "featured" | "price-asc" | "price-desc" | "name")}
               aria-label="Sort products"
@@ -2453,7 +2454,7 @@ export const PublicShop = () => {
           <div className="hidden sm:block overflow-x-auto pb-1">
             <div className="inline-flex min-w-full gap-2">
               <button
-                className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold border transition-all whitespace-nowrap ${
+                className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold leading-none border transition-all whitespace-nowrap ${
                   activeCategoryId === "all"
                     ? "bg-slate-900 text-white border-slate-900"
                     : "bg-white text-slate-700 border-slate-200 hover:border-slate-400"
@@ -2466,7 +2467,7 @@ export const PublicShop = () => {
               {shop.categories.map((category) => (
                 <button
                   key={category.id}
-                  className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold border transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs md:text-sm font-semibold leading-none border transition-all whitespace-nowrap ${
                     activeCategoryId === category.id
                       ? storefrontThemeColor
                         ? "text-white border-transparent"
@@ -2486,19 +2487,17 @@ export const PublicShop = () => {
               ))}
             </div>
           </div>
-        </div>
-
         {recommendedDisplayProducts.length > 0 && (
-          <div className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 md:p-5">
+          <div className="pt-3 sm:pt-4 md:pt-5 border-t border-slate-200">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-sm sm:text-base font-bold text-slate-900">Recommended For You</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="text-xs sm:text-sm md:text-base font-bold text-slate-900">Recommended For You</h3>
+                <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">
                   Top picks based on what shoppers buy most.
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5">
+            <div className="grid grid-cols-4 items-stretch gap-1.5 sm:gap-2.5">
               {recommendedDisplayProducts.map((product) => {
                 const coverImage =
                   (product.metadata?.imageUrls || []).find((url) => !!url) || product.imageUrl || null;
@@ -2506,7 +2505,7 @@ export const PublicShop = () => {
                   <button
                     key={`recommended-${product.id}`}
                     type="button"
-                    className="text-left border rounded-lg overflow-hidden hover:border-slate-400 transition-colors bg-white"
+                    className="h-full text-left border rounded-lg overflow-hidden hover:border-slate-400 transition-colors bg-white flex flex-col"
                     onClick={() =>
                       openProductDetails({
                         id: product.id,
@@ -2529,20 +2528,20 @@ export const PublicShop = () => {
                           <img
                             src={coverImage}
                             alt={product.name}
-                            className="w-full h-full object-contain p-1 rounded-md"
+                            className="w-full h-full object-cover"
                           />
                         </div>
                       ) : (
-                        <div className="w-full h-16 sm:h-20 bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 rounded-md border border-slate-200 overflow-hidden">
+                        <div className="w-full h-16 sm:h-20 bg-slate-100 flex items-center justify-center text-[9px] sm:text-[10px] text-slate-500 rounded-md border border-slate-200 overflow-hidden">
                           No image
                         </div>
                       )}
                     </div>
-                    <div className="px-1.5 py-1.5 sm:px-2 sm:py-2">
-                      <p className="text-[10px] sm:text-xs font-semibold text-slate-900 line-clamp-2">
+                    <div className="px-1.5 py-1.5 sm:px-2 sm:py-2 flex min-h-[3.2rem] sm:min-h-[3.6rem] flex-col justify-between">
+                      <p className="text-[9px] sm:text-xs font-semibold text-slate-900 line-clamp-2 min-h-[1.9rem]">
                         {product.name}
                       </p>
-                      <p className="text-[10px] sm:text-xs text-slate-600 mt-0.5">
+                      <p className="text-[9px] sm:text-xs text-slate-600 mt-0.5">
                         {formatPrice(product.price, product.currency)}
                       </p>
                     </div>
@@ -2552,6 +2551,7 @@ export const PublicShop = () => {
             </div>
           </div>
         )}
+        </div>
 
         <div className="flex items-center justify-between">
           <div>
@@ -2594,7 +2594,7 @@ export const PublicShop = () => {
                           <img
                             src={coverImage}
                             alt={product.name}
-                            className="w-full h-full object-contain p-1 rounded-xl"
+                            className="w-full h-full object-cover"
                           />
                         </div>
                       ) : (
@@ -2648,6 +2648,7 @@ export const PublicShop = () => {
             })}
           </div>
         )}
+        </div>
       </div>
 
       {storefrontThemeColor && (

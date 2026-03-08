@@ -45,6 +45,8 @@ type HomepageShopPayload = {
     id: string;
     name: string;
     slug: string;
+    productCount?: number;
+    productImages?: string[];
   }>;
   products: Array<{
     id: string;
@@ -53,10 +55,10 @@ type HomepageShopPayload = {
     price: number;
     currency: string;
     imageUrl?: string | null;
+    categoryId?: string | null;
   }>;
 };
 
-const FALLBACK_COLLECTIONS = ["Men's Collection", "Women's Collection", "Unisex Collection"];
 const HOMEPAGE_TEMPLATES: HomepageTemplate[] = [
   "general",
   "fashion",
@@ -237,6 +239,25 @@ const mapLegacyShopResponseToHomepage = (
       : {};
   const categories = Array.isArray(shop.categories) ? shop.categories : [];
   const products = Array.isArray(shop.products) ? shop.products : [];
+  const productImagesByCategory = new Map<string, string[]>();
+  const productCountByCategory = new Map<string, number>();
+  for (const product of products) {
+    const categoryId = String((product as any)?.categoryId || "").trim();
+    if (!categoryId) continue;
+    productCountByCategory.set(categoryId, (productCountByCategory.get(categoryId) || 0) + 1);
+    const metadata =
+      (product as any)?.metadata && typeof (product as any).metadata === "object"
+        ? ((product as any).metadata as Record<string, unknown>)
+        : {};
+    const metadataImages = Array.isArray(metadata.imageUrls)
+      ? metadata.imageUrls.map((entry) => String(entry || "").trim()).filter(Boolean)
+      : [];
+    const imageCandidates = [String((product as any)?.imageUrl || "").trim(), ...metadataImages].filter(Boolean);
+    if (imageCandidates.length === 0) continue;
+    const existing = productImagesByCategory.get(categoryId) || [];
+    existing.push(...imageCandidates);
+    productImagesByCategory.set(categoryId, existing);
+  }
 
   return {
     shop: {
@@ -271,16 +292,29 @@ const mapLegacyShopResponseToHomepage = (
     categories: categories.map((entry: any) => ({
       id: String(entry.id || ""),
       name: String(entry.name || "Collection"),
-      slug: String(entry.slug || "")
-    })),
-    products: products.map((entry: any) => ({
-      id: String(entry.id || ""),
-      name: String(entry.name || "Product"),
       slug: String(entry.slug || ""),
-      price: Number(entry.price || 0),
-      currency: String(entry.currency || "USD"),
-      imageUrl: String(entry.imageUrl || "") || null
-    }))
+      productCount: Number(productCountByCategory.get(String(entry.id || "").trim()) || 0),
+      productImages: productImagesByCategory.get(String(entry.id || "").trim()) || []
+    })),
+    products: products.map((entry: any) => {
+      const metadata =
+        entry?.metadata && typeof entry.metadata === "object"
+          ? (entry.metadata as Record<string, unknown>)
+          : {};
+      const metadataImages = Array.isArray(metadata.imageUrls)
+        ? metadata.imageUrls.map((url) => String(url || "").trim()).filter(Boolean)
+        : [];
+      const imageCandidates = [String(entry.imageUrl || "").trim(), ...metadataImages].filter(Boolean);
+      return {
+        id: String(entry.id || ""),
+        name: String(entry.name || "Product"),
+        slug: String(entry.slug || ""),
+        price: Number(entry.price || 0),
+        currency: String(entry.currency || "USD"),
+        imageUrl: imageCandidates[0] || null,
+        categoryId: String(entry.categoryId || "") || null
+      };
+    })
   };
 };
 
@@ -437,16 +471,45 @@ export const PublicShopEntry = () => {
   }, [heroCollapseOffset]);
 
   const collectionShowcase = useMemo(() => {
-    const names = payload?.categories?.length
-      ? payload.categories.slice(0, 3).map((entry) => entry.name)
-      : FALLBACK_COLLECTIONS;
-    const filled = [...names];
-    while (filled.length < 3) {
-      filled.push(FALLBACK_COLLECTIONS[filled.length] || `Collection ${filled.length + 1}`);
+    const productsByCategory = new Map<string, Array<{ imageUrl?: string | null }>>();
+    for (const product of payload?.products || []) {
+      const categoryId = String(product?.categoryId || "").trim();
+      if (!categoryId) continue;
+      const existing = productsByCategory.get(categoryId) || [];
+      existing.push(product);
+      productsByCategory.set(categoryId, existing);
     }
-    return filled.slice(0, 3).map((name, index) => {
-      const image = heroImages[index % Math.max(heroImages.length, 1)] || "";
-      const keyword = String(name || "Collection").trim();
+
+    const eligibleCategories = (payload?.categories || []).filter((category) => {
+      const categoryId = String(category?.id || "").trim();
+      const categoryProductCount = Number(category?.productCount || 0);
+      return categoryId && (categoryProductCount > 0 || (productsByCategory.get(categoryId)?.length || 0) > 0);
+    });
+
+    const shuffled = [...eligibleCategories];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    return shuffled.slice(0, 3).map((item, index) => {
+      const categoryProducts = productsByCategory.get(String(item.id || "").trim()) || [];
+      const categoryImagePool = Array.isArray(item.productImages)
+        ? item.productImages.filter((url) => String(url || "").trim())
+        : [];
+      const productsWithImage = categoryProducts.filter((entry) => String(entry.imageUrl || "").trim());
+      const imagePool = productsWithImage.length > 0 ? productsWithImage : categoryProducts;
+      const chosenProduct =
+        imagePool.length > 0
+          ? imagePool[Math.floor(Math.random() * imagePool.length)]
+          : null;
+      const image =
+        (categoryImagePool.length > 0
+          ? categoryImagePool[Math.floor(Math.random() * categoryImagePool.length)]
+          : String(chosenProduct?.imageUrl || "").trim()) ||
+        heroImages[index % Math.max(heroImages.length, 1)] ||
+        "";
+      const keyword = String(item.name || "Collection").trim();
       const description =
         index === 0
           ? `Explore top picks in ${keyword.toLowerCase()} with curated essentials and best sellers.`
@@ -459,9 +522,12 @@ export const PublicShopEntry = () => {
           : index === 1
           ? ["Trending now", "Limited drops", "Fast shipping"]
           : ["Everyday essentials", "Top rated", "Easy returns"];
-      return { name: keyword, description, image, highlights };
+      const href = item.id
+        ? `${collectionsPath}?category=${encodeURIComponent(item.id)}`
+        : collectionsPath;
+      return { name: keyword, description, image, highlights, href };
     });
-  }, [heroImages, payload?.categories]);
+  }, [collectionsPath, heroImages, payload?.categories, payload?.products]);
 
   const testimonials = useMemo(() => {
     const shopName = payload?.shop?.name || "This store";
@@ -740,7 +806,7 @@ export const PublicShopEntry = () => {
       </div>
 
       <section className="relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 pt-14 pb-8 md:py-12 space-y-8">
-        {collectionShowcase.map((block, index) => {
+        {collectionShowcase.length > 0 ? collectionShowcase.map((block, index) => {
           const revealFrom: RevealFrom = index % 2 === 1 ? "right" : "left";
           const revealKey = `${block.name}-${index}`;
           if (theme.collectionLayout === "fashion") {
@@ -757,7 +823,7 @@ export const PublicShopEntry = () => {
                   <p className="text-xs font-semibold uppercase tracking-wide m-0">Editorial Drop</p>
                   <h2 className="text-2xl md:text-3xl font-bold tracking-tight m-0">{block.name}</h2>
                   <p className="text-sm text-white/90 m-0">{block.description}</p>
-                  <Link to={collectionsPath} className="inline-flex items-center gap-2 text-sm font-semibold text-white">
+                  <Link to={block.href} className="inline-flex items-center gap-2 text-sm font-semibold text-white">
                     Browse {block.name}
                     <FiArrowRight className="h-4 w-4" />
                   </Link>
@@ -788,7 +854,7 @@ export const PublicShopEntry = () => {
                       </span>
                     ))}
                   </div>
-                  <Link to={collectionsPath} className="inline-flex items-center gap-2 text-sm font-semibold text-pink-800">
+                  <Link to={block.href} className="inline-flex items-center gap-2 text-sm font-semibold text-pink-800">
                     Browse {block.name}
                     <FiArrowRight className="h-4 w-4" />
                   </Link>
@@ -825,7 +891,7 @@ export const PublicShopEntry = () => {
                         </li>
                       ))}
                     </ul>
-                    <Link to={collectionsPath} className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-200">
+                    <Link to={block.href} className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-200">
                       Browse {block.name}
                       <FiArrowRight className="h-4 w-4" />
                     </Link>
@@ -851,7 +917,7 @@ export const PublicShopEntry = () => {
                   <div className="space-y-2">
                     <h2 className="text-xl md:text-2xl font-semibold tracking-tight m-0">{block.name}</h2>
                     <p className="text-sm text-slate-600 m-0">{block.description}</p>
-                    <Link to={collectionsPath} className="inline-flex items-center gap-2 text-sm font-semibold">
+                    <Link to={block.href} className="inline-flex items-center gap-2 text-sm font-semibold">
                       Browse {block.name}
                       <FiArrowRight className="h-4 w-4" />
                     </Link>
@@ -881,7 +947,7 @@ export const PublicShopEntry = () => {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 m-0">Browse</p>
                   <h2 className="text-2xl md:text-3xl font-bold tracking-tight m-0">{block.name}</h2>
                   <p className="text-sm md:text-base text-slate-600 m-0">{block.description}</p>
-                  <Link to={collectionsPath} className="inline-flex items-center gap-2 text-sm font-semibold hover:text-blue-700">
+                  <Link to={block.href} className="inline-flex items-center gap-2 text-sm font-semibold hover:text-blue-700">
                     Browse {block.name}
                     <FiArrowRight className="h-4 w-4" />
                   </Link>
@@ -889,7 +955,20 @@ export const PublicShopEntry = () => {
               </div>
             </ScrollReveal>
           );
-        })}
+        }) : (
+          <ScrollReveal from="up">
+            <div className={`${theme.sectionCardClass} p-4 md:p-5`}>
+              <h3 className={`text-base md:text-lg font-semibold m-0 ${infoHeadingClass}`}>Collection Preview Unavailable</h3>
+              <p className={`mt-2 text-sm m-0 ${infoBodyClass}`}>
+                Add products to categories (with at least one product image) to show category browse cards here.
+              </p>
+              <Link to={collectionsPath} className={`mt-3 ${ctaButtonClass}`}>
+                Browse Collections
+                <FiArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </ScrollReveal>
+        )}
 
         <ScrollReveal from="up">
           <div className={`p-4 md:p-5 ${theme.sectionCardClass}`}>
@@ -1073,4 +1152,3 @@ export const PublicShopEntry = () => {
     </div>
   );
 };
-
