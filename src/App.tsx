@@ -43,6 +43,9 @@ const OAuthCallback = lazy(() =>
 const PublicShop = lazy(() =>
   import("./pages/PublicShop").then((module) => ({ default: module.PublicShop }))
 );
+const PublicShopEntry = lazy(() =>
+  import("./pages/PublicShopEntry").then((module) => ({ default: module.PublicShopEntry }))
+);
 const PitchDeck = lazy(() =>
   import("./pages/PitchDeck").then((module) => ({ default: module.PitchDeck }))
 );
@@ -111,7 +114,8 @@ export const App = () => {
         <Route path="/solutions" element={<Solutions />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/pitch-deck" element={<PitchDeck />} />
-        <Route path="/shop/:slug" element={<PublicShop />} />
+        <Route path="/shop/:slug/collections" element={<PublicShop />} />
+        <Route path="/shop/:slug" element={<PublicShopEntry />} />
         <Route path="/api/oauth/:provider/callback" element={<OAuthCallback />} />
         <Route
           path="/developer/*"

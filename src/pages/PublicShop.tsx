@@ -2186,25 +2186,25 @@ export const PublicShop = () => {
                 </div>
               </div>
 
-              <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 md:bottom-8 md:right-8 max-w-full overflow-x-auto">
+              <div className="absolute bottom-3 right-3 sm:bottom-5 sm:right-5 md:bottom-8 md:right-8 max-w-full overflow-x-auto">
                 <div className="flex flex-nowrap items-center justify-end gap-2 pb-1">
-                  <div className="rounded-lg bg-white/95 backdrop-blur px-2.5 py-2 border border-white/70 min-w-[82px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-500">Products</p>
-                    <p className="text-sm sm:text-base font-bold text-slate-900">{shop.products.length}</p>
+                  <div className="rounded-md bg-white/95 backdrop-blur px-2 py-1.5 border border-white/70 min-w-[70px] sm:min-w-[78px]">
+                    <p className="text-[8px] sm:text-[9px] uppercase tracking-wide text-slate-500">Products</p>
+                    <p className="text-xs sm:text-sm font-bold text-slate-900">{shop.products.length}</p>
                   </div>
-                  <div className="rounded-lg bg-white/95 backdrop-blur px-2.5 py-2 border border-white/70 min-w-[82px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-500">Categories</p>
-                    <p className="text-sm sm:text-base font-bold text-slate-900">{shop.categories.length}</p>
+                  <div className="rounded-md bg-white/95 backdrop-blur px-2 py-1.5 border border-white/70 min-w-[70px] sm:min-w-[78px]">
+                    <p className="text-[8px] sm:text-[9px] uppercase tracking-wide text-slate-500">Categories</p>
+                    <p className="text-xs sm:text-sm font-bold text-slate-900">{shop.categories.length}</p>
                   </div>
-                  <div className="rounded-lg bg-white/95 backdrop-blur px-2.5 py-2 border border-white/70 min-w-[82px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-500">In Stock</p>
-                    <p className="text-sm sm:text-base font-bold text-slate-900">
+                  <div className="rounded-md bg-white/95 backdrop-blur px-2 py-1.5 border border-white/70 min-w-[70px] sm:min-w-[78px]">
+                    <p className="text-[8px] sm:text-[9px] uppercase tracking-wide text-slate-500">In Stock</p>
+                    <p className="text-xs sm:text-sm font-bold text-slate-900">
                       {shop.products.filter((product) => product.inventory > 0).length}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-white/95 backdrop-blur px-2.5 py-2 border border-white/70 min-w-[82px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-500">Status</p>
-                    <p className="text-sm sm:text-base font-bold text-emerald-600">Open</p>
+                  <div className="rounded-md bg-white/95 backdrop-blur px-2 py-1.5 border border-white/70 min-w-[70px] sm:min-w-[78px]">
+                    <p className="text-[8px] sm:text-[9px] uppercase tracking-wide text-slate-500">Status</p>
+                    <p className="text-xs sm:text-sm font-bold text-emerald-600">Open</p>
                   </div>
                 </div>
               </div>

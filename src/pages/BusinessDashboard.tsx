@@ -70,7 +70,8 @@ import {
   FiAlertCircle,
   FiX,
   FiSearch,
-  FiEye
+  FiEye,
+  FiArrowRight
 } from "react-icons/fi";
 import { FaDollarSign, FaRegCreditCard, FaRegBell, FaLink, FaChartBar, FaExclamationCircle } from "react-icons/fa";
 
@@ -467,6 +468,23 @@ type ShopGrowthSettings = {
   defaultTrafficSource: "meta_ads" | "google_ads";
 };
 
+type ShopHomepageSectionKey =
+  | "hero"
+  | "featured_collections"
+  | "featured_products"
+  | "reviews"
+  | "cta";
+
+type ShopHomepageConfig = {
+  enabled: boolean;
+  template: "fashion" | "beauty" | "electronics" | "general" | "minimal";
+  headline: string;
+  subheadline: string;
+  primaryCtaLabel: string;
+  secondaryCtaLabel: string;
+  sectionsOrder: ShopHomepageSectionKey[];
+};
+
 type ShopGrowthInsights = {
   metrics: {
     pageViews: number;
@@ -630,7 +648,7 @@ type ShopReviewSummary = {
   } | null;
 };
 
-type ShopSectionTab = "shop" | "upload" | "products" | "orders";
+type ShopSectionTab = "shop" | "homepage" | "upload" | "products" | "orders";
 
 type SegmentRuleOperator =
   | "equals"
@@ -1018,6 +1036,34 @@ const createProductFormForShopType = (shopType?: string | null): ShopProductForm
   };
 };
 
+const DEFAULT_SHOP_THEME_COLOR = "#4f46e5";
+const SHOP_THEME_COLOR_PRESETS = [
+  { label: "Indigo", value: "#4f46e5" },
+  { label: "Cyan", value: "#06b6d4" },
+  { label: "Emerald", value: "#059669" },
+  { label: "Blue", value: "#2563eb" },
+  { label: "Rose", value: "#e11d48" },
+  { label: "Amber", value: "#d97706" },
+  { label: "Violet", value: "#7c3aed" },
+  { label: "Slate", value: "#334155" }
+] as const;
+
+const normalizeHexColor = (value: string, fallback = DEFAULT_SHOP_THEME_COLOR): string => {
+  const normalized = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toLowerCase() : fallback;
+};
+
+const sanitizeHexColorInput = (value: string): string => {
+  const cleaned = String(value || "")
+    .replace(/[^#0-9a-fA-F]/g, "")
+    .slice(0, 7);
+  if (!cleaned) return "#";
+  if (!cleaned.startsWith("#")) {
+    return `#${cleaned.slice(0, 6)}`;
+  }
+  return cleaned;
+};
+
 const createEmptyShopForm = (shopType: ShopType = "other") => ({
   name: "",
   slug: "",
@@ -1027,7 +1073,7 @@ const createEmptyShopForm = (shopType: ShopType = "other") => ({
   bannerUrl: "",
   heroImageUrls: ["", "", "", ""],
   heroVideoUrl: "",
-  themeColor: "#4f46e5",
+  themeColor: DEFAULT_SHOP_THEME_COLOR,
   titleFont: "",
   businessType: shopType,
   businessMode: "own" as ShopBusinessMode,
@@ -1063,6 +1109,55 @@ const createDefaultShopGrowthSettings = (): ShopGrowthSettings => ({
   allowCatalogSync: true,
   defaultTrafficSource: "meta_ads"
 });
+
+const createDefaultShopHomepageConfig = (): ShopHomepageConfig => ({
+  enabled: false,
+  template: "general",
+  headline: "Run your store from one command center.",
+  subheadline:
+    "Debby helps you manage products, customers, billing, and automations in one place.",
+  primaryCtaLabel: "Start Shopping",
+  secondaryCtaLabel: "View Collections",
+  sectionsOrder: ["hero", "featured_collections", "featured_products", "reviews", "cta"]
+});
+
+const SHOP_HOMEPAGE_TEMPLATE_PREVIEWS: Array<{
+  key: ShopHomepageConfig["template"];
+  name: string;
+  description: string;
+  chips: string[];
+}> = [
+  {
+    key: "general",
+    name: "General",
+    description: "Balanced layout for mixed catalog stores.",
+    chips: ["Hero + KPI", "Collections Grid", "Featured Products"]
+  },
+  {
+    key: "fashion",
+    name: "Fashion",
+    description: "Collection-first visual flow for apparel brands.",
+    chips: ["Lookbook Rhythm", "Collection Blocks", "Editorial Style"]
+  },
+  {
+    key: "beauty",
+    name: "Beauty",
+    description: "Trust-driven layout for skincare and cosmetics.",
+    chips: ["Routine Focus", "Before/After Friendly", "Review Heavy"]
+  },
+  {
+    key: "electronics",
+    name: "Electronics",
+    description: "Spec-forward structure for gadgets and devices.",
+    chips: ["Feature Callouts", "Product Tiles", "Performance Focus"]
+  },
+  {
+    key: "minimal",
+    name: "Minimal",
+    description: "Clean premium layout with reduced visual noise.",
+    chips: ["Whitespace First", "Simple Hero", "Tight Conversion Path"]
+  }
+];
 
 const formatDateForInput = (date: Date) => {
   const year = date.getUTCFullYear();
@@ -1621,6 +1716,9 @@ export const BusinessDashboard = () => {
   const [selectedProductTemplateId, setSelectedProductTemplateId] = useState<string | null>(null);
   const [categoryTemplates, setCategoryTemplates] = useState<ShopCategoryTemplate[]>([]);
   const [shopForm, setShopForm] = useState(createEmptyShopForm("other"));
+  const [shopThemeColorInput, setShopThemeColorInput] = useState(
+    normalizeHexColor(createEmptyShopForm("other").themeColor, DEFAULT_SHOP_THEME_COLOR)
+  );
   const [shopTypeSearchInput, setShopTypeSearchInput] = useState(getShopTypeLabel("other"));
   const [categoryForm, setCategoryForm] = useState({ name: "", slug: "", description: "", sortOrder: 0 });
   const [productForm, setProductForm] = useState<ShopProductForm>(createProductFormForShopType("other"));
@@ -1645,6 +1743,10 @@ export const BusinessDashboard = () => {
   const [shopGrowthSettings, setShopGrowthSettings] = useState<ShopGrowthSettings>(
     createDefaultShopGrowthSettings()
   );
+  const [shopHomepageConfig, setShopHomepageConfig] = useState<ShopHomepageConfig>(
+    createDefaultShopHomepageConfig()
+  );
+  const [savingShopHomepageConfig, setSavingShopHomepageConfig] = useState(false);
   const [savingShopGrowthSettings, setSavingShopGrowthSettings] = useState(false);
   const [runningShopGrowthAutomation, setRunningShopGrowthAutomation] = useState(false);
   const [generatingCampaignLink, setGeneratingCampaignLink] = useState(false);
@@ -1734,6 +1836,10 @@ export const BusinessDashboard = () => {
   const [opsReturnStatusDrafts, setOpsReturnStatusDrafts] = useState<Record<string, string>>({});
   const [updatingReturnId, setUpdatingReturnId] = useState<string | null>(null);
   const [processingBackfillId, setProcessingBackfillId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShopThemeColorInput(normalizeHexColor(shopForm.themeColor, DEFAULT_SHOP_THEME_COLOR));
+  }, [shopForm.themeColor]);
 
   const loadData = async () => {
     if (!accessToken) return;
@@ -5998,6 +6104,35 @@ export const BusinessDashboard = () => {
     }
   };
 
+  const saveShopHomepageSettings = async () => {
+    if (!accessToken) return;
+    const targetShopId = selectedShopId || shopData?.id || null;
+    if (!targetShopId) {
+      setStatus("Select or create a shop first.");
+      return;
+    }
+    try {
+      setSavingShopHomepageConfig(true);
+      const response = await apiRequest<{
+        homepageConfig?: Partial<ShopHomepageConfig>;
+      }>(withShopIdQuery("/business/shop/homepage-config", targetShopId), {
+        method: "PATCH",
+        accessToken,
+        csrfToken,
+        body: shopHomepageConfig
+      });
+      setShopHomepageConfig({
+        ...createDefaultShopHomepageConfig(),
+        ...(response?.homepageConfig || shopHomepageConfig)
+      });
+      setStatus("Storefront homepage settings saved");
+    } catch (err: any) {
+      setStatus(err?.response?.data?.error || err?.message || "Failed to save homepage settings");
+    } finally {
+      setSavingShopHomepageConfig(false);
+    }
+  };
+
   const generateTrackedCampaignLink = async () => {
     if (!accessToken) return;
     const targetShopId = selectedShopId || shopData?.id || null;
@@ -6600,6 +6735,7 @@ export const BusinessDashboard = () => {
         setShopCapabilities(null);
         setShopSuppliers([]);
         setShopGrowthSettings(createDefaultShopGrowthSettings());
+        setShopHomepageConfig(createDefaultShopHomepageConfig());
         setGeneratedCampaignLink("");
         setShopGrowthInsights(null);
         setShopGrowthAudiences([]);
@@ -6615,16 +6751,27 @@ export const BusinessDashboard = () => {
         setShopSuppliers([]);
         setProductTemplates([]);
         setCategoryTemplates([]);
+        setShopHomepageConfig(createDefaultShopHomepageConfig());
         return;
       }
       if (resolvedShopId !== selectedShopId) {
         setSelectedShopId(resolvedShopId);
       }
 
-      const data = await apiRequest<{ shop: ShopData | null; capabilities?: ShopCapabilities }>(
+      const data = await apiRequest<{
+        shop: ShopData | null;
+        capabilities?: ShopCapabilities;
+        homepageConfig?: Partial<ShopHomepageConfig> | null;
+      }>(
         withShopIdQuery("/business/shop", resolvedShopId),
         { accessToken }
       );
+      const resolvedHomepageConfig = data?.homepageConfig
+        ? ({
+            ...createDefaultShopHomepageConfig(),
+            ...(data.homepageConfig || {})
+          } as ShopHomepageConfig)
+        : createDefaultShopHomepageConfig();
       const normalizedShop =
         data.shop && typeof data.shop.id === "string"
           ? {
@@ -6642,6 +6789,7 @@ export const BusinessDashboard = () => {
             }
           : null;
       setShopData(normalizedShop);
+      setShopHomepageConfig(resolvedHomepageConfig);
       setShopCapabilities(data.capabilities || null);
       if (data.capabilities?.planId) {
         setResolvedPlanId(normalizeBusinessPlanId(data.capabilities.planId));
@@ -6754,6 +6902,7 @@ export const BusinessDashboard = () => {
           setShopReviews([]);
           setShopSuppliers([]);
           setShopGrowthSettings(createDefaultShopGrowthSettings());
+          setShopHomepageConfig(createDefaultShopHomepageConfig());
           setGeneratedCampaignLink("");
           setShopGrowthInsights(null);
           setShopGrowthAudiences([]);
@@ -6763,6 +6912,7 @@ export const BusinessDashboard = () => {
         setShopData(null);
         setShopCapabilities(null);
         setSelectedProductTemplateId(null);
+        setShopHomepageConfig(createDefaultShopHomepageConfig());
         setProductTemplates([]);
         setCategoryTemplates([]);
         setShopOrders([]);
@@ -7020,6 +7170,16 @@ export const BusinessDashboard = () => {
 
   const getShopSectionTabClass = (tab: ShopSectionTab) =>
     `btn ${shopSectionTab === tab ? "btn-primary" : "btn-secondary"}`;
+
+  const openHomepageTemplatePicker = () => {
+    setShopSectionTab("homepage");
+    window.setTimeout(() => {
+      const node = document.getElementById("shop-homepage-landing-config");
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 80);
+  };
 
   const denseTableScopeClass =
     "[&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap [&_table_th]:px-3 [&_table_td]:px-3 [&_table_th]:py-2 [&_table_td]:py-2";
@@ -18291,9 +18451,16 @@ export const BusinessDashboard = () => {
                 >
                   Orders
                 </button>
+                <button
+                  className={getShopSectionTabClass("homepage")}
+                  onClick={openHomepageTemplatePicker}
+                  type="button"
+                >
+                  Homepage
+                </button>
               </div>
 
-              {shopSectionTab === "shop" && (
+              {(shopSectionTab === "shop" || shopSectionTab === "homepage") && (
                 <div className="card space-y-4">
                   <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
                     <h3 className="text-lg font-semibold text-gray-900 m-0">
@@ -18634,17 +18801,75 @@ export const BusinessDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <label className="label">Theme Color</label>
-                      <input
-                        type="color"
-                        className="input"
-                        value={shopForm.themeColor}
-                        onChange={(e) =>
-                          setShopForm({
-                            ...shopForm,
-                            themeColor: e.target.value,
-                          })
-                        }
-                      />
+                      <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="color"
+                            value={normalizeHexColor(shopForm.themeColor, DEFAULT_SHOP_THEME_COLOR)}
+                            onChange={(e) => {
+                              const next = normalizeHexColor(e.target.value, DEFAULT_SHOP_THEME_COLOR);
+                              setShopThemeColorInput(next);
+                              setShopForm({
+                                ...shopForm,
+                                themeColor: next
+                              });
+                            }}
+                            className="h-10 w-14 cursor-pointer rounded-lg border border-slate-300 bg-white p-1"
+                            aria-label="Select shop theme color"
+                          />
+                          <input
+                            type="text"
+                            className="input flex-1 font-mono uppercase tracking-wide"
+                            value={shopThemeColorInput}
+                            placeholder="#4F46E5"
+                            onChange={(e) => {
+                              const next = sanitizeHexColorInput(e.target.value);
+                              setShopThemeColorInput(next);
+                              if (/^#[0-9a-fA-F]{6}$/.test(next)) {
+                                setShopForm({
+                                  ...shopForm,
+                                  themeColor: next.toLowerCase()
+                                });
+                              }
+                            }}
+                            onBlur={() => {
+                              const normalized = normalizeHexColor(
+                                shopThemeColorInput,
+                                normalizeHexColor(shopForm.themeColor, DEFAULT_SHOP_THEME_COLOR)
+                              );
+                              setShopThemeColorInput(normalized);
+                              setShopForm((prev) => ({ ...prev, themeColor: normalized }));
+                            }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                          {SHOP_THEME_COLOR_PRESETS.map((preset) => {
+                            const isSelected =
+                              normalizeHexColor(shopForm.themeColor, DEFAULT_SHOP_THEME_COLOR) === preset.value;
+                            return (
+                              <button
+                                key={preset.value}
+                                type="button"
+                                className={`h-8 rounded-md border transition ${
+                                  isSelected
+                                    ? "border-slate-900 ring-2 ring-slate-300"
+                                    : "border-slate-300 hover:border-slate-500"
+                                }`}
+                                style={{ backgroundColor: preset.value }}
+                                title={`${preset.label} (${preset.value})`}
+                                onClick={() => {
+                                  setShopThemeColorInput(preset.value);
+                                  setShopForm((prev) => ({ ...prev, themeColor: preset.value }));
+                                }}
+                                aria-label={`Use ${preset.label} theme color`}
+                              />
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Used for storefront hero gradients and primary accent color.
+                        </p>
+                      </div>
                     </div>
                     <div>
                       <label className="label">Shop Currency</label>
@@ -18807,6 +19032,477 @@ export const BusinessDashboard = () => {
                       </p>
                     </div>
                   </div>
+                  <div
+                    id="shop-homepage-landing-config"
+                    className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 m-0">
+                          Storefront Homepage (Landing)
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Configure root URL behavior and preview template styles before selecting one.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={shopHomepageConfig.enabled}
+                          onChange={(e) =>
+                            setShopHomepageConfig((prev) => ({
+                              ...prev,
+                              enabled: e.target.checked
+                            }))
+                          }
+                        />
+                        Enable on <span className="font-semibold">/shop/{shopForm.slug || "your-slug"}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {SHOP_HOMEPAGE_TEMPLATE_PREVIEWS.map((template) => {
+                        const selected = shopHomepageConfig.template === template.key;
+                        return (
+                          <button
+                            key={template.key}
+                            type="button"
+                            className={`text-left rounded-xl border p-3 transition-all ${
+                              selected
+                                ? "border-blue-500 bg-blue-50 shadow-sm"
+                                : "border-gray-200 bg-white hover:-translate-y-0.5"
+                            }`}
+                            onClick={() =>
+                              setShopHomepageConfig((prev) => ({
+                                ...prev,
+                                template: template.key
+                              }))
+                            }
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-gray-900 m-0">
+                                {template.name}
+                              </p>
+                              {selected ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                                  Selected
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">{template.description}</p>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {template.chips.map((chip) => (
+                                <span
+                                  key={`${template.key}-${chip}`}
+                                  className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-600 bg-gray-50"
+                                >
+                                  {chip}
+                                </span>
+                              ))}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="label">Headline</label>
+                        <input
+                          className="input"
+                          value={shopHomepageConfig.headline}
+                          onChange={(e) =>
+                            setShopHomepageConfig((prev) => ({
+                              ...prev,
+                              headline: e.target.value
+                            }))
+                          }
+                          maxLength={160}
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="label">Subheadline</label>
+                        <textarea
+                          className="input min-h-[88px]"
+                          value={shopHomepageConfig.subheadline}
+                          onChange={(e) =>
+                            setShopHomepageConfig((prev) => ({
+                              ...prev,
+                              subheadline: e.target.value
+                            }))
+                          }
+                          maxLength={280}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Primary CTA Label</label>
+                        <input
+                          className="input"
+                          value={shopHomepageConfig.primaryCtaLabel}
+                          onChange={(e) =>
+                            setShopHomepageConfig((prev) => ({
+                              ...prev,
+                              primaryCtaLabel: e.target.value
+                            }))
+                          }
+                          maxLength={40}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Secondary CTA Label</label>
+                        <input
+                          className="input"
+                          value={shopHomepageConfig.secondaryCtaLabel}
+                          onChange={(e) =>
+                            setShopHomepageConfig((prev) => ({
+                              ...prev,
+                              secondaryCtaLabel: e.target.value
+                            }))
+                          }
+                          maxLength={40}
+                        />
+                      </div>
+                    </div>
+                    {(() => {
+                      const previewHeroImages = shopForm.heroImageUrls
+                        .map((entry) => String(entry || "").trim())
+                        .filter(Boolean)
+                        .slice(0, 4);
+                      const previewImagePool =
+                        previewHeroImages.length > 0
+                          ? previewHeroImages
+                          : [shopForm.bannerUrl].filter(Boolean);
+                      const previewCollections = [
+                        {
+                          title: "Browse Men's Collection",
+                          description:
+                            "Curated menswear staples and top-performing outfits for your storefront.",
+                          image: previewImagePool[0] || ""
+                        },
+                        {
+                          title: "Browse Women's Collection",
+                          description:
+                            "Premium female collection highlights with flexible styling for campaigns.",
+                          image: previewImagePool[1] || previewImagePool[0] || ""
+                        },
+                        {
+                          title: "Browse Unisex Collection",
+                          description:
+                            "Universal essentials and trend-forward pieces for broad customer segments.",
+                          image: previewImagePool[2] || previewImagePool[0] || ""
+                        }
+                      ];
+                      const selectedTemplateLabel =
+                        SHOP_HOMEPAGE_TEMPLATE_PREVIEWS.find(
+                          (entry) => entry.key === shopHomepageConfig.template
+                        )?.name || "General";
+                      const previewShopType = String(shopForm.businessType || "")
+                        .trim()
+                        .toLowerCase();
+                      const previewShowQuickLinks =
+                        previewShopType === "clothes" ||
+                        previewShopType.includes("cloth") ||
+                        previewShopType.includes("fashion") ||
+                        previewShopType.includes("apparel");
+                      const previewTheme =
+                        shopHomepageConfig.template === "fashion"
+                          ? {
+                              shell: "bg-stone-50 border-stone-200",
+                              topBar: "bg-stone-100",
+                              heroOverlay: "bg-black/55",
+                              textPanel: "bg-transparent pl-[3px] pr-3 py-3 md:pl-[3px] md:pr-4 md:py-4",
+                              sectionWrap: "bg-stone-50",
+                              collectionLayout: "fashion" as const
+                            }
+                          : shopHomepageConfig.template === "beauty"
+                          ? {
+                              shell: "bg-pink-50 border-pink-200",
+                              topBar: "bg-pink-100",
+                              heroOverlay: "bg-black/55",
+                              textPanel: "bg-transparent pl-[3px] pr-3 py-3 md:pl-[3px] md:pr-4 md:py-4",
+                              sectionWrap: "bg-pink-50",
+                              collectionLayout: "beauty" as const
+                            }
+                          : shopHomepageConfig.template === "electronics"
+                          ? {
+                              shell:
+                                "bg-slate-950 border-cyan-300/35 text-slate-100 shadow-[0_14px_30px_rgba(6,182,212,0.12)]",
+                              topBar: "bg-slate-950/95",
+                              heroOverlay: "bg-black/55",
+                              textPanel: "bg-transparent pl-[3px] pr-3 py-3 md:pl-[3px] md:pr-4 md:py-4",
+                              sectionWrap: "bg-slate-950",
+                              collectionLayout: "electronics" as const
+                            }
+                          : shopHomepageConfig.template === "minimal"
+                          ? {
+                              shell: "bg-stone-100 border-stone-300",
+                              topBar: "bg-stone-200",
+                              heroOverlay: "bg-black/55",
+                              textPanel: "bg-transparent pl-[3px] pr-3 py-3 md:pl-[3px] md:pr-4 md:py-4",
+                              sectionWrap: "bg-stone-100",
+                              collectionLayout: "minimal" as const
+                            }
+                          : {
+                              shell: "bg-white border-gray-200",
+                              topBar: "bg-slate-50",
+                              heroOverlay: "bg-black/55",
+                              textPanel: "bg-transparent pl-[3px] pr-3 py-3 md:pl-[3px] md:pr-4 md:py-4",
+                              sectionWrap: "bg-slate-50",
+                              collectionLayout: "standard" as const
+                            };
+                      const isPreviewElectronics =
+                        previewTheme.collectionLayout === "electronics";
+
+                      return (
+                        <div className={`rounded-xl border overflow-hidden ${previewTheme.shell}`}>
+                          <div className={`px-3 py-2 border-b flex items-center justify-between gap-2 ${previewTheme.topBar}`}>
+                            <p
+                              className={`text-xs font-semibold m-0 ${
+                                isPreviewElectronics
+                                  ? "text-slate-200"
+                                  : "text-gray-700"
+                              }`}
+                            >
+                              Live Homepage Preview
+                            </p>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                isPreviewElectronics
+                                  ? "bg-cyan-300 text-slate-950"
+                                  : "bg-slate-900 text-white"
+                              }`}
+                            >
+                              {selectedTemplateLabel} Template
+                            </span>
+                          </div>
+
+                          <div className="relative min-h-[280px] md:min-h-[420px] border-b">
+                            {previewShowQuickLinks ? (
+                              <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5 md:right-5 md:top-5 md:gap-2">
+                                <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold text-white bg-black/35 border border-white/35 backdrop-blur-sm md:px-3 md:py-1.5 md:text-xs">
+                                  Featured Collections
+                                </span>
+                                <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold text-white bg-black/35 border border-white/35 backdrop-blur-sm md:px-3 md:py-1.5 md:text-xs">
+                                  Latest Products
+                                </span>
+                              </div>
+                            ) : null}
+                            {shopForm.heroVideoUrl.trim() ? (
+                              <video
+                                src={shopForm.heroVideoUrl.trim()}
+                                className="absolute inset-0 h-full w-full object-cover"
+                                autoPlay
+                                loop
+                                muted
+                                playsInline
+                              />
+                            ) : previewImagePool[0] ? (
+                              <img
+                                src={previewImagePool[0]}
+                                alt="Hero preview"
+                                className="absolute inset-0 h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                className="absolute inset-0"
+                                style={{
+                                  backgroundImage: `linear-gradient(120deg, ${shopForm.themeColor || "#1d4ed8"} 0%, #0f172a 100%)`
+                                }}
+                              />
+                            )}
+                            <div className={`absolute inset-0 ${previewTheme.heroOverlay}`} />
+                            <div className="relative p-4 md:p-6 lg:p-8 text-white">
+                              <div className={`${previewTheme.textPanel} mt-4 md:mt-0 space-y-2 md:space-y-3`}>
+                              <p className="text-[10px] md:text-xs uppercase tracking-wide text-white/80 m-0">
+                                {shopForm.name || "Your Shop"}
+                              </p>
+                              <h4
+                                className="text-lg md:text-2xl font-bold m-0"
+                                style={{
+                                  fontFamily:
+                                    shopForm.titleFont ||
+                                    '"Playfair Display","Bodoni Moda","Times New Roman",serif'
+                                }}
+                              >
+                                {shopHomepageConfig.headline || "Run your store from one command center."}
+                              </h4>
+                              <p className="text-xs md:text-sm text-white/90 max-w-2xl m-0">
+                                {shopHomepageConfig.subheadline ||
+                                  shopForm.description ||
+                                  "Your landing page hero will use your shop media, name, and description."}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                <span className="text-[11px] md:text-xs rounded-full bg-white text-slate-900 px-3 py-1 font-semibold">
+                                  {shopHomepageConfig.primaryCtaLabel || "Start Shopping"}
+                                </span>
+                                <span className="text-[11px] md:text-xs rounded-full border border-white/50 px-3 py-1 font-semibold">
+                                  {shopHomepageConfig.secondaryCtaLabel || "View Collections"}
+                                </span>
+                              </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className={`p-3 md:p-4 space-y-4 ${previewTheme.sectionWrap}`}>
+                            {previewCollections.map((block, index) => {
+                              if (previewTheme.collectionLayout === "fashion") {
+                                return (
+                                  <div
+                                    key={block.title}
+                                    className="relative overflow-hidden rounded-xl border min-h-[170px] md:min-h-[210px]"
+                                  >
+                                    {block.image ? (
+                                      <img src={block.image} alt={block.title} className="absolute inset-0 h-full w-full object-cover" />
+                                    ) : (
+                                      <div className="absolute inset-0 bg-stone-100" />
+                                    )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/55 to-black/20" />
+                                    <div className="relative h-full p-3 md:p-4 flex flex-col justify-end">
+                                      <p className="text-xs md:text-sm font-semibold text-white m-0">{block.title}</p>
+                                      <p className="text-[11px] md:text-xs text-white/85 m-0">{block.description}</p>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              if (previewTheme.collectionLayout === "beauty") {
+                                return (
+                                  <div key={block.title} className="rounded-xl border bg-white p-3 grid grid-cols-2 gap-3 items-center">
+                                    <div className="rounded-lg overflow-hidden border bg-pink-50 h-36 md:h-44">
+                                      {block.image ? (
+                                        <img src={block.image} alt={block.title} className="h-full w-full object-cover" />
+                                      ) : (
+                                        <div className="h-full w-full bg-pink-100" />
+                                      )}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-sm md:text-base font-semibold text-pink-900 m-0">{block.title}</p>
+                                      <p className="text-xs md:text-sm text-gray-600 m-0">{block.description}</p>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              if (previewTheme.collectionLayout === "electronics") {
+                                return (
+                                  <div
+                                    key={block.title}
+                                    className="rounded-xl border border-cyan-300/35 bg-slate-900/85 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                                  >
+                                    <div className="grid grid-cols-2 md:grid-cols-[1fr,1.2fr] gap-3 items-center">
+                                      <div className="rounded-lg overflow-hidden border border-cyan-300/30 h-36 md:h-40">
+                                        {block.image ? (
+                                          <img src={block.image} alt={block.title} className="h-full w-full object-cover" />
+                                        ) : (
+                                          <div className="h-full w-full bg-slate-800" />
+                                        )}
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-cyan-300 m-0">
+                                          Tech Collection
+                                        </p>
+                                        <p className="text-sm md:text-base font-semibold text-cyan-100 m-0">{block.title}</p>
+                                        <p className="text-xs text-slate-300 m-0">{block.description}</p>
+                                        <div className="flex flex-wrap gap-1 pt-1">
+                                          <span className="text-[10px] rounded-full bg-slate-950 border border-cyan-300/35 text-cyan-100 px-2 py-0.5">
+                                            Specs
+                                          </span>
+                                          <span className="text-[10px] rounded-full bg-slate-950 border border-cyan-300/35 text-cyan-100 px-2 py-0.5">
+                                            Performance
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              if (previewTheme.collectionLayout === "minimal") {
+                                return (
+                                  <div key={block.title} className="rounded-xl border bg-white p-3">
+                                    <p className="text-sm md:text-base font-semibold text-gray-900 m-0">{block.title}</p>
+                                    <p className="mt-1 text-xs md:text-sm text-gray-600 m-0">{block.description}</p>
+                                  </div>
+                                );
+                              }
+
+                              const reverse = index % 2 === 1;
+                              return (
+                                <div
+                                  key={block.title}
+                                  className={`grid grid-cols-2 md:grid-cols-2 gap-3 items-center rounded-xl border bg-white p-3 ${
+                                    reverse
+                                      ? "[&>*:first-child]:order-2 [&>*:last-child]:order-1"
+                                      : ""
+                                  }`}
+                                >
+                                  <div className="rounded-lg overflow-hidden border bg-gray-100 h-40 md:h-44">
+                                    {block.image ? (
+                                      <img
+                                        src={block.image}
+                                        alt={block.title}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="h-full w-full bg-gray-100" />
+                                    )}
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <p className="text-sm md:text-base font-semibold text-gray-900 m-0">
+                                      {block.title}
+                                    </p>
+                                    <p className="text-xs md:text-sm text-gray-600 m-0">
+                                      {block.description}
+                                    </p>
+                                    <div className="inline-flex items-center gap-1 text-xs md:text-sm font-semibold text-gray-900">
+                                      Explore
+                                      <FiArrowRight className="h-3.5 w-3.5" />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <div className="rounded-lg border bg-white p-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                              <p className="text-xs md:text-sm text-gray-700 m-0">
+                                Footer Preview: {(shopForm.name || "Your Shop")} · Powered by Debby
+                              </p>
+                              <div className="flex items-center gap-3 text-[11px] md:text-xs text-gray-500">
+                                <span>Collections</span>
+                                <span>Latest Products</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={saveShopHomepageSettings}
+                        disabled={savingShopHomepageConfig || !selectedShopId}
+                      >
+                        {savingShopHomepageConfig ? "Saving..." : "Save Homepage Settings"}
+                      </button>
+                      {shopForm.slug ? (
+                        <>
+                          <a
+                            className="btn btn-sm btn-secondary"
+                            href={`/shop/${shopForm.slug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Preview Root URL
+                          </a>
+                          <a
+                            className="btn btn-sm btn-secondary"
+                            href={`/shop/${shopForm.slug}/collections`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Preview Collections
+                          </a>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
                   <button
                     className="btn btn-primary"
                     onClick={async () => {
@@ -18886,7 +19582,9 @@ export const BusinessDashboard = () => {
                 </div>
               )}
 
-              {!shopData && shopSectionTab !== "shop" && (
+              {!shopData &&
+                shopSectionTab !== "shop" &&
+                shopSectionTab !== "homepage" && (
                 <div className="card">
                   <p className="text-gray-600">
                     Create or select a shop in the Shop tab first.
@@ -18896,7 +19594,8 @@ export const BusinessDashboard = () => {
 
               {shopData && (
                 <>
-                  {shopSectionTab === "shop" && (
+                  {(shopSectionTab === "shop" ||
+                    shopSectionTab === "homepage") && (
                     <div className="card space-y-4">
                       <h3 className="text-lg font-semibold text-gray-900">
                         Categories
@@ -19099,7 +19798,8 @@ export const BusinessDashboard = () => {
                     </div>
                   )}
 
-                  {shopSectionTab !== "shop" && (
+                  {shopSectionTab !== "shop" &&
+                    shopSectionTab !== "homepage" && (
                     <div className="card space-y-4">
                       <h3 className="text-lg font-semibold text-gray-900">
                         {shopSectionTab === "upload"
