@@ -5,16 +5,16 @@ import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { AdminAuthProvider } from "./auth/AdminAuthProvider";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { InstallPromptProvider } from "./hooks/useInstallPrompt";
+import { InstallPromptModal } from "./components/InstallPromptModal";
 import "./index.css";
 
-// Service Worker completely disabled - no caching at all
-// Unregister any existing service workers
+// Minimal service worker registration to enable install prompt (no caching)
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      console.log('Unregistering service worker:', registration.scope);
-      registration.unregister();
-    }
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("Service worker registration failed:", error);
+    });
   });
 }
 
@@ -22,11 +22,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
       <BrowserRouter>
-        <AuthProvider>
-          <AdminAuthProvider>
-            <App />
-          </AdminAuthProvider>
-        </AuthProvider>
+        <InstallPromptProvider>
+          <AuthProvider>
+            <AdminAuthProvider>
+              <App />
+              <InstallPromptModal />
+            </AdminAuthProvider>
+          </AuthProvider>
+        </InstallPromptProvider>
       </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>

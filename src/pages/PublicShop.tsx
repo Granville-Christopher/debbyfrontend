@@ -4,6 +4,7 @@ import { apiRequest } from "../api/client";
 import {
   FiArrowUp,
   FiCreditCard,
+  FiDownload,
   FiHeart,
   FiLogOut,
   FiMenu,
@@ -19,6 +20,7 @@ import {
   FiUser,
   FiX
 } from "react-icons/fi";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 
 type ShopCategory = {
   id: string;
@@ -349,6 +351,7 @@ export const PublicShop = () => {
   const { slug } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { isInstallable, promptInstall } = useInstallPrompt();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopResponse["shop"] | null>(null);
@@ -2682,23 +2685,39 @@ export const PublicShop = () => {
               showStoreMenu ? "translate-x-0" : "translate-x-full"
             }`}
           >
-            <div className="px-4 sm:px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Store Menu</p>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900">{shop.name}</h3>
-              </div>
-              <button
-                className="h-9 w-9 rounded-lg border border-slate-200 flex items-center justify-center"
-                onClick={() => setShowStoreMenu(false)}
-                aria-label="Close menu"
-              >
-                <FiX className="w-4 h-4 text-slate-600" />
-              </button>
-            </div>
-
-            <div className="px-4 sm:px-5 py-3 border-b border-slate-200">
-              <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
+              <div className="px-4 sm:px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Store Menu</p>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">{shop.name}</h3>
+                </div>
                 <button
+                  className="h-9 w-9 rounded-lg border border-slate-200 flex items-center justify-center"
+                  onClick={() => setShowStoreMenu(false)}
+                  aria-label="Close menu"
+                >
+                  <FiX className="w-4 h-4 text-slate-600" />
+                </button>
+              </div>
+
+              {isInstallable && (
+                <div className="px-4 sm:px-5 py-3 border-b border-slate-200">
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      setShowStoreMenu(false);
+                      void promptInstall();
+                    }}
+                  >
+                    <FiDownload className="h-4 w-4" />
+                    Install App
+                  </button>
+                </div>
+              )}
+
+              <div className="px-4 sm:px-5 py-3 border-b border-slate-200">
+                <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
+                  <button
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                     storeMenuTab === "orders" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
                   }`}

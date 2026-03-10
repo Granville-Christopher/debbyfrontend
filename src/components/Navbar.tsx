@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiMenu, FiX } from "react-icons/fi";
+import { FiDownload, FiMenu, FiX } from "react-icons/fi";
 import { Logo } from "./Logo";
 import { DarkModeToggle } from "./DarkModeToggle";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 
 export const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { isInstallable, promptInstall } = useInstallPrompt();
 
   const navLinks = [
     { name: "Integrations", to: "/integrations" },
@@ -79,6 +81,19 @@ export const Navbar = () => {
               ))}
               <hr className="border-gray-100 dark:border-gray-800" />
               <div className="flex flex-col gap-4">
+                {isInstallable && (
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 py-3 font-bold text-gray-900 dark:text-white"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      void promptInstall();
+                    }}
+                  >
+                    <FiDownload className="h-5 w-5" />
+                    Install App
+                  </button>
+                )}
                 <Link 
                   to="/login" 
                   className="w-full text-center py-3 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-gray-900 dark:text-white" 

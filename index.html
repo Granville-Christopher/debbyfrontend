@@ -5,61 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
     <!-- Primary Meta Tags -->
-    <title>DEBBY - Automate Your Workflow | API Integration, Payments & Social Media Scheduling</title>
-    <meta name="title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Media Scheduling" />
-    <meta name="description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social media content, process payments, and scale effortlessly. Trusted by 10,000+ users." />
-    <meta name="keywords" content="webhook automation, API integration, payment processing, Stripe, Paystack, GitHub integration, business automation, developer tools, SaaS platform, social media scheduler, X Twitter automation, Threads scheduling, content creator tools" />
+    <title>DEBBY for Business | Run your commerce operation from one dashboard</title>
+    <meta name="title" content="DEBBY for Business | Run your commerce operation from one dashboard" />
+    <meta name="description" content="Debby unifies storefront, CRM, billing, automations, and analytics so your team can scale without juggling disconnected tools." />
+    <meta name="keywords" content="commerce operations platform, storefront management, CRM for ecommerce, billing automation, business workflow automation, revenue analytics, customer operations dashboard" />
     <meta name="author" content="DEBBY" />
     <meta name="robots" content="index, follow" />
     <meta name="language" content="English" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://debby.io/" />
-    <meta property="og:title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Scheduling" />
-    <meta property="og:description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social content, process payments, and scale effortlessly." />
-    <meta property="og:image" content="https://debby.io/og-image.png" />
+    <meta property="og:url" content="https://debbyfrontend-production.up.railway.app/" />
+    <meta property="og:title" content="DEBBY for Business | Run your commerce operation from one dashboard" />
+    <meta property="og:description" content="Debby unifies storefront, CRM, billing, automations, and analytics so your team can scale without juggling disconnected tools." />
+    <meta property="og:image" content="https://debbyfrontend-production.up.railway.app/og-image.png" />
+    <meta property="og:image:secure_url" content="https://debbyfrontend-production.up.railway.app/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://debby.io/" />
-    <meta property="twitter:title" content="DEBBY - Automate Your Workflow | API Integration, Payments & Social Scheduling" />
-    <meta property="twitter:description" content="The all-in-one platform for developers, businesses, and creators to automate workflows, schedule social content, process payments, and scale effortlessly." />
-    <meta property="twitter:image" content="https://debby.io/og-image.png" />
+    <meta property="twitter:url" content="https://debbyfrontend-production.up.railway.app/" />
+    <meta property="twitter:title" content="DEBBY for Business | Run your commerce operation from one dashboard" />
+    <meta property="twitter:description" content="Debby unifies storefront, CRM, billing, automations, and analytics so your team can scale without juggling disconnected tools." />
+    <meta property="twitter:image" content="https://debbyfrontend-production.up.railway.app/og-image.png" />
+    <meta name="twitter:image" content="https://debbyfrontend-production.up.railway.app/og-image.png" />
     
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     
     <!-- Caching: Disabled -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    
-    <script>
-      // Aggressively clear ALL caches and service workers
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for(let registration of registrations) {
-            registration.unregister();
-            console.log('Service worker unregistered');
-          }
-        });
-      }
-      
-      if ('caches' in window) {
-        caches.keys().then(function(names) {
-          for (let name of names) {
-            caches.delete(name);
-            console.log('Cache cleared:', name);
-          }
-        });
-      }
-      
-      // Clear session storage just in case
-      sessionStorage.clear();
-      
-      console.log('Total cache and SW purge completed');
-    </script>
     
     <!-- Preconnect for Performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -120,8 +103,8 @@
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "DEBBY",
-      "url": "https://debby.io",
-      "logo": "https://debby.io/logo.png",
+      "url": "https://https://debbyfrontend-production.up.railway.app",
+      "logo": "https://https://debbyfrontend-production.up.railway.app/logo.png",
       "description": "Automation platform for developers and businesses",
       "sameAs": [
         "https://twitter.com/debby",

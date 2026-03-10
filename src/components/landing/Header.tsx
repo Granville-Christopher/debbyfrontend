@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { FiMenu, FiX } from "react-icons/fi";
+import { FiDownload, FiMenu, FiX } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import { DarkModeToggle } from "../DarkModeToggle";
 import { Logo } from "../Logo";
 import { LandingButton } from "./LandingButton";
 import { BookDemoButton } from "./BookDemoButton";
+import { useInstallPrompt } from "../../hooks/useInstallPrompt";
 
 const navLinks = [
   { label: "Product", href: "#features" },
@@ -16,6 +17,7 @@ const navLinks = [
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isInstallable, promptInstall } = useInstallPrompt();
 
   const scrollToHash = (hash: string) => {
     if (!hash || !hash.startsWith("#")) return;
@@ -133,6 +135,19 @@ export default function Header() {
                   Start 14-Day Trial
                 </LandingButton>
               </div>
+              {isInstallable && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    void promptInstall();
+                  }}
+                >
+                  <FiDownload className="h-4 w-4" />
+                  Install App
+                </button>
+              )}
             </div>
           </motion.div>
         )}
