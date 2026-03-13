@@ -237,6 +237,7 @@ type PaymentStats = {
   last24h: number;
   last7d: number;
   revenueByCurrency?: Record<string, number>;
+  revenueLast30dByCurrency?: Record<string, number>;
   dashboardCurrency?: string;
   totalRevenueInDashboardCurrency?: number;
   revenueTrend?: Array<{
@@ -257,12 +258,29 @@ type NotificationStats = {
   last7d: number;
 };
 
+type MrrStats = {
+  amount: number;
+  currency: string;
+  byCurrency: Record<string, number>;
+  activeRecurringCount: number;
+  totalAllCurrencies: number;
+};
+
+type HeldFundsStats = {
+  count: number;
+  totalInDashboardCurrency: number;
+  byCurrency: Record<string, number>;
+  payoutConfigured: boolean;
+};
+
 type DashboardData = {
   revenueAlerts: string[];
   notifications: string[];
   stats: {
     payments: PaymentStats;
     notifications: NotificationStats;
+    mrr?: MrrStats;
+    heldFunds?: HeldFundsStats;
   };
 };
 
@@ -363,7 +381,7 @@ type ShopSupplier = {
 };
 
 type ShopCapabilities = {
-  planId: "free" | "starter" | "professional" | "enterprise" | "pro";
+  planId: "free" | "starter" | "growth" | "scale" | "professional" | "enterprise" | "pro";
   canDropship: boolean;
   canWhatsappCheckout: boolean;
   canCardCheckout: boolean;
@@ -413,6 +431,7 @@ type ShopData = {
     businessType?: string | null;
     businessMode?: "own" | "dropship" | "hybrid" | null;
     checkoutMode?: "whatsapp_only" | "card_only" | "hybrid" | null;
+    defaultPaymentGateway?: "stripe" | "paystack" | null;
     shopCurrency?: string | null;
     heroImageUrls?: string[] | null;
     heroVideoUrl?: string | null;
@@ -1077,7 +1096,8 @@ const createEmptyShopForm = (shopType: ShopType = "other") => ({
   titleFont: "",
   businessType: shopType,
   businessMode: "own" as ShopBusinessMode,
-  checkoutMode: "hybrid" as "whatsapp_only" | "card_only" | "hybrid"
+  checkoutMode: "hybrid" as "whatsapp_only" | "card_only" | "hybrid",
+  defaultPaymentGateway: "stripe" as "stripe" | "paystack"
 });
 
 const normalizeHeroImageUrls = (value: unknown, fallbackBannerUrl?: unknown): string[] => {
@@ -1283,15 +1303,19 @@ const segmentOperatorOptions: Array<{ value: SegmentRuleOperator; label: string 
 const DASHBOARD_TAB_LOCKS: Record<string, string[]> = {
   free: [],
   starter: ["automation", "intelligence", "ops"],
+  growth: [],
   professional: [],
+  scale: [],
   enterprise: [],
   pro: []
 };
 
 const normalizeBusinessPlanId = (planId: unknown): ShopCapabilities["planId"] => {
   const normalized = String(planId || "").trim().toLowerCase();
-  if (normalized === "pro") return "enterprise";
-  if (normalized === "free" || normalized === "starter" || normalized === "professional" || normalized === "enterprise") {
+  if (normalized === "pro") return "scale";
+  if (normalized === "enterprise") return "scale";
+  if (normalized === "professional") return "growth";
+  if (normalized === "free" || normalized === "starter" || normalized === "growth" || normalized === "scale") {
     return normalized;
   }
   return "free";
@@ -1299,11 +1323,20 @@ const normalizeBusinessPlanId = (planId: unknown): ShopCapabilities["planId"] =>
 
 const toBusinessPlanLabel = (planId: string) => {
   const normalized = String(planId || "").trim().toLowerCase();
-  if (normalized === "professional") return "Growth";
-  if (normalized === "enterprise" || normalized === "pro") return "Scale";
+  if (normalized === "growth" || normalized === "professional") return "Growth";
+  if (normalized === "scale" || normalized === "enterprise" || normalized === "pro") return "Scale";
   if (normalized === "starter") return "Starter";
   if (normalized === "free") return "Free";
   return normalized || "Unknown";
+};
+
+const normalizeCountryCode = (value: unknown) => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "ng" || raw === "nga" || raw === "nigeria") return "NG";
+  if (raw.length === 2) return raw.toUpperCase();
+  if (raw.length === 3 && raw === "nga") return "NG";
+  return raw.toUpperCase();
 };
 
 export const BusinessDashboard = () => {
@@ -1368,11 +1401,13 @@ export const BusinessDashboard = () => {
   const [billingOnlyAccess, setBillingOnlyAccess] = useState(false);
   const [integrationSectionTab, setIntegrationSectionTab] = useState<"calls" | "payments" | "marketplace" | "connected">("calls");
   const [settingsSectionTab, setSettingsSectionTab] = useState<"account" | "payments" | "calls" | "growth" | "branding">("account");
-  const [integrationProvider, setIntegrationProvider] = useState<"stripe" | "paystack">("stripe");
-  const [integrationToken, setIntegrationToken] = useState("");
-  const [integrationSplitCapable, setIntegrationSplitCapable] = useState(true);
   const [stripeConnectedAccountId, setStripeConnectedAccountId] = useState("");
-  const [paystackSplitCode, setPaystackSplitCode] = useState("");
+  const [paystackSubaccountCode, setPaystackSubaccountCode] = useState("");
+  const [paystackBusinessName, setPaystackBusinessName] = useState("");
+  const [paystackAccountNumber, setPaystackAccountNumber] = useState("");
+  const [paystackBankCode, setPaystackBankCode] = useState("");
+  const [paystackBanks, setPaystackBanks] = useState<Array<{ name: string; code: string }>>([]);
+  const [loadingPaystackBanks, setLoadingPaystackBanks] = useState(false);
   const [loading, setLoading] = useState(true);
   const [webhookUrls, setWebhookUrls] = useState<{ orgId: string; webhooks: { stripe: string; paystack: string }; instructions: { local: string; production: string } } | null>(null);
   
@@ -1658,7 +1693,7 @@ export const BusinessDashboard = () => {
     remindersEnabled: true,
     recoveryEnabled: true,
     aiBotEnabled: true,
-    preferredPaymentGateway: "paystack" as "stripe" | "paystack"
+    preferredPaymentGateway: "stripe" as "stripe" | "paystack"
   });
   const [availableGateways, setAvailableGateways] = useState<{ stripe: boolean; paystack: boolean }>({ stripe: false, paystack: false });
   const [automationTemplates, setAutomationTemplates] = useState<any[]>([]);
@@ -1886,7 +1921,7 @@ export const BusinessDashboard = () => {
         apiRequest<{ integrations: Integration[] }>("/business/integrations", { accessToken }),
         apiRequest<{ recurringPayments: typeof recurringPayments }>("/business/recurring-payments", { accessToken }).catch(() => ({ recurringPayments: [] })),
         apiRequest<{ orgId: string; webhooks: { stripe: string; paystack: string }; instructions: { local: string; production: string } }>("/business/webhook-urls", { accessToken }).catch(() => null),
-        apiRequest<{ settings: any; availableGateways?: any }>("/business/automation/settings", { accessToken }).catch(() => ({ settings: { remindersEnabled: true, recoveryEnabled: true, aiBotEnabled: true, preferredPaymentGateway: "paystack" }, availableGateways: { stripe: false, paystack: false } })),
+        apiRequest<{ settings: any; availableGateways?: any }>("/business/automation/settings", { accessToken }).catch(() => ({ settings: { remindersEnabled: true, recoveryEnabled: true, aiBotEnabled: true, preferredPaymentGateway: "stripe" }, availableGateways: { stripe: false, paystack: false } })),
         apiRequest<{ templates: any[] }>("/business/automation/templates", { accessToken }).catch(() => ({ templates: [] })),
         apiRequest<{ plans: any[] }>("/business/payment-plans", { accessToken }).catch(() => ({ plans: [] })),
         apiRequest<{ analytics: any }>("/business/analytics/calls", { accessToken }).catch(() => ({ analytics: null })),
@@ -1933,7 +1968,7 @@ export const BusinessDashboard = () => {
         remindersEnabled: automationData.settings?.remindersEnabled ?? true,
         recoveryEnabled: automationData.settings?.recoveryEnabled ?? true,
         aiBotEnabled: automationData.settings?.aiBotEnabled ?? true,
-        preferredPaymentGateway: automationData.settings?.preferredPaymentGateway || "paystack"
+        preferredPaymentGateway: automationData.settings?.preferredPaymentGateway || "stripe"
       });
       if (automationData.availableGateways) {
         setAvailableGateways(automationData.availableGateways);
@@ -2889,7 +2924,7 @@ export const BusinessDashboard = () => {
           // Clipboard copy failed, but payment was created
         }
       } else if (response.error) {
-        setStatus(` Payment created but payment link failed: ${response.error}. Please connect Stripe or Paystack in Integrations tab.`);
+        setStatus(` Payment created but payment link failed: ${response.error}. Please connect ${isNigeriaBusiness ? "Stripe or Paystack" : "Stripe"} in Integrations tab.`);
       } else {
         setStatus(" Payment queued successfully");
       }
@@ -3090,68 +3125,132 @@ export const BusinessDashboard = () => {
   };
 
   useEffect(() => {
-    const currentIntegration = integrations.find((entry) => entry.provider === integrationProvider);
-    const config = currentIntegration?.config || {};
-    const explicitSplitCapable = typeof config.splitCapable === "boolean" ? config.splitCapable : null;
-    const inferredSplitCapable = Boolean(
-      config.stripeConnectedAccountId ||
-        config.connectedAccountId ||
-        config.destinationAccountId ||
-        config.paystackSplitCode ||
-        config.splitCode
-    );
-    setIntegrationSplitCapable(explicitSplitCapable !== null ? explicitSplitCapable : inferredSplitCapable);
+    const stripeIntegration = integrations.find((entry) => entry.provider === "stripe");
+    const stripeConfig = stripeIntegration?.config || {};
     setStripeConnectedAccountId(
-      String(config.stripeConnectedAccountId || config.connectedAccountId || config.destinationAccountId || "")
+      String(
+        stripeConfig.stripeConnectedAccountId ||
+          stripeConfig.connectedAccountId ||
+          stripeConfig.destinationAccountId ||
+          ""
+      )
     );
-    setPaystackSplitCode(String(config.paystackSplitCode || config.splitCode || ""));
-  }, [integrationProvider, integrations]);
 
-  const connectIntegration = async () => {
-    if (!accessToken || !integrationToken) {
-      setStatus(" Integration token is required");
+    const paystackIntegration = integrations.find((entry) => entry.provider === "paystack");
+    const paystackConfig = paystackIntegration?.config || {};
+    setPaystackSubaccountCode(
+      String(
+        paystackConfig.paystackSubaccountCode ||
+          paystackConfig.paystackSplitCode ||
+          paystackConfig.splitCode ||
+          ""
+      )
+    );
+  }, [integrations]);
+
+  useEffect(() => {
+    if (integrationSectionTab !== "payments") return;
+    const countryCode = normalizeCountryCode(
+      businessAccountDetails?.businessProfile?.countryCode ||
+        businessAccountDetails?.businessProfile?.country ||
+        businessAccountDetails?.billing?.countryCode ||
+        ""
+    );
+    if (countryCode !== "NG") return;
+    loadPaystackBanks();
+  }, [integrationSectionTab, accessToken, businessAccountDetails, loadingPaystackBanks, paystackBanks.length]);
+
+  const startStripeConnect = async () => {
+    if (!accessToken) return;
+    try {
+      const response = await apiRequest<{ onboardingUrl?: string }>(
+        "/business/integrations/stripe/connect/start",
+        {
+          method: "POST",
+          accessToken,
+          csrfToken
+        }
+      );
+      if (response?.onboardingUrl) {
+        window.open(response.onboardingUrl, "_blank", "noopener,noreferrer");
+        setStatus(" Stripe onboarding opened in a new tab.");
+      } else {
+        setStatus(" Stripe onboarding link could not be created.");
+      }
+      await loadData();
+    } catch (err: any) {
+      setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to start Stripe connect"}`);
+    }
+  };
+
+  const connectPaystackSubaccount = async () => {
+    if (!accessToken) return;
+    const countryCode = normalizeCountryCode(
+      businessAccountDetails?.businessProfile?.countryCode ||
+        businessAccountDetails?.businessProfile?.country ||
+        businessAccountDetails?.billing?.countryCode ||
+        ""
+    );
+    if (countryCode !== "NG") {
+      setStatus(" Paystack payouts are available for Nigeria-based businesses only.");
       return;
     }
-    if (integrationSplitCapable) {
-      if (integrationProvider === "stripe" && !stripeConnectedAccountId.trim()) {
-        setStatus(" Stripe connected account ID is required for split-capable checkout.");
-        return;
-      }
-      if (integrationProvider === "paystack" && !paystackSplitCode.trim()) {
-        setStatus(" Paystack split code is required for split-capable checkout.");
-        return;
-      }
+    if (!paystackBusinessName.trim() || !paystackAccountNumber.trim() || !paystackBankCode.trim()) {
+      setStatus(" Paystack business name, bank code, and account number are required.");
+      return;
     }
     try {
-      const config: Record<string, any> = {
-        splitCapable: integrationSplitCapable
-      };
-      if (integrationProvider === "stripe" && stripeConnectedAccountId.trim()) {
-        config.stripeConnectedAccountId = stripeConnectedAccountId.trim();
-      }
-      if (integrationProvider === "paystack" && paystackSplitCode.trim()) {
-        config.paystackSplitCode = paystackSplitCode.trim();
-      }
-      await apiRequest("/business/integrations", {
+      await apiRequest("/business/integrations/paystack/subaccount", {
         method: "POST",
         accessToken,
         csrfToken,
-        body: { provider: integrationProvider, token: integrationToken, config }
+        body: {
+          businessName: paystackBusinessName.trim(),
+          accountNumber: paystackAccountNumber.trim(),
+          bankCode: paystackBankCode.trim()
+        }
       });
-      setStatus(` ${integrationProvider.charAt(0).toUpperCase() + integrationProvider.slice(1)} connected successfully`);
-      setIntegrationToken("");
+      setStatus(" Paystack payout account connected.");
+      setPaystackAccountNumber("");
       await loadData();
     } catch (err: any) {
-      if (err?.response?.status === 401) {
-        try {
-          await refresh();
-          setStatus(" Token refreshed. Please try again.");
-        } catch {
-          setStatus(" Authentication expired. Please refresh the page.");
-        }
-      } else {
-        setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to connect integration"}`);
-      }
+      setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to connect Paystack"}`);
+    }
+  };
+
+  const disconnectPaystackSubaccount = async () => {
+    if (!accessToken) return;
+    if (!window.confirm("Are you sure you want to disconnect your Paystack payout account? You can reconnect with new bank details afterwards.")) return;
+    try {
+      await apiRequest("/business/integrations/paystack/subaccount", {
+        method: "DELETE",
+        accessToken,
+        csrfToken
+      });
+      setStatus(" Paystack payout account disconnected. You can now reconnect with new bank details.");
+      setPaystackSubaccountCode("");
+      setPaystackBusinessName("");
+      setPaystackAccountNumber("");
+      setPaystackBankCode("");
+      await loadData();
+    } catch (err: any) {
+      setStatus(` Error: ${err?.response?.data?.error || err?.message || "Failed to disconnect Paystack"}`);
+    }
+  };
+
+  const loadPaystackBanks = async () => {
+    if (!accessToken || loadingPaystackBanks || paystackBanks.length > 0) return;
+    setLoadingPaystackBanks(true);
+    try {
+      const response = await apiRequest<{ banks: Array<{ name: string; code: string }> }>(
+        "/business/integrations/paystack/banks",
+        { accessToken }
+      );
+      setPaystackBanks(Array.isArray(response?.banks) ? response.banks : []);
+    } catch {
+      setPaystackBanks([]);
+    } finally {
+      setLoadingPaystackBanks(false);
     }
   };
 
@@ -4885,11 +4984,26 @@ export const BusinessDashboard = () => {
     }
   };
 
-  const overviewDashboardCurrency = String(
-    dashboard?.stats?.payments?.dashboardCurrency || currency || "USD"
+  const billingCurrency = String(
+    businessAccountDetails?.billing?.currency || ""
   )
     .trim()
     .toUpperCase();
+  const overviewDashboardCurrency = String(
+    billingCurrency ||
+      dashboard?.stats?.payments?.dashboardCurrency ||
+      currency ||
+      "USD"
+  )
+    .trim()
+    .toUpperCase();
+  const businessCountryCode = normalizeCountryCode(
+    businessAccountDetails?.businessProfile?.countryCode ||
+      businessAccountDetails?.businessProfile?.country ||
+      businessAccountDetails?.billing?.countryCode ||
+      ""
+  );
+  const isNigeriaBusiness = businessCountryCode === "NG";
   const completedOrdersCount = Number(dashboard?.stats?.payments?.completed || 0);
   const totalOrdersCount = Number(dashboard?.stats?.payments?.total || 0);
   const completedOrdersDisplay = `+${completedOrdersCount > 0 ? completedOrdersCount : 128}`;
@@ -4902,23 +5016,24 @@ export const BusinessDashboard = () => {
   const recoveredAttempts = Number(shopGrowthInsights?.metrics?.recoveredAttempts || 0);
   const recoveredAmount =
     recoveredAttempts > 0 && avgOrderValue > 0 ? recoveredAttempts * avgOrderValue : 2400;
-  const activeRecurring = recurringPayments.filter((item) => item.status === "active");
-  const derivedMrr = activeRecurring.reduce((sum, item) => {
-    if (String(item.currency || "").trim().toUpperCase() !== overviewDashboardCurrency) {
-      return sum;
-    }
-    const multiplier =
-      item.interval === "daily"
-        ? 30
-        : item.interval === "weekly"
-          ? 4.345
-          : item.interval === "yearly"
-            ? 1 / 12
-            : 1;
-    return sum + Number(item.amount || 0) * multiplier;
-  }, 0);
-  const overviewMrrAmount = derivedMrr > 0 ? derivedMrr : 89500;
-  const overviewMrrCurrency = derivedMrr > 0 ? overviewDashboardCurrency : "USD";
+  const revenueLast30dByCurrency =
+    dashboard?.stats?.payments?.revenueLast30dByCurrency || {};
+
+  // MRR: use real recurring-payment-based MRR from backend, fall back to revenue if not available
+  const backendMrr = dashboard?.stats?.mrr;
+  const mrrSummary = backendMrr && backendMrr.amount > 0
+    ? {
+        amount: backendMrr.amount,
+        currency: backendMrr.currency || overviewDashboardCurrency || "USD",
+        source: "recurring" as const,
+        activeCount: backendMrr.activeRecurringCount || 0,
+      }
+    : {
+        amount: Object.values(revenueLast30dByCurrency).reduce((s, v) => s + v, 0),
+        currency: overviewDashboardCurrency || "USD",
+        source: "revenue" as const,
+        activeCount: 0,
+      };
   const overviewRevenueChartData = useMemo(() => {
     const revenueTrendCandidate = dashboard?.stats?.payments?.revenueTrend;
     const revenueTrend = Array.isArray(revenueTrendCandidate) ? revenueTrendCandidate : [];
@@ -6821,7 +6936,10 @@ export const BusinessDashboard = () => {
           checkoutMode:
             data.capabilities?.checkoutMode ||
             (normalizedShop.metadata?.checkoutMode as "whatsapp_only" | "card_only" | "hybrid") ||
-            "hybrid"
+            "hybrid",
+          defaultPaymentGateway:
+            (normalizedShop.metadata?.defaultPaymentGateway as "stripe" | "paystack") ||
+            "paystack"
         });
         setSelectedProductTemplateId(null);
         try {
@@ -7254,6 +7372,77 @@ export const BusinessDashboard = () => {
                     </p>
                   </div>
 
+                  {/* ── Held-by-platform warning banner ── */}
+                  {/* Banner A: No payout configured + has held funds */}
+                  {dashboard.stats.heldFunds && !dashboard.stats.heldFunds.payoutConfigured && (
+                    <div className="relative overflow-hidden rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 p-4 sm:p-5 shadow-sm">
+                      <div className="absolute -top-6 -right-6 w-24 h-24 bg-amber-200/30 rounded-full"></div>
+                      <div className="relative flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 border border-amber-200">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-bold text-amber-900">
+                            Set up your payout account to receive sales revenue
+                          </h4>
+                          <p className="mt-0.5 text-xs text-amber-700 leading-relaxed">
+                            {dashboard.stats.heldFunds.count > 0
+                              ? `You have ${dashboard.stats.heldFunds.count} completed payment${dashboard.stats.heldFunds.count > 1 ? "s" : ""} totalling ${formatCurrency(dashboard.stats.heldFunds.totalInDashboardCurrency, dashboard.stats.payments.dashboardCurrency || "USD")} held by the platform. Connect your ${isNigeriaBusiness ? "Paystack subaccount or Stripe" : "Stripe"} account in the Integrations tab so future payments go directly to your bank.`
+                              : `Connect your ${isNigeriaBusiness ? "Paystack subaccount or Stripe" : "Stripe"} account in the Integrations tab so customers' payments go directly to your bank account.`}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setActiveTab("integrations")}
+                          className="flex-shrink-0 inline-flex items-center px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors shadow-sm"
+                        >
+                          Go to Integrations
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Banner B: Payout configured but still has held funds → offer to disburse */}
+                  {dashboard.stats.heldFunds && dashboard.stats.heldFunds.payoutConfigured && dashboard.stats.heldFunds.count > 0 && (
+                    <div className="relative overflow-hidden rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50 to-green-50 p-4 sm:p-5 shadow-sm">
+                      <div className="absolute -top-6 -right-6 w-24 h-24 bg-emerald-200/30 rounded-full"></div>
+                      <div className="relative flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200">
+                          <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-bold text-emerald-900">
+                            You have {formatCurrency(dashboard.stats.heldFunds.totalInDashboardCurrency, dashboard.stats.payments.dashboardCurrency || "USD")} ready for disbursement
+                          </h4>
+                          <p className="mt-0.5 text-xs text-emerald-700 leading-relaxed">
+                            {dashboard.stats.heldFunds.count} payment{dashboard.stats.heldFunds.count > 1 ? "s were" : " was"} received before your payout account was connected. Click below to transfer these funds to your bank account now.
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              setStatus("Disbursing held funds...");
+                              const result = await apiRequest<{ message: string; summary?: any }>(
+                                "/business/integrations/disburse-held-funds",
+                                { method: "POST", accessToken, csrfToken }
+                              );
+                              setStatus(result?.message || "Disbursement complete!");
+                              await loadData();
+                            } catch (err: any) {
+                              setStatus(`Disbursement error: ${err?.response?.data?.error || err?.message || "Failed"}`);
+                            }
+                          }}
+                          className="flex-shrink-0 inline-flex items-center px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm"
+                        >
+                          Disburse Now
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Growth Stats Cards */}
                   <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4">
                     {/* Total Revenue */}
@@ -7334,8 +7523,8 @@ export const BusinessDashboard = () => {
                           </p>
                           <h3 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
                             {formatCompactCurrency(
-                              overviewMrrAmount,
-                              overviewMrrCurrency,
+                              mrrSummary.amount,
+                              mrrSummary.currency,
                             )}
                           </h3>
                         </div>
@@ -7345,9 +7534,11 @@ export const BusinessDashboard = () => {
                       </div>
                       <div className="relative mt-3 pt-3 sm:mt-4 sm:pt-4 border-t border-gray-100">
                         <p className="text-xs text-gray-500">
-                          {derivedMrr > 0
-                            ? "From active recurring plans"
-                            : "Fallback baseline"}
+                          {mrrSummary.source === "recurring" && mrrSummary.amount > 0
+                            ? `From ${mrrSummary.activeCount} active recurring payment${mrrSummary.activeCount !== 1 ? "s" : ""}`
+                            : mrrSummary.source === "revenue" && mrrSummary.amount > 0
+                              ? "Est. from last 30 days revenue"
+                              : "No recurring revenue yet"}
                         </p>
                       </div>
                     </div>
@@ -9937,10 +10128,12 @@ export const BusinessDashboard = () => {
                             <FiCreditCard /> Preferred Payment Gateway
                           </h4>
                           <p className="text-xs text-purple-700 mb-3">
-                            Choose which payment gateway to use by default when
-                            both Stripe and Paystack are connected.
+                            {isNigeriaBusiness
+                              ? "Choose which payment gateway to use by default when both Stripe and Paystack are connected."
+                              : "Stripe is your default payment gateway."}
                           </p>
                           <div className="space-y-2">
+                            {isNigeriaBusiness && (
                             <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-purple-100">
                               <input
                                 type="radio"
@@ -9970,6 +10163,7 @@ export const BusinessDashboard = () => {
                                   "(Not Connected)"}
                               </span>
                             </label>
+                            )}
                             <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-purple-100">
                               <input
                                 type="radio"
@@ -11099,308 +11293,161 @@ export const BusinessDashboard = () => {
                         defaultOpen={false}
                       >
                         <p className="text-gray-600 mb-4 text-sm">
-                          Connect Stripe or Paystack to automatically track
-                          revenue and receive alerts when payments are
-                          processed.
+                          Connect {isNigeriaBusiness ? "Stripe and/or Paystack" : "Stripe"} so Debby can enforce
+                          split payouts and route merchant earnings directly to
+                          your account.
                         </p>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="label">Provider</label>
-                            <select
-                              className="input"
-                              value={integrationProvider}
-                              onChange={(e) =>
-                                setIntegrationProvider(
-                                  e.target.value as "stripe" | "paystack",
-                                )
-                              }
-                            >
-                              <option value="stripe">Stripe</option>
-                              <option value="paystack">Paystack</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="label">
-                              API Key / Secret Key
-                            </label>
-                            <input
-                              className="input"
-                              type="password"
-                              value={integrationToken}
-                              onChange={(e) =>
-                                setIntegrationToken(e.target.value)
-                              }
-                              placeholder={
-                                integrationProvider === "stripe"
-                                  ? "sk_live_..."
-                                  : "sk_live_..."
-                              }
-                            />
-                            <p className="mt-2 text-xs text-gray-500">
-                              {integrationProvider === "stripe"
-                                ? "Get your API key from https://dashboard.stripe.com/apikeys"
-                                : "Get your secret key from https://dashboard.paystack.com/#/settings/developer"}
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                            <label className="inline-flex items-center gap-2 text-sm font-medium text-amber-900">
-                              <input
-                                type="checkbox"
-                                checked={integrationSplitCapable}
-                                onChange={(e) =>
-                                  setIntegrationSplitCapable(e.target.checked)
-                                }
-                              />
-                              Enable split-capable checkout (required for card
-                              checkout)
-                            </label>
-                            <p className="mt-1 text-xs text-amber-800">
-                              Card checkout now requires split-capable setup so
-                              Debby fee and merchant payout are separated at
-                              provider settlement.
-                            </p>
-                          </div>
-                          {integrationProvider === "stripe" && (
-                            <div>
-                              <label className="label">
-                                Stripe Connected Account ID
-                              </label>
-                              <input
-                                className="input"
-                                type="text"
-                                value={stripeConnectedAccountId}
-                                onChange={(e) =>
-                                  setStripeConnectedAccountId(e.target.value)
-                                }
-                                placeholder="acct_..."
-                              />
-                              <p className="mt-2 text-xs text-gray-500">
-                                Required when split-capable is enabled. Debby
-                                applies <code>application_fee_amount</code> and
-                                routes the remainder to this connected account.
-                              </p>
+                        <div className="space-y-5">
+                          <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-900">Stripe Connect</h4>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Link a Stripe account so payouts are routed automatically.
+                                </p>
+                              </div>
+                              <span
+                                className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                  stripeConnectedAccountId
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {stripeConnectedAccountId ? "Connected" : "Not connected"}
+                              </span>
                             </div>
-                          )}
-                          {integrationProvider === "paystack" && (
-                            <div>
-                              <label className="label">
-                                Paystack Split Code
-                              </label>
-                              <input
-                                className="input"
-                                type="text"
-                                value={paystackSplitCode}
-                                onChange={(e) =>
-                                  setPaystackSplitCode(e.target.value)
-                                }
-                                placeholder="SPL_..."
-                              />
-                              <p className="mt-2 text-xs text-gray-500">
-                                Required when split-capable is enabled. Debby
-                                initializes transactions with this split code.
-                              </p>
+                            {stripeConnectedAccountId ? (
+                              <div className="mt-3 text-xs text-slate-600">
+                                Connected account: <span className="font-semibold">{stripeConnectedAccountId}</span>
+                              </div>
+                            ) : null}
+                            <div className="mt-4">
+                              <button className="btn btn-primary w-full" onClick={startStripeConnect}>
+                                {stripeConnectedAccountId ? "Reconnect Stripe" : "Connect Stripe"}
+                              </button>
                             </div>
+                          </div>
+
+                          {/* Paystack payout section — only visible to Nigerian businesses */}
+                          {isNigeriaBusiness && (
+                          <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-900">Paystack Payout Account</h4>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Enter bank details so Debby can create a Paystack subaccount for splits.
+                                </p>
+                              </div>
+                              <span
+                                className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                  paystackSubaccountCode
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {paystackSubaccountCode ? "Connected" : "Not connected"}
+                              </span>
+                            </div>
+                            {paystackSubaccountCode ? (
+                              <div className="mt-3">
+                                <p className="text-xs text-slate-600">
+                                  Subaccount code: <span className="font-semibold">{paystackSubaccountCode}</span>
+                                </p>
+                                <div className="mt-2 p-2 rounded-md bg-emerald-50 border border-emerald-200">
+                                  <p className="text-xs text-emerald-700 font-medium">
+                                    ✓ Split configured automatically based on your plan
+                                  </p>
+                                  <p className="text-xs text-emerald-600 mt-0.5">
+                                    Debby automatically assigns the correct revenue split based on your subscription tier. No manual configuration needed.
+                                  </p>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2">
+                                  To change your bank details, disconnect first and then reconnect with new information.
+                                </p>
+                                <button
+                                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                                  onClick={disconnectPaystackSubaccount}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.181 8.68a4.503 4.503 0 011.903 6.405m-9.768-2.782L3.56 14.06a4.5 4.5 0 006.364 6.365l.212-.212m6.592-12.036a4.5 4.5 0 00-6.364 0l-.212.212M3 3l18 18"/></svg>
+                                  Disconnect Paystack Account
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="mt-4 space-y-3">
+                                <div className="p-2.5 rounded-md bg-blue-50 border border-blue-200">
+                                  <p className="text-xs text-blue-700 font-medium">
+                                    ℹ Revenue split is auto-assigned
+                                  </p>
+                                  <p className="text-xs text-blue-600 mt-0.5">
+                                    When you connect your bank, Debby automatically configures the correct payout split based on your subscription plan. You don't need to set any percentage.
+                                  </p>
+                                </div>
+                                <div>
+                                  <label className="label">Business Name</label>
+                                  <input
+                                    className="input"
+                                    type="text"
+                                    value={paystackBusinessName}
+                                    onChange={(e) => setPaystackBusinessName(e.target.value)}
+                                    placeholder="Business Name"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="label">Bank</label>
+                                  {paystackBanks.length > 0 ? (
+                                    <select
+                                      className="input"
+                                      value={paystackBankCode}
+                                      onChange={(e) => setPaystackBankCode(e.target.value)}
+                                    >
+                                      <option value="">Select bank</option>
+                                      {paystackBanks.map((bank) => (
+                                        <option key={bank.code} value={bank.code}>
+                                          {bank.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      className="input"
+                                      type="text"
+                                      value={paystackBankCode}
+                                      onChange={(e) => setPaystackBankCode(e.target.value)}
+                                      placeholder="Bank code"
+                                    />
+                                  )}
+                                  {loadingPaystackBanks && (
+                                    <p className="text-xs text-slate-500 mt-1">Loading banks...</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="label">Account Number</label>
+                                  <input
+                                    className="input"
+                                    type="text"
+                                    value={paystackAccountNumber}
+                                    onChange={(e) => setPaystackAccountNumber(e.target.value)}
+                                    placeholder="0123456789"
+                                  />
+                                </div>
+                                <button className="btn btn-primary w-full" onClick={connectPaystackSubaccount}>
+                                  Connect Paystack
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           )}
-                          <button
-                            className="btn btn-primary w-full"
-                            onClick={connectIntegration}
-                            disabled={!integrationToken}
-                          >
-                            Connect{" "}
-                            {integrationProvider.charAt(0).toUpperCase() +
-                              integrationProvider.slice(1)}
-                          </button>
                         </div>
                       </Collapsible>
 
                       <Collapsible
-                        title="Webhook URLs for Payment Gateways"
+                        title="Gateway Webhooks (Managed by Debby)"
                         defaultOpen={true}
                       >
                         <p className="text-gray-600 mb-4 text-sm">
-                          Add these webhook URLs to your Stripe or Paystack
-                          dashboard to automatically update payment statuses
-                          when customers pay.
+                          Debby manages webhook configuration for {isNigeriaBusiness ? "Stripe and Paystack" : "Stripe"}. No action is required from
+                          merchants.
                         </p>
-
-                        {webhookUrls ? (
-                          <div className="space-y-4">
-                            {/* Stripe Webhook */}
-                            {integrations.some(
-                              (i) => i.provider === "stripe",
-                            ) && (
-                              <div className="p-4 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg">
-                                <div className="flex items-center justify-between mb-2">
-                                  <label className="label mb-0 font-semibold">
-                                    Stripe Webhook URL
-                                  </label>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(
-                                        webhookUrls.webhooks.stripe,
-                                      );
-                                      setStatus(
-                                        " Stripe webhook URL copied to clipboard",
-                                      );
-                                    }}
-                                    className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-                                    title="Copy URL"
-                                  >
-                                    <FiCopy className="w-4 h-4 text-gray-600" />
-                                  </button>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg font-mono text-sm break-all text-gray-800">
-                                  {webhookUrls.webhooks.stripe}
-                                </div>
-                                <p className="mt-2 text-xs text-gray-500">
-                                  Add this URL in{" "}
-                                  <a
-                                    href="https://dashboard.stripe.com/webhooks"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline"
-                                  >
-                                    Stripe Dashboard Webhooks
-                                  </a>
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Paystack Webhook */}
-                            {integrations.some(
-                              (i) => i.provider === "paystack",
-                            ) && (
-                              <div className="p-4 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg">
-                                <div className="flex items-center justify-between mb-2">
-                                  <label className="label mb-0 font-semibold">
-                                    Paystack Webhook URL
-                                  </label>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(
-                                        webhookUrls.webhooks.paystack,
-                                      );
-                                      setStatus(
-                                        " Paystack webhook URL copied to clipboard",
-                                      );
-                                    }}
-                                    className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-                                    title="Copy URL"
-                                  >
-                                    <FiCopy className="w-4 h-4 text-gray-600" />
-                                  </button>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg font-mono text-sm break-all text-gray-800">
-                                  {webhookUrls.webhooks.paystack}
-                                </div>
-                                <p className="mt-2 text-xs text-gray-500">
-                                  Add this URL in{" "}
-                                  <a
-                                    href="https://dashboard.paystack.com/#/settings/developer"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline"
-                                  >
-                                    Paystack Dashboard Settings Developer
-                                    Webhooks
-                                  </a>
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Instructions for Local Development */}
-                            {webhookUrls.webhooks.stripe.includes(
-                              "localhost",
-                            ) ||
-                            webhookUrls.webhooks.paystack.includes(
-                              "localhost",
-                            ) ? (
-                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                <h4 className="font-semibold text-yellow-900 mb-2">
-                                  {" "}
-                                  Local Development Setup
-                                </h4>
-                                <p className="text-sm text-yellow-800 mb-3">
-                                  Paystack and Stripe cannot reach{" "}
-                                  <code>localhost</code>. You need to expose
-                                  your backend publicly using ngrok:
-                                </p>
-                                <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
-                                  <li>
-                                    Install ngrok:{" "}
-                                    <code className="bg-yellow-100 px-1 rounded">
-                                      npm install -g ngrok
-                                    </code>{" "}
-                                    or download from{" "}
-                                    <a
-                                      href="https://ngrok.com/download"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline"
-                                    >
-                                      ngrok.com
-                                    </a>
-                                  </li>
-                                  <li>
-                                    Run:{" "}
-                                    <code className="bg-yellow-100 px-1 rounded">
-                                      ngrok http 4000
-                                    </code>
-                                  </li>
-                                  <li>
-                                    Copy the HTTPS URL (e.g.,{" "}
-                                    <code className="bg-yellow-100 px-1 rounded">
-                                      https://abc123.ngrok.io
-                                    </code>
-                                    )
-                                  </li>
-                                  <li>
-                                    Set environment variable:{" "}
-                                    <code className="bg-yellow-100 px-1 rounded">
-                                      WEBHOOK_BASE_URL=https://abc123.ngrok.io
-                                    </code>
-                                  </li>
-                                  <li>Restart your backend server</li>
-                                  <li>
-                                    Refresh this page to see the updated webhook
-                                    URLs
-                                  </li>
-                                </ol>
-                                <p className="text-xs text-yellow-700 mt-3">
-                                  <strong>Note:</strong> The ngrok URL changes
-                                  each time you restart ngrok (unless you have a
-                                  paid plan). Update the webhook URL in
-                                  Paystack/Stripe dashboard each time.
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                <p className="text-sm text-green-800">
-                                  Your webhook URLs are configured for
-                                  production. Make sure your backend is publicly
-                                  accessible.
-                                </p>
-                              </div>
-                            )}
-
-                            {!integrations.some(
-                              (i) =>
-                                i.provider === "stripe" ||
-                                i.provider === "paystack",
-                            ) && (
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <p className="text-sm text-gray-600">
-                                  Connect Stripe or Paystack above to see your
-                                  webhook URLs.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-gray-500 text-sm">
-                            Loading webhook URLs...
-                          </p>
-                        )}
                       </Collapsible>
                     </>
                   )}
@@ -19031,6 +19078,25 @@ export const BusinessDashboard = () => {
                         Growth/Scale plans are forced to gateway checkout only.
                       </p>
                     </div>
+                    <div>
+                      <label className="label">Default Payment Provider</label>
+                      <select
+                        className="input"
+                        value={shopForm.defaultPaymentGateway}
+                        onChange={(e) =>
+                          setShopForm({
+                            ...shopForm,
+                            defaultPaymentGateway: e.target.value as "stripe" | "paystack"
+                          })
+                        }
+                      >
+                        <option value="paystack">Paystack</option>
+                        <option value="stripe">Stripe</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Used for this store when both gateways are connected.
+                      </p>
+                    </div>
                   </div>
                   <div
                     id="shop-homepage-landing-config"
@@ -19536,6 +19602,7 @@ export const BusinessDashboard = () => {
                                 businessType: shopForm.businessType,
                                 businessMode: shopForm.businessMode,
                                 checkoutMode: shopForm.checkoutMode,
+                                defaultPaymentGateway: shopForm.defaultPaymentGateway,
                               },
                             },
                           );
@@ -19562,6 +19629,7 @@ export const BusinessDashboard = () => {
                               themeColor: shopForm.themeColor,
                               titleFont: shopForm.titleFont || null,
                               checkoutMode: shopForm.checkoutMode,
+                              defaultPaymentGateway: shopForm.defaultPaymentGateway,
                             },
                           });
                           setStatus(" Shop updated");

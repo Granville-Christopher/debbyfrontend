@@ -363,12 +363,14 @@ const pickFreshFx = (a: FxPayload | null | undefined, b: FxPayload | null | unde
 const toProviderLabel = (provider: PaymentProvider) => provider === "paystack" ? "Paystack" : "Stripe";
 const toCanonicalPlanId = (planId: string) => {
   const normalized = String(planId || "").trim().toLowerCase();
-  return normalized === "pro" ? "enterprise" : normalized;
+  if (normalized === "professional") return "growth";
+  if (normalized === "enterprise" || normalized === "pro") return "scale";
+  return normalized;
 };
 const toPlanLabel = (planId: string) => {
   const normalized = String(planId || "").trim().toLowerCase();
-  if (normalized === "professional") return "Growth";
-  if (normalized === "enterprise" || normalized === "pro") return "Scale";
+  if (normalized === "growth" || normalized === "professional") return "Growth";
+  if (normalized === "scale" || normalized === "enterprise" || normalized === "pro") return "Scale";
   if (normalized === "starter") return "Starter";
   if (normalized === "free") return "Free";
   return normalized || "Unknown";
@@ -1417,6 +1419,41 @@ export const AdminDashboard = () => {
               <p className="text-xl sm:text-2xl font-semibold mt-2">{money(overview.metrics.platformFeeRevenue || 0)}</p>
               <p className="text-xs text-slate-500 mt-1">Take-rate numerator</p>
             </article>
+            {overview.metrics.splitRevenue && (
+              <article className="rounded-xl border border-emerald-800 bg-emerald-950/30 p-3 sm:p-4">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-emerald-400 uppercase">Split Revenue (Debby's Cut)</p>
+                  <span title="Revenue Debby earns from payment splits. This is the platform fee portion extracted from each transaction via Paystack subaccount splits and Stripe connect transfers.">
+                    <FiInfo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-500" />
+                  </span>
+                </div>
+                <p className="text-xl sm:text-2xl font-semibold mt-2 text-emerald-300">
+                  {money(overview.metrics.splitRevenue.platformFeeEarned || 0)}
+                </p>
+                <p className="text-xs text-emerald-600 mt-1">
+                  From {money(overview.metrics.splitRevenue.grossVolumeProcessed || 0)} processed
+                  {overview.metrics.splitRevenue.effectiveTakeRate > 0
+                    ? ` · ${overview.metrics.splitRevenue.effectiveTakeRate}% effective rate`
+                    : ""}
+                </p>
+              </article>
+            )}
+            {overview.metrics.heldByPlatform && overview.metrics.heldByPlatform.paymentCount > 0 && (
+              <article className="rounded-xl border border-amber-700 bg-amber-950/30 p-3 sm:p-4">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-amber-400 uppercase">Held by Platform</p>
+                  <span title="Funds sitting in Debby's account because the merchant has not configured a payout method (Paystack subaccount or Stripe Connect). These need manual disbursement or will auto-route once the merchant connects their account.">
+                    <FiInfo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
+                  </span>
+                </div>
+                <p className="text-xl sm:text-2xl font-semibold mt-2 text-amber-300">
+                  {money(overview.metrics.heldByPlatform.totalAmount || 0)}
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  {overview.metrics.heldByPlatform.paymentCount} payment{overview.metrics.heldByPlatform.paymentCount !== 1 ? "s" : ""} awaiting merchant payout setup
+                </p>
+              </article>
+            )}
             <article className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-400 uppercase">Net Revenue</p>
@@ -1503,8 +1540,8 @@ export const AdminDashboard = () => {
                 </label>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={savePlatformCredentials} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300">Save Credentials</button>
-                <button onClick={() => testProvider(platformForm.provider)} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">Test</button>
+                <button type="button" onClick={savePlatformCredentials} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300">Save Credentials</button>
+                <button type="button" onClick={() => testProvider(platformForm.provider)} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">Test</button>
               </div>
             </article>
             <article className="rounded-xl border border-slate-800 bg-slate-900 p-4">
@@ -1536,8 +1573,8 @@ export const AdminDashboard = () => {
                       <p className="text-xs text-slate-400 mt-2">{cfg.secretKeyMasked}</p>
                       <p className="text-xs text-slate-500 mt-1">Webhook: {cfg.webhookSecretMasked || "Not set"}</p>
                       <div className="mt-2 flex gap-2">
-                        <button onClick={() => testProvider(cfg.provider)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Test</button>
-                        <button onClick={() => activateProvider(cfg.provider)} disabled={cfg.isActive} className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-60">{cfg.isActive ? "Active" : "Activate"}</button>
+                        <button type="button" onClick={() => testProvider(cfg.provider)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Test</button>
+                        <button type="button" onClick={() => activateProvider(cfg.provider)} disabled={cfg.isActive} className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-60">{cfg.isActive ? "Active" : "Activate"}</button>
                       </div>
                     </div>
                   ))
@@ -1643,7 +1680,7 @@ export const AdminDashboard = () => {
                 />
                 Enable fallback
               </label>
-              <button onClick={saveCommandConfig} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950">Save</button>
+              <button type="button" onClick={saveCommandConfig} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950">Save</button>
             </div>
           </section>
           <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">

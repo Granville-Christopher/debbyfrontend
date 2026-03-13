@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { 
   FiCheck, FiTrendingUp, FiCreditCard,
-  FiX, FiAlertCircle, FiDownload
+  FiX, FiAlertCircle, FiDownload, FiExternalLink
 } from "react-icons/fi";
 import { apiRequest } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -74,7 +74,8 @@ type BusinessTierMeta = {
   commerceMode: string;
 };
 
-const BUSINESS_PLAN_ORDER = ["starter", "professional", "enterprise"];
+// Canonical plan order: starter → growth → scale
+const BUSINESS_PLAN_ORDER = ["starter", "growth", "scale"];
 
 const BUSINESS_TIER_META: Record<string, BusinessTierMeta> = {
   starter: {
@@ -93,6 +94,23 @@ const BUSINESS_TIER_META: Record<string, BusinessTierMeta> = {
     dashboardAccess: "Core dashboard, Analytics, Surveys",
     commerceMode: "Own inventory mode (dropshipping locked)"
   },
+  growth: {
+    displayName: "Growth",
+    tierLabel: "Growth (Mid)",
+    goal: "Scale operations with automation",
+    transactionFee: "0.50% local, 0.75% international",
+    cap: "Cap: NGN 2,000 per transaction",
+    serviceLevel: [
+      "Everything in Starter",
+      "Advanced automation + recovery",
+      "Advanced analytics + integrations"
+    ],
+    support: "Email + in-app support",
+    checkoutAccess: "Gateway checkout only (WhatsApp completion disabled)",
+    dashboardAccess: "All modules unlocked (Automation, Intelligence, Ops, Analytics, Surveys)",
+    commerceMode: "Own, Dropship, and Hybrid modes"
+  },
+  // Legacy alias so existing subscriptions with "professional" still render
   professional: {
     displayName: "Growth",
     tierLabel: "Growth (Mid)",
@@ -109,6 +127,23 @@ const BUSINESS_TIER_META: Record<string, BusinessTierMeta> = {
     dashboardAccess: "All modules unlocked (Automation, Intelligence, Ops, Analytics, Surveys)",
     commerceMode: "Own, Dropship, and Hybrid modes"
   },
+  scale: {
+    displayName: "Scale",
+    tierLabel: "Scale (High)",
+    goal: "Highest access with the lowest fee rate",
+    transactionFee: "0.25% local, 0.40% international",
+    cap: "Cap: NGN 1,000 per transaction",
+    serviceLevel: [
+      "Everything in Growth",
+      "Full premium modules and controls",
+      "Priority SLA-grade support"
+    ],
+    support: "Priority support handling + in-app support",
+    checkoutAccess: "Gateway checkout only (WhatsApp completion disabled)",
+    dashboardAccess: "All modules unlocked (Automation, Intelligence, Ops, Analytics, Surveys)",
+    commerceMode: "Own, Dropship, and Hybrid modes"
+  },
+  // Legacy alias
   enterprise: {
     displayName: "Scale",
     tierLabel: "Scale (High)",
@@ -197,6 +232,14 @@ const shouldShowUsageMetric = (key: string, role: "developer" | "business" | "cr
   return !["apiKeys", "apiCalls", "webhooks", "socialAccounts", "postsPerMonth", "scheduledPosts", "mediaUploads"].includes(key);
 };
 
+/** Normalize legacy plan IDs to canonical names */
+const normalizeDisplayPlanId = (planId: string): string => {
+  const normalized = String(planId || "").trim().toLowerCase();
+  if (normalized === "professional") return "growth";
+  if (normalized === "enterprise" || normalized === "pro") return "scale";
+  return normalized;
+};
+
 export const BillingPlans: React.FC<BillingPlansProps> = ({
   role = "business",
   currentPlan: externalCurrentPlan,
@@ -214,13 +257,15 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState<"plans" | "usage" | "invoices">("plans");
   const [supportEmail, setSupportEmail] = useState<string>("");
+  // Payment link state — shown when the backend says "pay first"
+  const [pendingPaymentLink, setPendingPaymentLink] = useState<string | null>(null);
+  const [pendingPlanName, setPendingPlanName] = useState<string>("");
 
   // Use external currentPlan if provided, otherwise use internal state
   const currentPlan = externalCurrentPlan !== undefined ? externalCurrentPlan : internalCurrentPlan;
   const setCurrentPlan = externalCurrentPlan !== undefined ? onPlanChange || (() => {}) : setInternalCurrentPlan;
 
   useEffect(() => {
-    console.log("[BillingPlans] Component mounted with role:", role);
     fetchBillingData();
   }, [accessToken, role]);
 
@@ -261,31 +306,69 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
     setUpgrading(planId);
     setError("");
     setSuccess("");
+    setPendingPaymentLink(null);
 
     try {
-      const response = await apiRequest("/billing/change-plan", {
+      const response: any = await apiRequest("/billing/change-plan", {
         method: "POST",
         accessToken,
         csrfToken,
         body: { planId },
       });
 
+      // ─── Case 1: Backend returned a payment link → user must pay first ───
+      if (response.requiresPayment && response.paymentLink) {
+        const plan = plans.find(p => p.id === planId);
+        setPendingPaymentLink(response.paymentLink);
+        setPendingPlanName(plan?.name || planId);
+        setSuccess("");
+        // Don't update current plan yet — it's still pending payment
+        return;
+      }
+
+      // ─── Case 2: Payment was processed immediately (saved card) ───
+      if (response.paymentProcessed) {
+        setCurrentPlan(planId);
+        setSuccess(`Successfully upgraded to ${response.subscription?.planId || planId} plan! Payment processed.`);
+        fetchBillingData();
+        if (onPlanChange) onPlanChange(planId);
+        if (onPlanUpdated) onPlanUpdated();
+        return;
+      }
+
+      // ─── Case 3: Free plan change (no payment needed) ───
       setCurrentPlan(planId);
       setSuccess(`Successfully ${planId === "free" ? "downgraded" : "upgraded"} to ${planId} plan!`);
       fetchBillingData();
-      // Call the external callback if provided
-      if (onPlanChange) {
-        onPlanChange(planId);
-      }
-      // Notify parent component that plan was updated
-      if (onPlanUpdated) {
-        onPlanUpdated();
-      }
+      if (onPlanChange) onPlanChange(planId);
+      if (onPlanUpdated) onPlanUpdated();
     } catch (err: any) {
+      // ─── Case 4: 402 — payment required but charge failed ───
+      const responseData = err?.response?.data;
+      if (responseData?.requiresPayment && responseData?.paymentLink) {
+        const plan = plans.find(p => p.id === planId);
+        setPendingPaymentLink(responseData.paymentLink);
+        setPendingPlanName(plan?.name || planId);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to change plan");
     } finally {
       setUpgrading(null);
     }
+  };
+
+  const handleGoToPayment = () => {
+    if (pendingPaymentLink) {
+      window.open(pendingPaymentLink, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const handlePaymentComplete = () => {
+    setPendingPaymentLink(null);
+    setPendingPlanName("");
+    setSuccess("Payment submitted! Your plan will be activated once the payment is confirmed.");
+    fetchBillingData();
+    if (onPlanUpdated) onPlanUpdated();
   };
 
   const formatUsagePercent = (used: number, limit: number) => {
@@ -329,8 +412,14 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
   const displayedPlans = useMemo(() => {
     if (role !== "business") return plans;
 
+    // Normalize plan IDs and deduplicate (professional → growth, enterprise → scale)
+    const normalizedPlans = plans.map((plan) => ({
+      ...plan,
+      id: normalizeDisplayPlanId(plan.id)
+    }));
+
     const dedupedPlans = Array.from(
-      plans.reduce((acc, plan) => {
+      normalizedPlans.reduce((acc, plan) => {
         if (!acc.has(plan.id)) {
           acc.set(plan.id, plan);
         }
@@ -360,19 +449,20 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
 
   const getBusinessFeeDisplay = (planId: string) => {
     const isLocal = businessBillingCurrency === "NGN";
-    if (planId === "starter") {
+    const normalized = normalizeDisplayPlanId(planId);
+    if (normalized === "starter" || normalized === "free") {
       return {
         title: "Debby Transaction Fee",
         fee: "0%",
         cap: ""
       };
     }
-    if (planId === "professional") {
+    if (normalized === "growth") {
       return isLocal
         ? { title: "Debby Transaction Fee (Local)", fee: "0.50% per transaction", cap: "Cap: NGN 2,000 per transaction" }
         : { title: "Debby Transaction Fee (International)", fee: "0.75% per transaction", cap: "" };
     }
-    if (planId === "enterprise" || planId === "pro") {
+    if (normalized === "scale") {
       return isLocal
         ? { title: "Debby Transaction Fee (Local)", fee: "0.25% per transaction", cap: "Cap: NGN 1,000 per transaction" }
         : { title: "Debby Transaction Fee (International)", fee: "0.40% per transaction", cap: "" };
@@ -385,8 +475,8 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
   };
 
   const getBusinessCheckoutPolicy = (planId: string) => {
-    const normalized = String(planId || "").trim().toLowerCase();
-    if (normalized === "professional" || normalized === "enterprise" || normalized === "pro") {
+    const normalized = normalizeDisplayPlanId(planId);
+    if (normalized === "growth" || normalized === "scale") {
       return "Gateway checkout only";
     }
     return "Gateway + optional WhatsApp";
@@ -405,18 +495,17 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
   };
 
   const getBusinessSupportDisplay = (planId: string, tierSupport: string) => {
-    const normalized = String(planId || "").trim().toLowerCase();
+    const normalized = normalizeDisplayPlanId(planId);
     const emailSuffix = supportEmail ? ` (${supportEmail})` : "";
     if (normalized === "starter") {
       return `Email support only${emailSuffix}`;
     }
-    if (normalized === "professional" || normalized === "enterprise" || normalized === "pro") {
-      return `${tierSupport}${emailSuffix}`;
-    }
     return `${tierSupport}${emailSuffix}`;
   };
 
-  const currentPlanPrice = plans.find((plan) => plan.id === currentPlan)?.price || 0;
+  // Normalize the current plan for comparison
+  const normalizedCurrentPlan = normalizeDisplayPlanId(currentPlan);
+  const currentPlanPrice = plans.find((plan) => normalizeDisplayPlanId(plan.id) === normalizedCurrentPlan)?.price || 0;
 
   if (loading) {
     return (
@@ -483,6 +572,48 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
         </div>
       )}
 
+      {/* ─── Payment Required Banner ─── */}
+      {pendingPaymentLink && (
+        <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <FiCreditCard className="mt-0.5 h-6 w-6 flex-shrink-0 text-blue-600" />
+            <div className="flex-1">
+              <h4 className="text-base font-semibold text-blue-900">
+                Complete payment to activate {pendingPlanName}
+              </h4>
+              <p className="mt-1 text-sm text-blue-700">
+                Your plan upgrade requires payment. Click the button below to complete the payment through our secure payment gateway.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleGoToPayment}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
+                >
+                  <FiExternalLink className="h-4 w-4" />
+                  Pay Now
+                </button>
+                <button
+                  onClick={handlePaymentComplete}
+                  className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-5 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  <FiCheck className="h-4 w-4" />
+                  I've completed payment
+                </button>
+                <button
+                  onClick={() => {
+                    setPendingPaymentLink(null);
+                    setPendingPlanName("");
+                  }}
+                  className="text-sm text-blue-500 hover:text-blue-700 underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Plans Tab */}
       {activeTab === "plans" && (
         <>
@@ -495,11 +626,12 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
             {displayedPlans.map((plan) => {
             const tierMeta = role === "business" ? BUSINESS_TIER_META[plan.id] : null;
             const feeDisplay = role === "business" ? getBusinessFeeDisplay(plan.id) : null;
+            const isPlanCurrent = normalizedCurrentPlan === plan.id;
             return (
               <div
                 key={plan.id}
                 className={`relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 sm:p-6 ${
-                  currentPlan === plan.id
+                  isPlanCurrent
                     ? "border-emerald-400 shadow-emerald-100/80"
                     : plan.popular
                     ? "border-cyan-400 shadow-cyan-100/80"
@@ -508,19 +640,19 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
               >
                 <div
                   className={`absolute inset-x-0 top-0 h-1 ${
-                    currentPlan === plan.id
+                    isPlanCurrent
                       ? "bg-emerald-400"
                       : plan.popular
                       ? "bg-cyan-500"
                       : "bg-slate-300"
                   }`}
                 />
-                {currentPlan === plan.id && (
+                {isPlanCurrent && (
                   <div className="absolute right-4 top-4 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                     Current
                   </div>
                 )}
-                {plan.popular && currentPlan !== plan.id && (
+                {plan.popular && !isPlanCurrent && (
                   <div className="absolute right-4 top-4 rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-700">
                     Recommended
                   </div>
@@ -650,9 +782,9 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
 
                 <button
                   onClick={() => handleChangePlan(plan.id)}
-                  disabled={currentPlan === plan.id || upgrading !== null}
+                  disabled={isPlanCurrent || upgrading !== null}
                   className={`mt-auto w-full rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-                    currentPlan === plan.id
+                    isPlanCurrent
                       ? "cursor-default bg-slate-100 text-slate-400"
                       : plan.popular
                       ? "bg-cyan-600 text-white hover:bg-cyan-700"
@@ -664,7 +796,7 @@ export const BillingPlans: React.FC<BillingPlansProps> = ({
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                       Processing...
                     </span>
-                  ) : currentPlan === plan.id ? (
+                  ) : isPlanCurrent ? (
                     "Current Plan"
                   ) : plan.price > currentPlanPrice ? (
                     "Upgrade"
@@ -908,13 +1040,13 @@ export const CurrentPlanModal: React.FC<CurrentPlanModalProps> = ({
             <div className="grid grid-cols-1 gap-3">
               {Object.entries(currentPlanData.limits).map(([key, value]) => {
                 if (role === "creator" && ["apiKeys", "apiCalls", "webhooks", "notifications", "customers"].includes(key)) {
-                  return null; // Skip creator-irrelevant limits
+                  return null;
                 }
                 if (role === "developer" && key === "customers") {
-                  return null; // Skip developer-irrelevant limits
+                  return null;
                 }
                 if (role === "business" && ["apiKeys", "apiCalls", "webhooks", "socialAccounts", "postsPerMonth", "scheduledPosts", "mediaUploads"].includes(key)) {
-                  return null; // Skip business-irrelevant limits
+                  return null;
                 }
 
                 return (
@@ -942,7 +1074,6 @@ export const CurrentPlanModal: React.FC<CurrentPlanModalProps> = ({
             <button
               onClick={() => {
                 onClose();
-                // Could scroll to plans section or navigate to billing
                 window.location.hash = "#billing-plans";
               }}
               className="flex-1 py-3 px-4 text-white bg-blue-500 hover:bg-blue-600 rounded-xl font-medium transition-colors"
@@ -1064,4 +1195,3 @@ export const UsageWidget: React.FC<UsageWidgetProps> = ({ role = "business" }) =
     </div>
   );
 };
-

@@ -2,7 +2,7 @@ import { FiDownload, FiX } from "react-icons/fi";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 
 export const InstallPromptModal = () => {
-  const { showInstallModal, promptInstall, dismissInstall } = useInstallPrompt();
+  const { showInstallModal, isPromptReady, promptInstall, dismissInstall } = useInstallPrompt();
 
   if (!showInstallModal) return null;
 
@@ -26,22 +26,29 @@ export const InstallPromptModal = () => {
         <p className="px-5 mt-3 text-sm text-slate-600">
           Get a fast, app-like experience on your phone. Install Debby to your home screen in one tap.
         </p>
+        {!isPromptReady && (
+          <p className="px-5 mt-2 text-xs text-slate-500">
+            If the install prompt does not appear, open the Chrome menu and select Install app.
+          </p>
+        )}
         <div className="flex gap-2 px-5 py-4">
           <button
             type="button"
             onClick={dismissInstall}
             className="flex-1 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
-            Not now
+            {isPromptReady ? "Not now" : "Got it"}
           </button>
-          <button
-            type="button"
-            onClick={promptInstall}
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            <FiDownload className="h-4 w-4" />
-            Install
-          </button>
+          {isPromptReady && (
+            <button
+              type="button"
+              onClick={promptInstall}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              <FiDownload className="h-4 w-4" />
+              Install
+            </button>
+          )}
         </div>
       </div>
     </div>

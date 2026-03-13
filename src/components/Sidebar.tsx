@@ -43,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isCompactOpenWidth = compactOpenWidthOnMobileMd && isBelowLg;
   const expandedSidebarWidth = isCompactOpenWidth ? 180 : 180;
   const expandedToggleLeft = isCompactOpenWidth ? "168px" : "168px";
+  const navOffset = isSmall ? 56 : 64;
 
   useEffect(() => {
     const handleResize = () => {
@@ -102,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Collapse Button - Glassmorphism style */}
       {(!isMobileHiddenMode || showMobileToggleButton) && (
         <button
+          type="button"
           onClick={handleToggle}
           className={`fixed z-30 p-2.5 backdrop-blur-xl rounded-full transition-all duration-300 hover:scale-105 ${
             isDark
@@ -138,9 +140,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {isMobileHiddenMode && isMobileMenuOpen && (
         <button
+          type="button"
           aria-label="Close sidebar overlay"
           onClick={closeMobileMenu}
-          className="fixed inset-0 top-16 z-30 bg-black/30 transition-opacity duration-500"
+          className="fixed inset-0 top-14 sm:top-16 z-30 bg-black/30 transition-opacity duration-500"
         />
       )}
 
@@ -150,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ? `z-40 ${isCompactOpenWidth ? "w-[180px]" : "w-72"} ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`
             : `${isCollapsed ? "w-10 sm:w-20" : isCompactOpenWidth ? "w-[180px] lg:w-72" : "w-[180px]"} z-10`
         }`}
-        style={{ top: "64px", height: "calc(100vh - 64px)" }}
+        style={{ top: `${navOffset}px`, height: `calc(100vh - ${navOffset}px)` }}
       >
         <div className="flex flex-col h-full">
           {/* Tabs */}
@@ -158,6 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className={compactLinkDensity ? "space-y-1" : "space-y-2"}>
               {tabs.map((tab) => (
                 <button
+                  type="button"
                   key={tab.id}
                   onClick={() => {
                     onTabChange(tab.id);

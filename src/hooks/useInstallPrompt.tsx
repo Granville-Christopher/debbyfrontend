@@ -8,6 +8,7 @@ type BeforeInstallPromptEvent = Event & {
 type InstallPromptContextValue = {
   isInstallable: boolean;
   showInstallModal: boolean;
+  isPromptReady: boolean;
   promptInstall: () => Promise<void>;
   dismissInstall: () => void;
 };
@@ -27,10 +28,12 @@ export const InstallPromptProvider = ({ children }: { children: ReactNode }) => 
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [supportsInstallPrompt, setSupportsInstallPrompt] = useState(false);
   const dismissedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setSupportsInstallPrompt("onbeforeinstallprompt" in window);
     try {
       dismissedRef.current = sessionStorage.getItem(INSTALL_DISMISSED_KEY) === "1";
     } catch {
@@ -77,8 +80,21 @@ export const InstallPromptProvider = ({ children }: { children: ReactNode }) => 
     };
   }, [isStandalone]);
 
+  useEffect(() => {
+    if (!supportsInstallPrompt || isStandalone) return;
+    if (dismissedRef.current) return;
+    if (!showInstallModal) {
+      setShowInstallModal(true);
+    }
+  }, [supportsInstallPrompt, isStandalone, showInstallModal]);
+
   const promptInstall = async () => {
-    if (!installEvent) return;
+    if (!installEvent) {
+      if (!isStandalone && supportsInstallPrompt) {
+        setShowInstallModal(true);
+      }
+      return;
+    }
     try {
       await installEvent.prompt();
       await installEvent.userChoice;
@@ -106,12 +122,13 @@ export const InstallPromptProvider = ({ children }: { children: ReactNode }) => 
 
   const value = useMemo(
     () => ({
-      isInstallable: !!installEvent && !isStandalone,
-      showInstallModal: showInstallModal && !!installEvent && !isStandalone,
+      isInstallable: supportsInstallPrompt && !isStandalone,
+      showInstallModal: showInstallModal && supportsInstallPrompt && !isStandalone,
+      isPromptReady: !!installEvent,
       promptInstall,
       dismissInstall,
     }),
-    [installEvent, isStandalone, showInstallModal]
+    [installEvent, isStandalone, showInstallModal, supportsInstallPrompt]
   );
 
   return <InstallPromptContext.Provider value={value}>{children}</InstallPromptContext.Provider>;
@@ -123,6 +140,7 @@ export const useInstallPrompt = () => {
     return {
       isInstallable: false,
       showInstallModal: false,
+      isPromptReady: false,
       promptInstall: async () => {},
       dismissInstall: () => {},
     } as InstallPromptContextValue;
